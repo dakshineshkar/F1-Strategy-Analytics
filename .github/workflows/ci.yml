@@ -9,6 +9,10 @@ name: CI
 #           finishes) and the Playwright smoke test against the web container.
 # Not in CI: tests/integration (they need HDFS and the Spark standalone cluster, `make up-full`),
 # every full-data target and every measurement. See docs/reproduce.md.
+#
+# Runners are pinned to ubuntu-24.04 (what ubuntu-latest is today), so the ubuntu-latest move to
+# 26.04 cannot change CI silently. setup-uv publishes no major tags since v8, so it carries a full
+# (immutable) version; uv itself is pinned to 0.13.7, as in docker/spark/Dockerfile.
 
 on:
   push:
@@ -25,20 +29,21 @@ concurrency:
 
 jobs:
   python:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Set up Java 17 (Spark)
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: "17"
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@v6
+        uses: astral-sh/setup-uv@v10.3.3
         with:
+          version: "0.13.7"
           enable-cache: true
 
       - name: Install Python 3.12
@@ -63,16 +68,16 @@ jobs:
         run: uv run pytest tests/unit -q
 
   web:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     defaults:
       run:
         working-directory: web
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version-file: web/.nvmrc
           cache: npm
@@ -97,10 +102,10 @@ jobs:
 
   e2e:
     name: demo + streaming smoke + Playwright (core profile, sample data)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # The app image is about 7 GB; the hosted runner's free disk is too small without this.
       - name: Free disk space for the images
@@ -109,15 +114,16 @@ jobs:
           df -h /
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@v6
+        uses: astral-sh/setup-uv@v10.3.3
         with:
+          version: "0.13.7"
           enable-cache: true
 
       - name: Install Python 3.12
         run: uv python install 3.12
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version-file: web/.nvmrc
           cache: npm
