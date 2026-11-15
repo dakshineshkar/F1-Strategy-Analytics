@@ -8,6 +8,10 @@ Per micro-batch and race, ``RedisSink.write`` queues every write in **one** ``Ba
   (1 when the car is a rule-eligible attacker at its latest evaluated decision lap) and
   ``undercut_prob`` (its calibrated P, ``""`` otherwise);
 * the full order sorted set (unique live positions);
+* (additive, display only) the tyre hash ``race:{s}:{r}:tyre:{driverId}`` of every car with a
+  ``lap`` event in this batch that is its latest received lap: the event's real tyre life (null
+  values written too, so a stint with unknown life clears the previous one). Nothing
+  model-related reads it;
 * one ``lap`` / ``pit_in`` / ``pit_out`` event per event received, and the ``undercut_alert``
   messages chosen by the alert policy (``streaming.alerts``; payload ``events.UndercutAlert``).
 
@@ -31,7 +35,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, Protocol
 
-from f1sa.serving.redis_store import COMPOUNDS, Batch, DriverState, Event
+from f1sa.serving.redis_store import COMPOUNDS, Batch, DriverState, Event, TyreLife
 from f1sa.streaming.events import RaceEvent, UndercutAlert
 from f1sa.streaming.live_state import RaceState
 
@@ -97,6 +101,8 @@ def event_payload(ev: RaceEvent, received_ms: int, written_ms: int) -> dict[str,
             lap_time_s=ev.lap_time_s,
             compound=ev.compound,
             tyre_age=ev.tyre_age,
+            tyre_life_laps=ev.tyre_life_laps,
+            tyre_life_at_start_laps=ev.tyre_life_at_start_laps,
         )
     return out
 
@@ -121,12 +127,32 @@ class WriteRecord:
     n_states: int
     n_events: int
     n_alerts: int
+    n_tyres: int
     redis_written_at_ms: int
     write_ms: float
     session_end: bool
 
     def to_json(self) -> dict[str, Any]:
         return dict(vars(self))
+
+
+def tyre_lives(state: RaceState, events: Sequence[RaceEvent]) -> dict[str, TyreLife]:
+    """The tyre hash of every driver whose latest received lap has a ``lap`` event in ``events``
+    (an older or duplicated lap event never overwrites a newer value)."""
+    latest = state.latest_laps()
+    out: dict[str, TyreLife] = {}
+    for e in events:
+        if e.type != "lap" or e.driver_id is None or e.lap is None:
+            continue
+        row = latest.get(e.driver_id)
+        if row is None or row.lap != e.lap:
+            continue
+        out[e.driver_id] = TyreLife(
+            lap=e.lap,
+            tyre_life_laps=e.tyre_life_laps,
+            tyre_life_at_start_laps=e.tyre_life_at_start_laps,
+        )
+    return out
 
 
 class RedisSink:
@@ -148,15 +174,18 @@ class RedisSink:
         if state.ended:
             raise RuntimeError(f"race {state.season} R{state.round} has ended; refusing to write")
         states = driver_states(state)
+        tyres: dict[str, TyreLife] = {}
         published = [e for e in events if e.type in PUBLISHED_TYPES]
         stamped = [e for e in events if e.produced_at_ms is not None]
         trigger = max(stamped, key=lambda e: e.produced_at_ms or 0) if stamped else None
         write_ms = 0.0
         written = self.clock_ms()
         if states or published or alerts:
+            tyres = tyre_lives(state, events)
             batch = Batch(
                 states=states,
                 order=state.live_order() if states else None,
+                tyres=tyres,
                 events=(
                     *(
                         Event(
@@ -194,6 +223,7 @@ class RedisSink:
             n_states=len(states),
             n_events=len(published),
             n_alerts=len(alerts),
+            n_tyres=len(tyres),
             redis_written_at_ms=written,
             write_ms=round(write_ms, 3),
             session_end=session_end,

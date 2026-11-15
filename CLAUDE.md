@@ -27,6 +27,10 @@ Hadoop 3.4.3, FastF1 3.9.2, Next.js + TypeScript strict.
 - ZSET race:{season}:{round}:order member=driverId score=position
 - PUBSUB race:{season}:{round}:events (types: lap, pit_in, pit_out, undercut_alert, session_end)
 - All race keys get EXPIRE on session_end (REDIS_TTL_AFTER_SESSION_S) + safety TTL on every write.
+- ADDITIVE, display only (approved 2026-11-15; the hash, zset and channel above are unchanged):
+  HASH race:{season}:{round}:tyre:{driverId} fields: tyre_life_laps, tyre_life_at_start_laps, lap, updated_at
+  (real TracingInsights tyre life; same TTL rules; written in the batch's one pipeline; never read by
+  the model, the rule, the live features or the what-if). Tested in test_keys.py / test_redis_store.py.
 
 ## Data rules
 - Undercut label = docs/label_definition.md. Features must use info available at end of lap L-1 only.

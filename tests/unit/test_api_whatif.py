@@ -28,7 +28,7 @@ from f1sa.api.catalog import (
     sim_readers,
     zone_reader,
 )
-from f1sa.serving.redis_store import AsyncRaceStore, Batch, DriverState, Event
+from f1sa.serving.redis_store import AsyncRaceStore, Batch, DriverState, Event, TyreLife
 from f1sa.sim import tyre_model as T
 
 pytestmark = pytest.mark.anyio
@@ -135,6 +135,35 @@ async def test_200_three_strategies_next_to_the_model(tmp_path: Path) -> None:
     strip = {k: v for k, v in body.items() if k != "runtime_ms"}
     assert strip == {k: v for k, v in again.json().items() if k != "runtime_ms"}
     assert other.json()["n"] == 200 and other.json()["strategies"] != body["strategies"]
+
+
+async def test_the_tyre_hash_never_changes_a_what_if(tmp_path: Path) -> None:
+    """The additive, display-only tyre hash (and its lap-payload fields) is not a what-if input."""
+    body = {"attacker": "drv2", "defender": "drv1"}
+
+    def strip(r: Any) -> dict[str, Any]:
+        return {k: v for k, v in r.json().items() if k != "runtime_ms"}
+
+    api = _api(tmp_path)
+    await _seed(api)
+    async with api.client() as c:
+        await api.deps.lap_logs.ensure(2024, 5)
+        await _laps(api)
+        before = await c.post(URL, json=body)
+        store = AsyncRaceStore(api.redis, api.deps.settings)
+        await store.write_batch(
+            2024,
+            5,
+            Batch(
+                tyres={
+                    d: TyreLife(lap=12, tyre_life_laps=40 + i, tyre_life_at_start_laps=9)
+                    for i, d in enumerate(("drv0", "drv1", "drv2", "drv3"))
+                }
+            ),
+        )
+        after = await c.post(URL, json=body)
+    assert before.status_code == after.status_code == 200
+    assert strip(after) == strip(before)
 
 
 async def test_without_history_it_still_answers(tmp_path: Path) -> None:

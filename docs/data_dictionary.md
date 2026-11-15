@@ -725,6 +725,37 @@ SOFT/MEDIUM/HARD/INTERMEDIATE/WET/UNKNOWN.
   for display. It is not the strict laps ≤ L−1 rule of the model's `*_compound_ti` inputs
   (`dataset.lap_compounds`).
 
+### Live replay tyre life (`producer.ti_tyre_life_at`, display only)
+**TyreLife semantics.**
+- Raw TI per-lap `tyre_life` (FastF1 TyreLife) counts the laps on the set including earlier use, such as
+  qualifying. It is 1 on the first lap of a new set.
+- The clean `tyre_age_at_start` is that value at the stint's first lap − 1, i.e. the laps already on the set.
+- On 2024 R1, `tyre_age_at_start + lap − start_lap + 1` equals the raw per-lap value on all 1129 laps.
+
+| Event field / tyre-hash field | Meaning |
+|---|---|
+| `tyre_life_laps` | real tyre life at the end of the lap, from the TI stint in progress (largest `start_lap` ≤ lap; never `end_lap`). Null without a started stint, with an unknown `tyre_age_at_start` (never assumed new) or in a synthetic race |
+| `tyre_life_at_start_laps` | `tyre_age_at_start` of that stint. > 0 is a **used set** (the dashboard's `used` tag) |
+| `lap` (tyre hash only) | the lap the value belongs to |
+
+- The value reaches Redis in the additive hash `race:{s}:{r}:tyre:{driverId}` and on the lap payload. It is
+  shown in the Age column and the tyre panel.
+- The driver hash's `tyre_age_laps` keeps the inferred (model) age. The dashboard shows it, marked `est.`,
+  only when the real value is unknown.
+
+Stint counts 2021 / 2022 / 2023 / 2024:
+
+| Starting set | 2021 | 2022 | 2023 | 2024 |
+|---|---|---|---|---|
+| new | 816 | 960 | 1010 | 1039 |
+| used | 419 | 246 | 339 | 263 |
+| unknown | 0 | 34 | 1 | 0 |
+
+- The used sets are mostly first stints on qualifying tyres. In 2024 R1, 10 drivers start on a SOFT with 3
+  laps on it.
+- `fresh_tyre = false` with a starting age of 0 occurs 20 times in 2024. The `used` tag follows the starting
+  age, not `fresh_tyre`.
+
 ### Lap reconciliation (`make reconcile-ti-full`, `etl/reconcile_ti.py`, read-only)
 Key: (season, round, driver_id, lap). Jolpica = v1 clean `laps`; TI = `telemetry_lap_real`. The table shows counts
 only, and 2025 is included as counts only. `telemetry_lap_real` has exactly as many rows as the raw TI laps and the

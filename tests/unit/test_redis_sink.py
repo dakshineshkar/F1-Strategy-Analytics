@@ -119,6 +119,50 @@ def test_lap_event_compound_reaches_the_hash_and_the_channel(compound: str | Non
     assert msg is not None and json.loads(msg["data"])["payload"]["compound"] == compound
 
 
+def test_tyre_hash_follows_the_latest_lap_event_in_the_same_batch() -> None:
+    store = CountingStore()
+    sink = RS.RedisSink(store, clock_ms=lambda: 5_000)
+    a1 = lap_ev("a", 1, 1, 90.0, tyre_life_laps=4, tyre_life_at_start_laps=3)
+    b1 = lap_ev("b", 1, 2, 91.5, lap_time=91.5)  # no TI value: written as unknown
+    st = race(a1, b1)
+    pubsub = store.client.pubsub()
+    pubsub.subscribe(K.events_channel(S, R))
+    pubsub.get_message(timeout=0.1)
+    rec = sink.write(st, [a1, b1], [], received_ms=4_000)
+    assert rec is not None and rec.n_tyres == 2 and len(store.batches) == 1  # one write_batch
+    ta = store.client.hgetall(K.tyre_key(S, R, "a"))
+    assert tuple(ta) == K.TYRE_FIELDS
+    assert (ta["tyre_life_laps"], ta["tyre_life_at_start_laps"], ta["lap"]) == ("4", "3", "1")
+    tb = store.client.hgetall(K.tyre_key(S, R, "b"))
+    assert (tb["tyre_life_laps"], tb["tyre_life_at_start_laps"]) == ("", "")
+    assert store.client.ttl(K.tyre_key(S, R, "a")) > 0
+    payload = json.loads(pubsub.get_message(timeout=0.1)["data"])["payload"]
+    assert (payload["tyre_life_laps"], payload["tyre_life_at_start_laps"]) == (4, 3)
+    # the driver hash keeps the 9 contract fields with the inferred age
+    h = store.client.hgetall(K.driver_key(S, R, "a"))
+    assert tuple(h) == DRIVER_FIELDS and h["tyre_age_laps"] == ""
+
+    # next batch: a new stint with an unknown starting life clears the old value
+    a2 = lap_ev("a", 2, 1, 180.0, tyre_life_laps=None)
+    st.apply(a2, 0)
+    sink.write(st, [a2], [], received_ms=4_100)
+    ta = store.client.hgetall(K.tyre_key(S, R, "a"))
+    assert (ta["tyre_life_laps"], ta["lap"]) == ("", "2")
+
+
+def test_an_older_lap_event_never_overwrites_the_tyre_hash() -> None:
+    store = CountingStore()
+    sink = RS.RedisSink(store, clock_ms=lambda: 5_000)
+    new = lap_ev("a", 5, 1, 450.0, tyre_life_laps=9, tyre_life_at_start_laps=0)
+    old = lap_ev("a", 4, 1, 360.0, tyre_life_laps=8, tyre_life_at_start_laps=0)
+    st = race(new, old)  # lap 5 arrived first
+    rec = sink.write(st, [new, old], [], received_ms=4_000)
+    assert rec is not None and rec.n_tyres == 1
+    assert store.client.hget(K.tyre_key(S, R, "a"), "tyre_life_laps") == "9"
+    assert RS.tyre_lives(st, [old]) == {}
+    assert RS.tyre_lives(st, [new])["a"].lap == 5
+
+
 def test_nothing_to_write_returns_none() -> None:
     store = CountingStore()
     assert RS.RedisSink(store).write(race(), [], [], received_ms=0) is None

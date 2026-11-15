@@ -7,7 +7,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, StrictInt, model_validator
 
-from f1sa.serving.redis_store import StoredDriverState
+from f1sa.serving.redis_store import StoredDriverState, StoredTyreLife
 
 Compound = Literal["SOFT", "MEDIUM", "HARD", "INTERMEDIATE", "WET", "UNKNOWN"]
 UUID_PATTERN = r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
@@ -44,6 +44,26 @@ class DriverStateOut(_Out):
         )
 
 
+class TyreLifeOut(_Out):
+    """The additive, display-only tyre hash ``race:{s}:{r}:tyre:{driverId}`` (real TracingInsights
+    tyre life). Never used by the model, the rule or the what-if."""
+
+    lap: int = Field(ge=1)
+    tyre_life_laps: int | None = Field(default=None, ge=1)
+    tyre_life_at_start_laps: int | None = Field(default=None, ge=0)
+    updated_at: str
+
+    @classmethod
+    def from_stored(cls, stored: StoredTyreLife) -> TyreLifeOut:
+        t = stored.tyre
+        return cls(
+            lap=t.lap,
+            tyre_life_laps=t.tyre_life_laps,
+            tyre_life_at_start_laps=t.tyre_life_at_start_laps,
+            updated_at=stored.updated_at,
+        )
+
+
 class OrderEntry(_Out):
     driver_id: str
     position: int
@@ -54,6 +74,10 @@ class RaceStateOut(_Out):
     round: int
     drivers: dict[str, DriverStateOut]
     order: list[OrderEntry]
+    tyres: dict[str, TyreLifeOut] = Field(
+        default_factory=dict,
+        description="additive, display only: real tyre life per driver (may be missing)",
+    )
 
 
 class RaceOut(_Out):

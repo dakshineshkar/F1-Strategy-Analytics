@@ -7,6 +7,7 @@ import json
 import math
 import re
 from collections.abc import Callable, Iterator
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta, timezone
 from typing import Any
 
@@ -359,3 +360,109 @@ def test_async_store_matches_the_sync_store(server: fakeredis.FakeServer) -> Non
         k: v for k, v in b.items() if k != "updated_at"
     }
     sync_client.close()
+
+
+# ------------------------------------------------------------------ the additive tyre hash
+TYRES = {
+    "max_verstappen": R.TyreLife(lap=30, tyre_life_laps=16, tyre_life_at_start_laps=3),
+    "norris": R.TyreLife(lap=30, tyre_life_laps=None, tyre_life_at_start_laps=None),
+}
+
+
+def _tyre_batch() -> R.Batch:
+    return replace(_batch(), tyres=TYRES)
+
+
+def test_tyre_hash_round_trip_and_exact_fields(
+    store: R.RaceStore, client: fakeredis.FakeRedis
+) -> None:
+    store.write_batch(2024, 5, _tyre_batch())
+    h = client.hgetall("race:2024:5:tyre:max_verstappen")
+    assert tuple(h) == K.TYRE_FIELDS
+    assert (h["tyre_life_laps"], h["tyre_life_at_start_laps"], h["lap"]) == ("16", "3", "30")
+    assert ISO_MS.match(h["updated_at"])
+    unknown = client.hgetall("race:2024:5:tyre:norris")
+    assert (unknown["tyre_life_laps"], unknown["tyre_life_at_start_laps"]) == ("", "")
+    got = store.get_tyre(2024, 5, "max_verstappen")
+    assert got is not None and got.tyre == TYRES["max_verstappen"]
+    got_unknown = store.get_tyre(2024, 5, "norris")
+    assert got_unknown is not None and got_unknown.tyre == TYRES["norris"]
+    assert store.get_tyre(2024, 5, "leclerc") is None
+    # the driver hash is untouched: still exactly the 9 contract fields
+    assert tuple(client.hgetall("race:2024:5:driver:max_verstappen")) == K.DRIVER_FIELDS
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        {"tyre_life_laps": "3", "lap": "1", "updated_at": "x"},  # a field missing
+        {"tyre_life_laps": "3", "tyre_life_at_start_laps": "0", "lap": "1", "updated_at": "x",
+         "extra": "1"},  # an extra field
+        {"tyre_life_laps": "3", "tyre_life_at_start_laps": "0", "lap": "", "updated_at": "x"},
+        {"tyre_life_laps": "0", "tyre_life_at_start_laps": "0", "lap": "1", "updated_at": "x"},
+        {"tyre_life_laps": "3", "tyre_life_at_start_laps": "-1", "lap": "1", "updated_at": "x"},
+        {"tyre_life_laps": "x", "tyre_life_at_start_laps": "0", "lap": "1", "updated_at": "x"},
+    ],
+)  # fmt: skip
+def test_decode_tyre_rejects_hashes_outside_its_fields(raw: dict[str, str]) -> None:
+    with pytest.raises((R.StoreError, ValueError)):
+        R.decode_tyre(raw)
+
+
+@pytest.mark.parametrize(
+    "kw",
+    [
+        {"lap": 0, "tyre_life_laps": 1, "tyre_life_at_start_laps": 0},
+        {"lap": 3, "tyre_life_laps": 0, "tyre_life_at_start_laps": 0},
+        {"lap": 3, "tyre_life_laps": 4, "tyre_life_at_start_laps": -1},
+        {"lap": 3, "tyre_life_laps": True, "tyre_life_at_start_laps": 0},
+        {"lap": 3, "tyre_life_laps": 2.0, "tyre_life_at_start_laps": 0},
+    ],
+)
+def test_invalid_tyre_lives_rejected(kw: dict[str, Any]) -> None:
+    with pytest.raises(R.StoreError):
+        R.TyreLife(**kw)
+
+
+def test_tyre_hash_gets_the_safety_ttl_and_the_session_end_expire(
+    store: R.RaceStore, client: fakeredis.FakeRedis
+) -> None:
+    store.write_batch(2024, 5, _tyre_batch())
+    store.write_batch(2024, 6, _tyre_batch())
+    tyre_keys = ["race:2024:5:tyre:max_verstappen", "race:2024:5:tyre:norris"]
+    assert set(tyre_keys) <= set(store.race_keys(2024, 5))
+    assert all(AFTER < client.ttl(k) <= SAFETY for k in tyre_keys)
+    assert store.end_session(2024, 5) == 6  # 3 driver hashes + order + 2 tyre hashes
+    assert all(0 < client.ttl(k) <= AFTER for k in tyre_keys)
+    assert all(client.ttl(k) > AFTER for k in store.race_keys(2024, 6))  # other race untouched
+
+
+def test_tyre_writes_share_the_batch_pipeline(client: fakeredis.FakeRedis) -> None:
+    spy = _Spy(client)
+    store = R.RaceStore(spy, _settings(), now=_clock())  # type: ignore[arg-type]
+    n = store.write_batch(2024, 5, _tyre_batch())
+    assert n == 3 * 2 + 2 + 2 + 2 * 2  # + HSET and EXPIRE per tyre hash
+    assert spy.calls == [{"transaction": False}] and spy.executes == 1
+    # a batch of tyre lives alone is not empty
+    assert store.write_batch(2024, 5, R.Batch(tyres=TYRES)) == 4 and spy.executes == 2
+
+
+def test_invalid_tyre_driver_id_sends_nothing(
+    store: R.RaceStore, client: fakeredis.FakeRedis
+) -> None:
+    bad = replace(_batch(), tyres={"Max Verstappen": TYRES["norris"]})
+    with pytest.raises(K.InvalidKeyError):
+        store.write_batch(2024, 5, bad)
+    assert client.dbsize() == 0
+
+
+def test_async_store_writes_and_reads_tyres(server: fakeredis.FakeServer) -> None:
+    async def run() -> None:
+        client = fakeredis.FakeAsyncRedis(server=server, decode_responses=True)
+        store = R.AsyncRaceStore(client, _settings(), now=_clock())
+        assert await store.write_batch(2025, 7, _tyre_batch()) == 14
+        got = await store.get_tyre(2025, 7, "max_verstappen")
+        assert got is not None and got.tyre == TYRES["max_verstappen"]
+        assert await store.end_session(2025, 7) == 6
+
+    asyncio.run(run())

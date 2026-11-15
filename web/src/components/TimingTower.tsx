@@ -1,6 +1,7 @@
-import { driverCode, driverName, gap, lapTime, laps, probability } from "@/lib/format";
+import { driverCode, driverName, gap, lapTime, probability } from "@/lib/format";
 import type { DriverRow } from "@/lib/reducer";
 
+import { TyreAge } from "./TyreAge";
 import { COMPOUND_LABEL, TyreGlyph } from "./TyreGlyph";
 
 export const TOWER_ROWS = 22;
@@ -22,7 +23,9 @@ export function TimingTower({ rows, lapsDown }: { rows: DriverRow[]; lapsDown: (
             <th scope="col" className="c-num">Gap</th>
             <th scope="col" className="c-num">Last lap</th>
             <th scope="col" className="c-tyre">Tyre</th>
-            <th scope="col" className="c-age">Age</th>
+            <th scope="col" className="c-age">
+              <abbr title="Tyre life in laps: real (used = the set had laps before this stint), or est. = inferred">Age</abbr>
+            </th>
             <th scope="col" className="c-num"><abbr title="Calibrated undercut success probability">Undercut</abbr></th>
           </tr>
         </thead>
@@ -49,7 +52,9 @@ export function TimingTower({ rows, lapsDown }: { rows: DriverRow[]; lapsDown: (
                 <td className="c-tyre">
                   <TyreGlyph compound={r.compound} /> <span>{COMPOUND_LABEL[r.compound]}</span>
                 </td>
-                <td className="c-age">{laps(r.tyreAgeLaps)}</td>
+                <td className="c-age">
+                  <TyreAge row={r} />
+                </td>
                 <td className="c-num">
                   {r.undercutFlag ? (
                     <span className="flag" title="Rule-eligible undercut attacker">

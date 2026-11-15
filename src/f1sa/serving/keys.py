@@ -4,6 +4,12 @@
 * ZSET    ``race:{season}:{round}:order`` (member = driverId, score = position)
 * PUBSUB  ``race:{season}:{round}:events`` (message types in ``EVENT_TYPES``)
 
+Additive, display-only extension (approved 2026-11-15; the three items above are unchanged):
+
+* HASH    ``race:{season}:{round}:tyre:{driverId}`` with the 4 fields in ``TYRE_FIELDS`` (the real
+  tyre life for the dashboard). Nothing model-related reads it. It matches ``race_pattern``, so it
+  gets the same safety TTL on every write and the same EXPIRE at ``session_end``.
+
 Every function is pure and validates its inputs (season 1950-2100, round 1-30, driverId
 ``[a-z0-9_]+``, the Jolpica ``driverId`` form). Invalid input raises ``InvalidKeyError``, so a
 malformed key never reaches Redis.
@@ -29,6 +35,14 @@ DRIVER_FIELDS: tuple[str, ...] = (
     "updated_at",
 )
 """The 9 hash fields, in contract order."""
+
+TYRE_FIELDS: tuple[str, ...] = (
+    "tyre_life_laps",
+    "tyre_life_at_start_laps",
+    "lap",
+    "updated_at",
+)
+"""The 4 fields of the additive, display-only tyre hash, in order."""
 
 EVENT_TYPES: tuple[str, ...] = ("lap", "pit_in", "pit_out", "undercut_alert", "session_end")
 """The Pub/Sub message types."""
@@ -68,6 +82,11 @@ def race_prefix(season: int, round_: int) -> str:
 def driver_key(season: int, round_: int, driver_id: str) -> str:
     """``race:{season}:{round}:driver:{driverId}``"""
     return f"{race_prefix(season, round_)}:driver:{validate_driver_id(driver_id)}"
+
+
+def tyre_key(season: int, round_: int, driver_id: str) -> str:
+    """``race:{season}:{round}:tyre:{driverId}`` (additive, display only)."""
+    return f"{race_prefix(season, round_)}:tyre:{validate_driver_id(driver_id)}"
 
 
 def order_key(season: int, round_: int) -> str:

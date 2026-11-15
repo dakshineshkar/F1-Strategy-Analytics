@@ -30,6 +30,9 @@ export interface LapEvent extends Base {
   lapTimeS: number | null;
   compound: Compound;
   tyreAge: number | null;
+  /** Real tyre life (display only); null when unknown or absent from the payload. */
+  tyreLifeLaps: number | null;
+  tyreLifeAtStartLaps: number | null;
 }
 
 export interface PitEvent extends Base {
@@ -97,6 +100,9 @@ function lap(payload: Obj, base: Base): LapEvent | null {
   const tyreAge = nullable(payload.tyre_age, isInt);
   if (position === undefined || lapTime === undefined || tyreAge === undefined) return null;
   if (compound !== null && compound !== undefined && !isStr(compound)) return null;
+  // display-only fields: anything but a valid int means unknown, never a dropped lap
+  const life = nullable(payload.tyre_life_laps, isInt);
+  const atStart = nullable(payload.tyre_life_at_start_laps, isInt);
   return {
     ...base,
     type: "lap",
@@ -107,6 +113,8 @@ function lap(payload: Obj, base: Base): LapEvent | null {
     lapTimeS: lapTime,
     compound: isCompound(compound) ? compound : "UNKNOWN",
     tyreAge,
+    tyreLifeLaps: life !== undefined && life !== null && life >= 1 ? life : null,
+    tyreLifeAtStartLaps: atStart !== undefined && atStart !== null && atStart >= 0 ? atStart : null,
   };
 }
 

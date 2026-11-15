@@ -95,6 +95,7 @@ export function snapshot(order: string[], more: Partial<RaceSnapshot> = {}): Rac
     round: 5,
     drivers: Object.fromEntries(order.map((id, i) => [id, driver(i + 1)])),
     order: order.map((driver_id, i) => ({ driver_id, position: i + 1 })),
+    tyres: {},
     ...more,
   };
 }

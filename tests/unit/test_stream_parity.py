@@ -215,7 +215,8 @@ def _event_view(out: Any, *, keep_compound: bool) -> tuple[Any, ...]:
     d = out.event.to_dict()
     d.pop("event_id")
     if not keep_compound:
-        d.pop("compound")
+        for f in E.DISPLAY_FIELDS:  # compound and the real tyre life
+            d.pop(f)
     return (out.partition, tuple(sorted(d.items())))
 
 
@@ -223,8 +224,9 @@ def test_tracinginsights_compound_changes_no_model_input(
     spark: SparkSession, model: dict[str, Any], scenario_tables: dict[str, Any]
 ) -> None:
     """Full-mode-shaped races (v1 compound null) with and without ``stints_tracinginsights``:
-    the events differ only in ``compound``; the decisions (21 inputs, P), the alerts and every
-    Redis field except ``tyre_compound`` / ``updated_at`` are identical."""
+    the events differ only in the display fields (``compound``, ``tyre_life_*``); the decisions
+    (21 inputs, P), the alerts and every driver-hash field except ``tyre_compound`` /
+    ``updated_at`` are identical. The additive tyre hash carries the real life only with TI."""
     from _stream_fixtures import full_mode_frames
 
     from f1sa.serving import keys as K
@@ -273,6 +275,17 @@ def test_tracinginsights_compound_changes_no_model_input(
         assert base_h[key]["tyre_compound"] == "UNKNOWN"
         assert ti_h[key]["tyre_compound"] in ("SOFT", "MEDIUM", "UNKNOWN")
     assert {h["tyre_compound"] for h in ti_h.values()} >= {"MEDIUM"}
+    # the tyre hash: unknown without TI, the real life (fixture: 5 laps before each stint) with it
+    for race in races:
+        for d in {x.driver_id for x in base_inputs[race].laps}:
+            bt = base_redis.hgetall(K.tyre_key(*race, d))
+            tt = ti_redis.hgetall(K.tyre_key(*race, d))
+            assert tuple(bt) == tuple(tt) == K.TYRE_FIELDS
+            assert bt["tyre_life_laps"] == "" and bt["lap"] == tt["lap"]
+            if tt["tyre_life_laps"]:
+                assert int(tt["tyre_life_at_start_laps"]) == 5 and int(tt["tyre_life_laps"]) > 5
+    n_life = sum(x.tyre_life_laps is not None for r in races for x in ti_inputs[r].laps)
+    assert n_life == sum(len(ti_inputs[r].laps) for r in races)  # every fixture lap is covered
 
 
 def test_sample_lake_events_keep_the_synthetic_compounds(sample_tables: dict[str, Any]) -> None:

@@ -8,9 +8,9 @@ from pathlib import Path
 import pytest
 from _api_fixtures import make_api, make_settings
 
-from f1sa.api.models import DriverStateOut
+from f1sa.api.models import DriverStateOut, TyreLifeOut
 from f1sa.serving import keys as K
-from f1sa.serving.redis_store import AsyncRaceStore, Batch, DriverState
+from f1sa.serving.redis_store import AsyncRaceStore, Batch, DriverState, TyreLife
 
 pytestmark = pytest.mark.anyio
 
@@ -48,7 +48,8 @@ async def test_state_returns_every_hash_and_the_order(tmp_path: Path) -> None:
         resp = await c.get("/api/races/2024/5/state")
     assert resp.status_code == 200
     body = resp.json()
-    assert set(body) == {"season", "round", "drivers", "order"}
+    assert set(body) == {"season", "round", "drivers", "order", "tyres"}
+    assert body["tyres"] == {}  # no tyre hash written: the optional map is empty
     assert (body["season"], body["round"]) == (2024, 5)
     assert sorted(body["drivers"]) == ["leclerc", "max_verstappen", "norris"]
     for d in body["drivers"].values():
@@ -138,3 +139,57 @@ async def test_503_when_redis_is_down(tmp_path: Path) -> None:
         resp = await c.get("/api/races/2024/5/state")
     assert resp.status_code == 503
     assert resp.json() == {"detail": "Redis unavailable"}
+
+
+# ------------------------------------------------------------- additive tyre hash (display only)
+async def test_state_adds_the_optional_tyres_map_next_to_the_contract(tmp_path: Path) -> None:
+    api = make_api(make_settings(tmp_path))
+    await _seed(api)
+    store = AsyncRaceStore(api.redis, api.deps.settings, now=lambda: T0)  # type: ignore[attr-defined]
+    await store.write_batch(
+        2024,
+        5,
+        Batch(
+            tyres={
+                "max_verstappen": TyreLife(lap=30, tyre_life_laps=16, tyre_life_at_start_laps=3),
+                "norris": TyreLife(lap=29, tyre_life_laps=None, tyre_life_at_start_laps=None),
+            }
+        ),
+    )
+    async with api.client() as c:
+        body = (await c.get("/api/races/2024/5/state")).json()
+    assert tuple(TyreLifeOut.model_fields) == (
+        "lap",
+        "tyre_life_laps",
+        "tyre_life_at_start_laps",
+        "updated_at",
+    )
+    assert body["tyres"] == {
+        "max_verstappen": {
+            "lap": 30,
+            "tyre_life_laps": 16,
+            "tyre_life_at_start_laps": 3,
+            "updated_at": "2024-05-05T20:14:03.125Z",
+        },
+        "norris": {
+            "lap": 29,
+            "tyre_life_laps": None,
+            "tyre_life_at_start_laps": None,
+            "updated_at": "2024-05-05T20:14:03.125Z",
+        },
+    }
+    # the driver hashes are untouched: exactly the 9 fields, inferred age as before
+    for d in body["drivers"].values():
+        assert tuple(d) == K.DRIVER_FIELDS
+    assert body["drivers"]["max_verstappen"]["tyre_age_laps"] == 12
+    assert sorted(body["drivers"]) == ["leclerc", "max_verstappen", "norris"]  # not a driver
+
+
+async def test_a_malformed_tyre_hash_is_skipped_never_a_500(tmp_path: Path) -> None:
+    api = make_api(make_settings(tmp_path))
+    await _seed(api)
+    await api.redis.hset(K.tyre_key(2024, 5, "norris"), mapping={"tyre_life_laps": "x"})
+    async with api.client() as c:
+        resp = await c.get("/api/races/2024/5/state")
+    assert resp.status_code == 200
+    assert resp.json()["tyres"] == {} and len(resp.json()["drivers"]) == 3

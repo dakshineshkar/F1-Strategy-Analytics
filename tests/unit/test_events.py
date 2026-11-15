@@ -189,3 +189,24 @@ def test_alert_payload_parses_with_the_spark_schema(spark: SparkSession) -> None
     assert got["inputs"]["laps_remaining"] is None
     assert (got["batch_received_at_ms"], got["redis_written_at_ms"]) == (10, 12)
     assert set(payload) == {f.name for f in schema.fields}
+
+
+# ------------------------------------------------------------------ display-only tyre life
+def test_tyre_life_fields_are_optional_lap_only_and_validated() -> None:
+    assert E.FIELD_NAMES[-2:] == ("tyre_life_laps", "tyre_life_at_start_laps")
+    assert E.DISPLAY_FIELDS == ("compound", "tyre_life_laps", "tyre_life_at_start_laps")
+    assert not set(E.DISPLAY_FIELDS) & set(E.CONTEXT_FIELDS)
+    ev = lap(tyre_life_laps=4, tyre_life_at_start_laps=3)
+    assert E.from_json(ev.to_json()) == ev
+    assert lap().tyre_life_laps is None and lap().tyre_life_at_start_laps is None
+    # an event without the new keys (an older producer) still parses
+    old = {k: v for k, v in lap().to_dict().items() if not k.startswith("tyre_life")}
+    assert E.from_dict(old) == lap(event_id=old["event_id"])
+    for bad in ({"tyre_life_laps": 0}, {"tyre_life_laps": True}, {"tyre_life_at_start_laps": -1},
+                {"tyre_life_at_start_laps": 1.5}):  # fmt: skip
+        with pytest.raises(E.EventError):
+            lap(**bad)
+    with pytest.raises(E.EventError, match="tyre_life_laps"):
+        E.RaceEvent(
+            E.new_event_id(), "pit_in", 2024, 5, 10.0, driver_id="a", lap=3, tyre_life_laps=2
+        )

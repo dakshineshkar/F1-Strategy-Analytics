@@ -14,6 +14,10 @@
   stint in progress (the driver's latest stint with ``start_lap <= lap``; ``end_lap`` is never
   read, the convention of ``sim.whatif.stint_starts``), then the v1 stint's compound, else null
   (``UNKNOWN`` in Redis). A race whose v1 stints are synthetic (sample mode) keeps them.
+* The real tyre life (``tyre_life_laps``, ``tyre_life_at_start_laps``; display only) comes from the
+  same TracingInsights stint in progress: ``tyre_age_at_start + lap - start_lap + 1`` (FastF1
+  TyreLife, which counts laps of earlier use), null when the stint's starting life is unknown
+  (never assumed new) or the race is synthetic. ``tyre_age`` is never changed by it.
 * Events, ordered by race time: ``pit_in`` (in-lap L) just before ``lap`` L at the line crossing,
   ``pit_out`` (lap L+1) at the crossing plus the stop time (never after the next crossing), then
   one ``session_end`` per topic partition.
@@ -79,6 +83,10 @@ class LapRecord:
     track_red_flag: bool
     compound_source: str = "none"
     """Where ``compound`` came from: one of ``COMPOUND_SOURCES``."""
+    tyre_life_laps: int | None = None
+    """Real tyre life at the end of the lap (TracingInsights; display only), or None."""
+    tyre_life_at_start_laps: int | None = None
+    """Laps already on the set when its stint began (> 0: a used set), or None."""
 
 
 @dataclass(frozen=True)
@@ -123,6 +131,26 @@ def ti_compound_at(stints: Sequence[StintStart], driver_id: str, lap: int) -> st
     if not started:
         return None
     return normalise_compound(max(started, key=lambda s: s.start_lap).compound)
+
+
+def ti_tyre_life_at(
+    stints: Sequence[StintStart] | None, driver_id: str, lap: int
+) -> tuple[int | None, int | None]:
+    """``(tyre_life_laps, tyre_life_at_start_laps)`` of ``driver_id`` at the end of ``lap`` from
+    the TracingInsights stint in progress (the largest ``start_lap <= lap``; later stints and the
+    stint's end are never used): life = laps on the set before the stint + laps into it. So the
+    in-lap still counts the old set and the out-lap starts the new one (1 for a new set, n + 1
+    for a set with n laps of earlier use). ``(None, None)`` without a TI source, without a started
+    stint, or when the stint's starting life is unknown (never assumed new)."""
+    if stints is None:
+        return None, None
+    started = [s for s in stints if s.driver_id == driver_id and s.start_lap <= lap]
+    if not started:
+        return None, None
+    s = max(started, key=lambda s: s.start_lap)
+    if s.tyre_age_at_start is None or s.tyre_age_at_start < 0:
+        return None, None
+    return s.tyre_age_at_start + lap - s.start_lap + 1, s.tyre_age_at_start
 
 
 def resolve_compound(
@@ -188,6 +216,7 @@ def race_inputs(frames: Mapping[str, Any], season: int, round_: int) -> RaceInpu
 
     def record(r: Any) -> LapRecord:
         compound, source = resolve_compound(ti_stints, r["driver_id"], int(r["lap"]), r["compound"])
+        life, at_start = ti_tyre_life_at(ti_stints, r["driver_id"], int(r["lap"]))
         return LapRecord(
             driver_id=r["driver_id"],
             lap=int(r["lap"]),
@@ -198,6 +227,8 @@ def race_inputs(frames: Mapping[str, Any], season: int, round_: int) -> RaceInpu
             track_neutral=bool(r["track_neutral"]),
             track_red_flag=bool(r["track_red_flag"]),
             compound_source=source,
+            tyre_life_laps=life,
+            tyre_life_at_start_laps=at_start,
         )
 
     lap_records = tuple(record(r) for r in rows)
@@ -325,6 +356,8 @@ def build_events(inputs: RaceInputs, n_partitions: int) -> list[Outgoing]:
             track_neutral=lap.track_neutral,
             track_red_flag=lap.track_red_flag,
             race_laps=inputs.race_laps,
+            tyre_life_laps=lap.tyre_life_laps,
+            tyre_life_at_start_laps=lap.tyre_life_at_start_laps,
         )
         keyed.append((t, _KIND_ORDER["lap"], lap.driver_id, lap.lap, ev))
     last_time: dict[str, float] = {}
@@ -522,6 +555,12 @@ def main(
     print(
         f"compound: {cov['tracinginsights']} tracinginsights, {cov['v1_stints']} v1_stints, "
         f"{cov['none']} unknown of {n_laps} laps ({100.0 * known / n_laps:.1f}% known)"
+    )
+    life = [r for r in inputs.laps if r.tyre_life_laps is not None]
+    used = sum(1 for r in life if (r.tyre_life_at_start_laps or 0) > 0)
+    print(
+        f"tyre life: {len(life)} of {n_laps} laps known ({100.0 * len(life) / n_laps:.1f}%), "
+        f"{used} on a used set"
     )
     if args.dry_run:
         return 0

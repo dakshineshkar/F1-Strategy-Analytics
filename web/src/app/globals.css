@@ -80,6 +80,8 @@ h2 {
   border-radius: 2px; font: 700 0.68rem/1.4 var(--font-num); letter-spacing: 0.06em; color: var(--muted);
 }
 .tag-pit { border-color: var(--warn); color: var(--warn); }
+.tag-used { margin-left: 0.3rem; font-size: 0.62rem; }
+.age-est { margin-left: 0.25rem; font: italic 0.7rem/1 var(--font-num); color: var(--muted); text-decoration: none; }
 
 .code { font: 700 0.9rem/1 var(--font-num); letter-spacing: 0.08em; }
 
@@ -144,7 +146,7 @@ input[type="search"], select {
 .tower .c-num { width: 6.4rem; text-align: right; font-family: var(--font-num); }
 .tower thead .c-num { text-align: right; }
 .tower .c-tyre { width: 7.5rem; }
-.tower .c-age { width: 3.5rem; text-align: right; font-family: var(--font-num); }
+.tower .c-age { width: 5.5rem; text-align: right; font-family: var(--font-num); white-space: nowrap; }
 .tower .name { color: var(--muted); }
 .tower tr.is-flagged .c-pos { box-shadow: inset 4px 0 0 var(--accent); }
 .flag { color: var(--accent-ink); font-weight: 800; }
@@ -164,10 +166,10 @@ input[type="search"], select {
 
 /* Tyres */
 .tyres { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.15rem; min-height: calc(1.6rem * 20); }
-.tyre-row { display: grid; grid-template-columns: 2.6rem 6rem 1fr 4.2rem; align-items: center; gap: 0.5rem; height: 1.6rem; }
+.tyre-row { display: grid; grid-template-columns: 2.6rem 6rem 1fr 7rem; align-items: center; gap: 0.5rem; height: 1.6rem; }
 .age-bar { height: 0.55rem; background: var(--surface-2); border: 1px solid var(--border); border-radius: 2px; overflow: hidden; }
 .age-fill { display: block; height: 100%; background: var(--bar); }
-.age-num { font: 0.8rem/1 var(--font-num); text-align: right; color: var(--muted); }
+.age-num { font: 0.8rem/1 var(--font-num); text-align: right; color: var(--muted); white-space: nowrap; }
 
 /* Alerts: fixed height, scrolls inside. */
 .feed { height: 18rem; overflow-y: auto; }

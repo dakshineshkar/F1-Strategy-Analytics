@@ -1,18 +1,21 @@
 import { driverCode, driverName } from "@/lib/format";
 import type { DriverRow } from "@/lib/reducer";
+import { tyreAgeView } from "@/lib/tyre";
 
+import { TyreAge } from "./TyreAge";
 import { COMPOUND_LABEL, TyreGlyph } from "./TyreGlyph";
 
 export const AGE_SCALE_LAPS = 40;
 
-/** Compound as text plus a shape, and tyre age as a bar with its number. */
+/** Compound as text plus a shape, and tyre age as a bar with its number: the real tyre life when
+ * known (marked "used" for a set with earlier laps), else the inferred age marked "est.". */
 export function TyrePanel({ rows }: { rows: DriverRow[] }) {
   return (
     <section className="panel tyre-panel" aria-labelledby="tyres-h">
       <h2 id="tyres-h">Tyres</h2>
       <ul className="tyres">
         {rows.map((r) => {
-          const age = r.tyreAgeLaps;
+          const age = tyreAgeView(r).laps;
           const pct = age === null ? 0 : Math.min(100, (age / AGE_SCALE_LAPS) * 100);
           return (
             <li key={r.driverId} className="tyre-row">
@@ -23,7 +26,9 @@ export function TyrePanel({ rows }: { rows: DriverRow[] }) {
               <span className="age-bar" aria-hidden="true">
                 <span className="age-fill" style={{ width: `${pct}%` }} />
               </span>
-              <span className="age-num">{age === null ? "— laps" : `${age} ${age === 1 ? "lap" : "laps"}`}</span>
+              <span className="age-num">
+                <TyreAge row={r} unit />
+              </span>
             </li>
           );
         })}

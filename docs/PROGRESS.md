@@ -1246,14 +1246,94 @@
   - Rebuilt `f1sa-app:dev` (`docker compose build app`, user approved). Recreated only the five containers
     using it (api, app, spark-master, spark-worker-1, spark-worker-2) with `up -d --no-deps --no-build`. The
     baked `/opt/venv` copy now has the change, and all 11 services are healthy. No volume was touched.
+- Step 17 follow-up 2 (2026-11-15): real tyre life on the dashboard (display only). **Done.**
+  - **Problem.** In full mode the Age column showed the Jolpica-inferred stint age, which assumes every stint
+    starts on a new set.
+  - **Investigation.**
+    - Readers of the event `tyre_age` / hash `tyre_age_laps`:
+      - live features: the x-axis of the degradation slopes (kept as it is);
+      - the `live_state` snapshot and the detector (carried, never scored);
+      - `RedisSink`;
+      - the what-if fallbacks after the TI stint;
+      - API `/state`, the what-if route and `lap_log`;
+      - the web reducer, tower and tyre panel;
+      - `latency_bench`.
+    - TyreLife = laps on the set including earlier use (1 on the first lap of a new set). The clean
+      `tyre_age_at_start` = that value − 1. `tyre_age_at_start + lap − start_lap + 1` equals the raw per-lap
+      value on 1129/1129 laps of 2024 R1.
+    - Used sets: 419 / 246 / 339 / 263 stints in 2021-2024.
+    - `decode_state` rejects any 10th hash field.
+  - **Redis (user approved 2026-11-15).** A new, additive, display-only HASH
+    `race:{s}:{r}:tyre:{driverId}` (`tyre_life_laps`, `tyre_life_at_start_laps`, `lap`, `updated_at`).
+    - It is queued in the batch's one pipeline. It gets the safety TTL and the `session_end` EXPIRE, because it
+      matches `race:{s}:{r}:*`.
+    - The 9-field driver hash, the zset and the channel are unchanged.
+    - Documented in CLAUDE.md and `docs/architecture.md`.
+  - **Change.**
+    - The producer has `ti_tyre_life_at`: the TI stint in progress, never `end_lap`; null when the start life
+      is unknown or the race is synthetic.
+    - `RaceEvent` gets two last fields, `tyre_life_laps` and `tyre_life_at_start_laps`
+      (`events.DISPLAY_FIELDS`).
+    - `RedisSink` writes the tyre hash for the latest lap per car (an older lap never overwrites it) and adds
+      the fields to the lap payload. `WriteRecord.n_tyres` is new.
+    - `redis_store` has `TyreLife`, `encode/decode_tyre`, `Batch.tyres` and `get_tyre`.
+    - The API adds `RaceStateOut.tyres` (optional; a malformed hash is skipped). The what-if uses `drivers`
+      only.
+    - Web: `lib/tyre.ts`, `components/TyreAge.tsx`, and the reducer fields. The Age column and the tyre panel
+      show the real life with a `used` tag, or the inferred age with `est.` (text plus a screen-reader
+      sentence, no colour coding). Sample mode shows its synthetic age as `est.`.
+  - **Evidence.**
+    - Sample 2024 R5 alert check: 113 / 19 / 9. All 141 alerts and 409 decisions are byte-identical to the dump
+      before the change. The 1113 events are identical except the two new fields (null in sample mode).
+    - Stream parity 2021-2024 (`--out data/demo/parity_check2/`): 90 races, 157 labelled attempts, 0
+      mismatches, byte-identical to `results/stream_parity_full.csv` (sha256 aad8df67…).
+    - `make experiments-sample`: OK 7, OK (metadata differs) 1, DIFF 0. The what-if CSV and PNG are
+      byte-identical.
+    - Full replay of 2024 R1 at 60x:
+      - Tyre life is known on 1129 of 1129 laps; 145 laps are on a used set.
+      - After the leader's lap 10, the nine cars that started on a used SOFT show real 12–13 against inferred
+        9–10 (at_start 3). At lap 44 hulkenberg shows real 4 against inferred 3 (at_start 1). After lap 30 all
+        20 cars are on new HARD sets (real = inferred).
+      - 41 race keys. The tyre and driver hashes have TTL 21600 before `session_end` and 3593 after it.
+    - **Latency** (2024 R1, FULL=1, 60x; two runs before, two after; `stream_batches.jsonl` and
+      `streaming_latency.csv`):
+      - commands per batch: 50 → 63 (+1 HSET + 1 EXPIRE per lap event, about 6.6 tyre hashes per batch);
+      - `write_ms` p50: 1.20 / 1.18 → 1.32 / 1.32 ms;
+      - `write_ms` p95: 1.56 / 1.58 → 1.83 / 1.91 ms;
+      - `write_ms` p99: 2.57 / 1.94 → 2.35 / 2.26 ms;
+      - `end_to_end_ms` p50: 705 / 712 → 703 / 710 ms, and p95 1300 / 1263 → 1298 / 1290 ms.
+      - About +0.13 ms per batch at the median, well inside the noise of the end-to-end numbers.
+      - One `execute()` per batch (test_tyre_writes_share_the_batch_pipeline).
+  - **Tests.**
+    - Python: `test_producer` (pit boundaries, used sets, no later stints, nulls, synthetic guard),
+      `test_events`, `test_keys`, `test_redis_store` (fields, TTL, session_end expire, one pipeline, key
+      validation, async), `test_redis_sink`, `test_stream_parity` (events differ only in `DISPLAY_FIELDS`;
+      decisions, alerts and the 9 fields identical), `test_api_state` (tyres map, malformed skipped) and
+      `test_api_whatif` (a tyre hash never changes a what-if).
+    - Vitest: `tests/tyre.test.ts` (view, parsing, reducer newest-lap rule, reload, rendering).
+    - Full unit suite: 1741 passed. Web: lint and typecheck clean, 161 Vitest tests passed.
+  - Resolved the known issue "the tyre age shown next to a real compound is assumed-new".
+  - **Services** (user approved).
+    - Rebuilt `f1sa-app:dev` (be37257d283d) and `f1sa-web:dev` (dd94baedc24b).
+    - Recreated only their containers: app, spark-master, spark-worker-1/2 and web with `--no-deps
+      --no-build`, and the api with `make api-up REPLAY=1` (sample) for the smoke.
+    - The Playwright smoke (`E2E_NO_SERVER=1 npx playwright test e2e/smoke.spec.ts`, against the web
+      container) **passed** in 20.8 s.
+    - The live `/state` returns `tyres` for 20 cars (null life in sample mode), and the driver hashes keep
+      the 9 fields.
+    - After the smoke's replay finished, the api was restored with `make api-up FULL=1 REPLAY=1`.
+    - All 11 services are healthy: health ok (redis, kafka, model). Volumes were not touched.
 ## Next
 - S18: report, docs and demo rehearsal (#44): `docs/report/`, `docs/demo_script.md`.
 - Push and watch the first CI run of the `e2e` job on GitHub (runner build time and disk are unmeasured).
 ## Known issues
 - Step 17 follow-up: the replay's compound is the TracingInsights stint label. It is built from all of the stint's
   per-lap labels, so a later conflicting label nulls the whole stint. It is display only and not the strict
-  laps <= L-1 rule of the model's `*_compound_ti` inputs. `tyre_age` on the events stays the v1 value, which is
-  assumed new in full mode, so the hash can show a real compound with a Jolpica-inferred age.
+  laps <= L-1 rule of the model's `*_compound_ti` inputs. (The assumed-new tyre age next to it is resolved:
+  the dashboard shows the real tyre life from the additive tyre hash.)
+- Step 17 follow-up 2: the driver hash's `tyre_age_laps` and the event `tyre_age` remain the inferred
+  (assumed-new) model age by design. Only the dashboard shows the real life. Sample mode has no real value, so
+  it shows its synthetic age as `est.`.
 - Step 17: `make stream-demo RECORD=1` (the Step 12 files) and `make experiments-spark RECORD=1` overwrite their
   `results/` files without refusing (documented in `docs/reproduce.md`; not changed in this step).
 - Step 17: the sample deployment model is degenerate by design: 4 training attempts, 1 validation attempt, identity

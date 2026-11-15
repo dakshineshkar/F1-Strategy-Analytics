@@ -504,6 +504,18 @@ The key contract in CLAUDE.md is the only key layout. `keys.py` builds the names
   with milliseconds (`2024-05-05T20:14:03.125Z`, set by the store). A missing value is `""` (for example,
   the leader's `gap_ahead_s`, or `undercut_prob` before the car is scored). `tyre_compound` is one of
   SOFT/MEDIUM/HARD/INTERMEDIATE/WET/UNKNOWN, never `""`. `decode_state` is the exact inverse.
+- **Tyre hash (additive, display only; approved 2026-11-15)** `race:{s}:{r}:tyre:{driverId}`. It is an extension
+  next to the contract: the 9-field driver hash, the order zset and the channel are unchanged. It holds 4 string
+  fields, `keys.TYRE_FIELDS`:
+  - `tyre_life_laps`: the real TracingInsights tyre life, int ≥ 1;
+  - `tyre_life_at_start_laps`: laps on the set before the stint, int ≥ 0; > 0 means a used set;
+  - `lap`: the lap the value belongs to;
+  - `updated_at`.
+
+  Unknown values are `""`. `decode_tyre` is the exact inverse, and its writes are queued in the same pipeline as
+  the batch. The key matches `race:{s}:{r}:*`, so it gets the same safety TTL and the same `session_end`
+  EXPIRE. Nothing model-related reads it (the stream job never reads Redis, and the what-if uses the driver
+  hashes only).
 - **Order** `race:{s}:{r}:order`: ZADD, member = driverId, score = position (unique ints ≥ 1). Drivers stay in
   the set for the whole session (a DNF keeps its classified position), so the upsert is the complete update.
 - **Events** on the channel `race:{s}:{r}:events`: JSON with `type` (lap, pit_in, pit_out, undercut_alert,
@@ -539,6 +551,15 @@ clean zone (one race) --producer: race order x SPEED, key=driver_id, acks=all, i
   - one `session_end` per partition.
 
   Season 2025 is refused unless `--allow-test-season` is given.
+- **Lap-event tyre life** (`producer.ti_tyre_life_at`, display only). It uses the same TracingInsights stint in
+  progress (largest `start_lap <= lap`, never `end_lap`):
+  - `tyre_life_laps = tyre_age_at_start + lap - start_lap + 1`, equal to FastF1 TyreLife on all 1129 laps of
+    2024 R1;
+  - `tyre_life_at_start_laps = tyre_age_at_start`.
+
+  Both are null when no stint has started, when the starting life is unknown (never assumed new) and in
+  synthetic races. They are the last two `RaceEvent` fields (`events.DISPLAY_FIELDS`), and `tyre_age` is
+  unchanged.
 - **Lap-event compound** (`producer.resolve_compound`, display only). `tyre_age` always comes from
   `df_jobs.tyre_age` over the v1 clean `stints`, as in the batch features. The compound is resolved per lap:
   1. the real compound of the additive `clean/stints_tracinginsights` stint in progress: the driver's stint with
@@ -621,7 +642,14 @@ or feature tables apart from the earlier-race priors and the entry list.
     `undercut_flag` (1 when the car is a rule-eligible attacker at its latest evaluated decision lap) and
     `undercut_prob` (its calibrated P);
   - the full order set (unique live rank: laps completed, then crossing time);
-  - `lap` / `pit_in` / `pit_out` events, and the `undercut_alert` messages the alert policy selects (below).
+  - the additive tyre hash of every car whose latest received lap is in the batch. It carries the lap event's
+    `tyre_life_laps` / `tyre_life_at_start_laps`, and null values are written too, so a stint with an unknown
+    start clears the old value. An older lap never overwrites it. Cost: one HSET and one EXPIRE per lap event,
+    in the same pipeline. Measured on 2024 R1 (FULL=1, 60x, two runs before and two after):
+    - commands per batch: 50 → 63;
+    - `write_ms` p50: 1.19 → 1.32 ms; p95: 1.57 → 1.87 ms;
+    - `end_to_end_ms` p50: 705–712 → 703–710 ms, i.e. unchanged within noise;
+  - `lap` / `pit_in` / `pit_out` events (the lap payload also carries the two tyre-life fields), and the `undercut_alert` messages the alert policy selects (below).
 - **Latency fields.** Every payload carries `produced_at_ms`, `batch_received_at_ms` and `redis_written_at_ms`.
   - A PUBLISH inside the pipeline cannot carry the time the pipeline finished, so `redis_written_at_ms` is the
     client time just before the batch is sent.
@@ -697,6 +725,10 @@ Docs: `/api/docs`, `/api/openapi.json`.
   `redis_store.decode_state`: `""` becomes `null`, `undercut_flag` a boolean, `updated_at` the stored ISO
   string. Drivers are keyed by driverId; `order` is the sorted set by position. A key that expires between
   SCAN and HGETALL is skipped.
+  - `RaceStateOut.tyres` is optional and additive: `{driverId: {lap, tyre_life_laps, tyre_life_at_start_laps,
+    updated_at}}` from the tyre hashes, read in the same pipeline. A malformed one is logged and left out, so it
+    never causes a 500. `routes/whatif.py` builds its `LiveDriver`s from `drivers` only
+    (`test_the_tyre_hash_never_changes_a_what_if`).
 - **SSE framing** (`sse.py`): subscribe, then `retry: 3000` and `: connected`; per message
   `event: <type>`, `id: <event_id>`, `data: <stored JSON + event_id + sse_sent_at_ms>`; `: heartbeat` every
   `API_SSE_HEARTBEAT_S` (15 s) regardless of traffic; the stream ends after `session_end`. Non-JSON, unknown
@@ -704,7 +736,7 @@ Docs: `/api/docs`, `/api/openapi.json`.
   - **`event: snapshot`** (pushed, never polled). The API reads the race's full state from Redis (every
     driver hash plus the order zset, **one** `pipeline(transaction=False)`, `api/state.py`, shared with
     `GET /state`) and sends `event: snapshot`, `id: snapshot-<lap>`, with data `{type: "snapshot", season,
-    round, lap, drivers, order, event_id, sse_sent_at_ms}`:
+    round, lap, drivers, order, tyres, event_id, sse_sent_at_ms}`:
     - once right after connect (`snapshot-0`; the drivers are found with one SCAN);
     - once per race lap, right after the first `lap` event whose lap number is higher than the last
       snapshot's (the leader's lap). These read the drivers already known, so they never SCAN.
@@ -825,6 +857,9 @@ browser ── GET /api/races, /api/health ────────────�
   - A lap event updates the latest lap. Its gaps come from `race_time_s` at the same lap number (the
     `timing_gaps` definition: leader = Jolpica P1, the car ahead = P − 1). The order follows the stream
     job's live rank (`live_state.live_order`).
+  - Tyre life (display only): `tyreLifeLaps` / `tyreLifeAtStartLaps` / `tyreLifeLap` come from lap events and
+    the snapshot's `tyres`, whichever has the newer lap. A snapshot without `tyres` keeps them. `tyreAgeLaps`
+    (the inferred age of the hash) is kept apart.
   - `pit_in` / `pit_out` set and clear "IN PIT" and count stops.
   - Alerts are grouped by attacker → defender (latest P, reason, trigger, count).
   - `session_end` closes the race.
@@ -837,6 +872,14 @@ browser ── GET /api/races, /api/health ────────────�
     scrollable tower and alert list are focusable regions.
   - The picker supports arrow keys, Home and End, with a polite result count. The focus ring is a 3 px
     amber outline with an offset.
+  - Tyre age (`components/TyreAge.tsx`, `lib/tyre.ts`), in the Age column and the tyre panel:
+    - the real tyre life, plus a text `used` tag when the set had laps before the stint;
+    - otherwise the inferred age with an `est.` abbreviation ("estimated: inferred stint age, assumes a new
+      set"), or a dash.
+    - The visible text is `aria-hidden`; one sentence is read instead (for example "16 laps on a used set (3
+      laps before this stint)"). Nothing depends on colour.
+    - In sample mode the real value is null (synthetic stints ignore TracingInsights), so the synthetic age is
+      shown as `est.`.
   - Compounds are text plus a distinct glyph (solid, half, ring, hatched, drop, dashed "?"). Chart lines
     differ in colour **and** dash, carry end labels with collision layout, and come with a hidden data
     table.

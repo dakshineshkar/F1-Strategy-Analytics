@@ -21,7 +21,14 @@ race_time_s        race clock (s since lights out): the lap's line crossing, the
 track_neutral      ``lap`` only: the batch per-lap flag (SC/VSC/red flag or neutralised)
 track_red_flag     ``lap`` only: the batch red-flag flag
 race_laps          ``lap`` only: the race distance in laps
+tyre_life_laps     ``lap`` only, display only: the real tyre life (TracingInsights TyreLife: laps on
+                   the set including earlier use) at the end of the lap, or null when unknown
+tyre_life_at_start_laps  ``lap`` only, display only: laps already on the set when the stint began
+                   (> 0: a used set), or null
 =================  =========================================================================
+
+The two ``tyre_life_*`` fields are never read by the rule, the live features, the scorer or the
+what-if (``tyre_age`` stays the batch definition); they only reach the dashboard.
 
 The last three fields are **replayed race context** (Step 12 decision): the batch values come
 from the Jolpica heuristic, which uses the whole race's green median, and from the winner's lap
@@ -50,6 +57,10 @@ INFRA_HEADER = ("test", b"infra")
 """Header of the Step 2 infrastructure test message, which must never reach the race logic."""
 CONTEXT_FIELDS: tuple[str, ...] = ("track_neutral", "track_red_flag", "race_laps")
 """Replayed race context: the only non-causal values in the stream (see the module docstring)."""
+DISPLAY_FIELDS: tuple[str, ...] = ("compound", "tyre_life_laps", "tyre_life_at_start_laps")
+"""Lap-event fields that no rule, live feature or scorer input reads. ``compound`` is also a
+what-if fallback (``sim.whatif._tyre_at``); the two ``tyre_life_*`` fields reach only the
+dashboard."""
 
 
 class EventError(ValueError):
@@ -73,6 +84,8 @@ class RaceEvent:
     track_neutral: bool | None = None
     track_red_flag: bool | None = None
     race_laps: int | None = None
+    tyre_life_laps: int | None = None
+    tyre_life_at_start_laps: int | None = None
 
     def __post_init__(self) -> None:
         validate(self)
@@ -143,6 +156,8 @@ def validate(e: RaceEvent) -> None:
     _int("tyre_age", e.tyre_age, 0)
     _int("produced_at_ms", e.produced_at_ms, 0)
     _int("race_laps", e.race_laps, 1)
+    _int("tyre_life_laps", e.tyre_life_laps, 1)
+    _int("tyre_life_at_start_laps", e.tyre_life_at_start_laps, 0)
     _bool("track_neutral", e.track_neutral)
     _bool("track_red_flag", e.track_red_flag)
     if e.compound is not None and e.compound not in COMPOUNDS:
@@ -161,6 +176,8 @@ def validate(e: RaceEvent) -> None:
             "position": e.position,
             "compound": e.compound,
             "tyre_age": e.tyre_age,
+            "tyre_life_laps": e.tyre_life_laps,
+            "tyre_life_at_start_laps": e.tyre_life_at_start_laps,
             **{c: getattr(e, c) for c in CONTEXT_FIELDS},
         }
         set_fields = sorted(k for k, v in lap_only.items() if v is not None)
@@ -241,6 +258,8 @@ def spark_schema() -> StructType:
         "track_neutral": BooleanType(),
         "track_red_flag": BooleanType(),
         "race_laps": IntegerType(),
+        "tyre_life_laps": IntegerType(),
+        "tyre_life_at_start_laps": IntegerType(),
     }
     if tuple(types) != FIELD_NAMES:
         raise AssertionError("spark_schema is out of step with RaceEvent")

@@ -221,6 +221,52 @@ def test_resolve_compound_precedence() -> None:
     assert PR.resolve_compound(None, "a", 7, None) == (None, "none")
 
 
+# ------------------------------------------------------------------ real tyre life (display only)
+def tl(driver: str, start: int, age0: int | None) -> StintStart:
+    return StintStart(driver_id=driver, start_lap=start, compound="SOFT", tyre_age_at_start=age0)
+
+
+LIFE = (tl("a", 1, 3), tl("a", 7, 0), tl("a", 20, 4), tl("b", 1, 0), tl("b", 10, None))
+"""``a``: a used set from qualifying (3 laps), then a new set from lap 7, a used one from 20."""
+
+
+def test_ti_tyre_life_at_pit_boundaries_and_used_sets() -> None:
+    assert [PR.ti_tyre_life_at(LIFE, "a", n) for n in (1, 2, 6, 7, 8, 19, 20, 21)] == [
+        (4, 3),  # lap 1 on a set with 3 earlier laps (TyreLife counts the lap itself)
+        (5, 3),
+        (9, 3),  # the in-lap is still the old set
+        (1, 0),  # the out-lap starts the new set
+        (2, 0),
+        (13, 0),
+        (5, 4),  # out-lap on a used set: 4 earlier laps + this one
+        (6, 4),
+    ]
+
+
+def test_ti_tyre_life_at_never_uses_later_stints_or_the_stint_end() -> None:
+    for n in range(1, 25):
+        future = tuple(
+            replace(s, tyre_age_at_start=99, compound="WET") if s.start_lap > n else s
+            for s in (*LIFE, tl("a", 30, 7))
+        )
+        assert PR.ti_tyre_life_at(future, "a", n) == PR.ti_tyre_life_at(LIFE, "a", n)
+
+
+def test_ti_tyre_life_at_unknowns() -> None:
+    assert PR.ti_tyre_life_at(None, "a", 5) == (None, None)  # no TI source (sample lake)
+    assert PR.ti_tyre_life_at(LIFE, "zzz", 5) == (None, None)  # driver without TI stints
+    assert PR.ti_tyre_life_at((tl("a", 3, 0),), "a", 2) == (None, None)  # no stint started
+    assert PR.ti_tyre_life_at(LIFE, "b", 9) == (9, 0)
+    assert PR.ti_tyre_life_at(LIFE, "b", 10) == (None, None)  # unknown start life: never new
+    assert PR.ti_tyre_life_at((tl("a", 1, -1),), "a", 2) == (None, None)
+    # a conflicting compound does not hide the tyre life
+    conflict = stint_starts(
+        [{"driver_id": "a", "start_lap": 1, "compound": "HARD", "tyre_age_at_start": 2,
+          "compound_conflict": True}]
+    )  # fmt: skip
+    assert PR.ti_tyre_life_at(conflict, "a", 3) == (5, 2)
+
+
 def test_compound_coverage_counts_every_source() -> None:
     laps = [
         replace(lap("a", 1, 1, 90.0), compound_source="tracinginsights"),
@@ -242,7 +288,16 @@ def test_race_inputs_take_the_compound_from_tracinginsights(
     stops = {(s.driver_id, s.lap) for s in got.stops}
     for b, r in zip(base.laps, got.laps, strict=True):
         # tyre age and every other field come from the v1 path, unchanged (TI age 5 is never used)
-        assert replace(r, compound=None, compound_source="none") == b
+        assert (
+            replace(
+                r,
+                compound=None,
+                compound_source="none",
+                tyre_life_laps=None,
+                tyre_life_at_start_laps=None,
+            )
+            == b
+        )
         pitted = any(d == r.driver_id and p < r.lap for d, p in stops)
         if r.driver_id == "d" and pitted:  # conflicting TI stint, v1 has no compound
             assert (r.compound, r.compound_source) == (None, "none")
@@ -252,6 +307,11 @@ def test_race_inputs_take_the_compound_from_tracinginsights(
     # the in-lap keeps the old tyre, the out-lap gets the new one (a pits at the end of lap 6)
     by_key = {(r.driver_id, r.lap): r.compound for r in got.laps}
     assert (by_key[("a", 6)], by_key[("a", 7)]) == ("SOFT", "MEDIUM")
+    # real tyre life: the fixture's TI sets start with 5 laps on them; tyre_age stays the v1 value
+    life = {(r.driver_id, r.lap): (r.tyre_life_laps, r.tyre_life_at_start_laps) for r in got.laps}
+    assert life[("a", 1)] == (6, 5) and life[("a", 6)] == (11, 5) and life[("a", 7)] == (6, 5)
+    assert {(r.tyre_life_laps, r.tyre_life_at_start_laps) for r in base.laps} == {(None, None)}
+    assert all(r.tyre_life_laps != r.tyre_age for r in got.laps if r.tyre_life_laps is not None)
     assert (got.stops, got.race_laps) == (base.stops, base.race_laps)
 
 
@@ -264,6 +324,7 @@ def test_race_inputs_ignore_tracinginsights_for_synthetic_stints(
     assert got == scenario["inputs"]
     assert {r.compound_source for r in got.laps} == {"v1_stints"}
     assert {r.compound for r in got.laps} == {"MEDIUM", "HARD"}
+    assert {(r.tyre_life_laps, r.tyre_life_at_start_laps) for r in got.laps} == {(None, None)}
 
 
 def test_check_season_refuses_the_test_season() -> None:
@@ -414,4 +475,6 @@ def test_main_replays_the_sample_race(
     out = capsys.readouterr().out
     assert f"compound: 0 tracinginsights, {len(laps)} v1_stints, 0 unknown" in out
     assert "(100.0% known)" in out
+    assert f"tyre life: 0 of {len(laps)} laps known (0.0%), 0 on a used set" in out
+    assert all(e.tyre_life_laps is None and e.tyre_life_at_start_laps is None for e in laps)
     assert PR.main([*args, "--dry-run"], spark_factory=lambda: spark) == 0

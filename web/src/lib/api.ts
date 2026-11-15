@@ -30,11 +30,21 @@ export interface DriverState {
   updated_at: string;
 }
 
+/** The additive, display-only tyre hash ``race:{s}:{r}:tyre:{driverId}``: the real (TracingInsights)
+ * tyre life at ``lap``. Never part of the 9-field driver hash. */
+export interface TyreLife {
+  lap: number;
+  tyre_life_laps: number | null;
+  tyre_life_at_start_laps: number | null;
+}
+
 export interface RaceSnapshot {
   season: number;
   round: number;
   drivers: Record<string, DriverState>;
   order: { driver_id: string; position: number }[];
+  /** Optional: missing in older API responses and for cars without a tyre hash. */
+  tyres: Record<string, TyreLife>;
 }
 
 export interface Lake {
@@ -123,6 +133,15 @@ export function toDriverState(v: unknown): DriverState | undefined {
   };
 }
 
+export function toTyreLife(v: unknown): TyreLife | undefined {
+  if (!isObj(v) || !isInt(v.lap) || v.lap < 1) return undefined;
+  const life = nullable(v.tyre_life_laps, isInt);
+  const atStart = nullable(v.tyre_life_at_start_laps, isInt);
+  if (life === undefined || atStart === undefined) return undefined;
+  if ((life !== null && life < 1) || (atStart !== null && atStart < 0)) return undefined;
+  return { lap: v.lap, tyre_life_laps: life, tyre_life_at_start_laps: atStart };
+}
+
 export function toSnapshot(v: unknown): RaceSnapshot | undefined {
   if (!isObj(v) || !isInt(v.season) || !isInt(v.round) || !isObj(v.drivers)) return undefined;
   if (!Array.isArray(v.order)) return undefined;
@@ -137,7 +156,15 @@ export function toSnapshot(v: unknown): RaceSnapshot | undefined {
     if (!isObj(o) || !isDriverId(o.driver_id) || !isInt(o.position)) return undefined;
     order.push({ driver_id: o.driver_id, position: o.position });
   }
-  return { season: v.season, round: v.round, drivers, order };
+  // display only: a malformed tyre entry is dropped, never the snapshot
+  const tyres: Record<string, TyreLife> = {};
+  if (isObj(v.tyres)) {
+    for (const [id, raw] of Object.entries(v.tyres)) {
+      const t = toTyreLife(raw);
+      if (isDriverId(id) && t !== undefined) tyres[id] = t;
+    }
+  }
+  return { season: v.season, round: v.round, drivers, order, tyres };
 }
 
 export function toHealth(v: unknown): Health | undefined {

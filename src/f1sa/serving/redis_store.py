@@ -15,6 +15,11 @@ undercut_prob      float ``repr`` in [0, 1], ``""`` when not scored
 updated_at         ISO-8601 UTC with milliseconds, ``2024-05-05T20:14:03.125Z`` (set by the store)
 =================  ==========================================================================
 
+The additive, display-only tyre hash ``race:{s}:{r}:tyre:{driverId}`` (``keys.TYRE_FIELDS``; all 4
+always written, ``""`` when unknown): ``tyre_life_laps`` (int >= 1), ``tyre_life_at_start_laps``
+(int >= 0), ``lap`` (int >= 1, the lap the value belongs to) and ``updated_at``. It is queued in the
+same pipeline as the driver hashes and follows the same TTL rules.
+
 Events on ``race:{s}:{r}:events`` are JSON objects with ``type`` (``keys.EVENT_TYPES``),
 ``season``, ``round``, ``event_ts`` (the caller's event time, ISO-8601 UTC ms, or null),
 ``published_at`` (set by the store) and ``payload``.
@@ -133,6 +138,66 @@ def encode_state(state: DriverState, now: datetime) -> dict[str, str]:
 
 
 @dataclass(frozen=True)
+class TyreLife:
+    """The real tyre life of one driver at ``lap`` (display only; ``updated_at`` set by the
+    store). ``None`` values mean unknown."""
+
+    lap: int
+    tyre_life_laps: int | None
+    tyre_life_at_start_laps: int | None
+
+    def __post_init__(self) -> None:
+        _int("lap", self.lap, 1, nullable=False)
+        _int("tyre_life_laps", self.tyre_life_laps, 1, nullable=True)
+        _int("tyre_life_at_start_laps", self.tyre_life_at_start_laps, 0, nullable=True)
+
+
+def _opt(value: int | None) -> str:
+    return NULL if value is None else str(value)
+
+
+def encode_tyre(tyre: TyreLife, now: datetime) -> dict[str, str]:
+    """The 4 tyre-hash fields as strings, in ``keys.TYRE_FIELDS`` order."""
+    out = {
+        "tyre_life_laps": _opt(tyre.tyre_life_laps),
+        "tyre_life_at_start_laps": _opt(tyre.tyre_life_at_start_laps),
+        "lap": str(tyre.lap),
+        "updated_at": iso_ms(now),
+    }
+    assert tuple(out) == K.TYRE_FIELDS
+    return out
+
+
+@dataclass(frozen=True)
+class StoredTyreLife:
+    tyre: TyreLife
+    updated_at: str
+
+
+def decode_tyre(raw: Mapping[Any, Any]) -> StoredTyreLife | None:
+    """The inverse of ``encode_tyre``; ``None`` for an empty hash. Raises ``StoreError`` (or
+    ``ValueError``) on a hash outside the 4 fields."""
+    if not raw:
+        return None
+    h = {_text(k): _text(v) for k, v in raw.items()}
+    if set(h) != set(K.TYRE_FIELDS):
+        raise StoreError(f"tyre hash fields {sorted(h)} differ from {K.TYRE_FIELDS}")
+
+    def i(name: str) -> int | None:
+        return None if h[name] == NULL else int(h[name])
+
+    lap = i("lap")
+    if lap is None:
+        raise StoreError("tyre hash lap is empty")
+    tyre = TyreLife(
+        lap=lap,
+        tyre_life_laps=i("tyre_life_laps"),
+        tyre_life_at_start_laps=i("tyre_life_at_start_laps"),
+    )
+    return StoredTyreLife(tyre=tyre, updated_at=h["updated_at"])
+
+
+@dataclass(frozen=True)
 class StoredDriverState:
     """A decoded hash: the state plus its ``updated_at`` string."""
 
@@ -227,11 +292,13 @@ Commands = redis.client.Pipeline | aioredis.client.Pipeline
 
 @dataclass(frozen=True)
 class Batch:
-    """One micro-batch: driver states, optional full order and events."""
+    """One micro-batch: driver states, optional full order, events and (display only) tyre
+    lives."""
 
     states: Mapping[str, DriverState] = field(default_factory=dict)
     order: Mapping[str, int] | None = None
     events: Sequence[Event] = ()
+    tyres: Mapping[str, TyreLife] = field(default_factory=dict)
 
 
 class _Base:
@@ -246,6 +313,16 @@ class _Base:
         """HSET all 9 fields, then EXPIRE with the safety TTL. Returns the commands queued."""
         key = K.driver_key(season, round_, driver_id)
         fields: dict[Any, Any] = encode_state(state, self.now())  # redis-py's Mapping is invariant
+        pipe.hset(key, mapping=fields)
+        pipe.expire(key, self.settings.redis_safety_ttl_s)
+        return 2
+
+    def upsert_tyre(
+        self, pipe: Commands, season: int, round_: int, driver_id: str, tyre: TyreLife
+    ) -> int:
+        """HSET the 4 tyre fields, then EXPIRE with the safety TTL (same pipeline as the batch)."""
+        key = K.tyre_key(season, round_, driver_id)
+        fields: dict[Any, Any] = encode_tyre(tyre, self.now())
         pipe.hset(key, mapping=fields)
         pipe.expire(key, self.settings.redis_safety_ttl_s)
         return 2
@@ -265,11 +342,13 @@ class _Base:
         return 1
 
     def _queue_batch(self, pipe: Commands, season: int, round_: int, batch: Batch) -> int:
-        if not (batch.states or batch.order or batch.events):
+        if not (batch.states or batch.order or batch.events or batch.tyres):
             raise StoreError("empty micro-batch")
         n = 0
         for driver_id, state in batch.states.items():
             n += self.upsert_driver_state(pipe, season, round_, driver_id, state)
+        for driver_id, tyre in batch.tyres.items():
+            n += self.upsert_tyre(pipe, season, round_, driver_id, tyre)
         if batch.order is not None:
             n += self.set_order(pipe, season, round_, batch.order)
         for event in batch.events:
@@ -345,6 +424,9 @@ class RaceStore(_Base):
     ) -> StoredDriverState | None:
         return decode_state(self.client.hgetall(K.driver_key(season, round_, driver_id)))
 
+    def get_tyre(self, season: int, round_: int, driver_id: str) -> StoredTyreLife | None:
+        return decode_tyre(self.client.hgetall(K.tyre_key(season, round_, driver_id)))
+
     def get_order(self, season: int, round_: int) -> list[tuple[str, int]]:
         """``[(driverId, position), ...]`` by position."""
         return _decode_order(
@@ -399,6 +481,9 @@ class AsyncRaceStore(_Base):
         self, season: int, round_: int, driver_id: str
     ) -> StoredDriverState | None:
         return decode_state(await self.client.hgetall(K.driver_key(season, round_, driver_id)))
+
+    async def get_tyre(self, season: int, round_: int, driver_id: str) -> StoredTyreLife | None:
+        return decode_tyre(await self.client.hgetall(K.tyre_key(season, round_, driver_id)))
 
     async def get_order(self, season: int, round_: int) -> list[tuple[str, int]]:
         rows = await self.client.zrange(K.order_key(season, round_), 0, -1, withscores=True)

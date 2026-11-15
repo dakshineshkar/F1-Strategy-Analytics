@@ -74,3 +74,29 @@ def test_pattern_matches_only_its_race() -> None:
     assert fnmatchcase(K.order_key(2024, 2), pattern)
     for other in (K.order_key(2024, 25), K.order_key(2024, 12), K.order_key(2023, 2)):
         assert not fnmatchcase(other, pattern)
+
+
+# ------------------------------------------------------------- additive tyre hash (display only)
+def test_tyre_key_is_additive_and_exact() -> None:
+    assert K.tyre_key(2024, 5, "max_verstappen") == "race:2024:5:tyre:max_verstappen"
+    assert K.TYRE_FIELDS == ("tyre_life_laps", "tyre_life_at_start_laps", "lap", "updated_at")
+    # the 9-field driver hash is unchanged and shares no field name with the tyre hash
+    assert len(K.DRIVER_FIELDS) == 9 and "tyre_age_laps" in K.DRIVER_FIELDS
+    assert not set(K.TYRE_FIELDS) - {"updated_at"} & set(K.DRIVER_FIELDS)
+    # it is a race key: the SCAN pattern (TTL, session_end EXPIRE) matches it, other races do not
+    assert fnmatchcase(K.tyre_key(2024, 5, "a"), K.race_pattern(2024, 5))
+    assert not fnmatchcase(K.tyre_key(2024, 15, "a"), K.race_pattern(2024, 1))
+    # never mistaken for a driver hash
+    assert not K.tyre_key(2024, 5, "a").startswith(K.driver_key(2024, 5, "a")[:-1])
+
+
+@pytest.mark.parametrize("driver_id", ["VER", "max-verstappen", "", "a:b", "x*", None, 44])
+def test_tyre_key_validates_the_driver_id(driver_id: object) -> None:
+    with pytest.raises(K.InvalidKeyError, match="driverId"):
+        K.tyre_key(2024, 5, driver_id)  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize(("season", "round_"), [(1949, 5), (2024, 0), (2024, 31), (True, 5)])
+def test_tyre_key_validates_the_race(season: object, round_: object) -> None:
+    with pytest.raises(K.InvalidKeyError):
+        K.tyre_key(season, round_, "a")  # type: ignore[arg-type]

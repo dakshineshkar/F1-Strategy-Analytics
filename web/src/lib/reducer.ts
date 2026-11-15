@@ -36,7 +36,13 @@ export interface DriverRow {
   gapLeaderS: number | null;
   lastLapTimeS: number | null;
   compound: Compound;
+  /** Inferred stint age (the model's value; assumes a new set in full mode). */
   tyreAgeLaps: number | null;
+  /** Real tyre life (TracingInsights; display only), the lap it belongs to, and the laps already on
+   * the set when the stint began. Null when unknown. */
+  tyreLifeLaps: number | null;
+  tyreLifeAtStartLaps: number | null;
+  tyreLifeLap: number | null;
   undercutFlag: boolean;
   undercutProb: number | null;
   /** Latest lap seen on the stream (null until the first lap event). */
@@ -136,6 +142,9 @@ function emptyRow(driverId: string): DriverRow {
     lastLapTimeS: null,
     compound: "UNKNOWN",
     tyreAgeLaps: null,
+    tyreLifeLaps: null,
+    tyreLifeAtStartLaps: null,
+    tyreLifeLap: null,
     undercutFlag: false,
     undercutProb: null,
     lap: null,
@@ -234,6 +243,9 @@ function applyLap(state: RaceState, e: LapEvent): RaceState {
       lastLapTimeS: e.lapTimeS,
       compound: e.compound,
       tyreAgeLaps: e.tyreAge,
+      tyreLifeLaps: e.tyreLifeLaps,
+      tyreLifeAtStartLaps: e.tyreLifeAtStartLaps,
+      tyreLifeLap: e.lap,
     };
   } else {
     drivers[e.driverId] = row; // an older lap: history only, the tower never regresses
@@ -327,8 +339,15 @@ function applySnapshot(state: RaceState, data: RaceSnapshot): RaceState {
   const drivers: Record<string, DriverRow> = { ...state.drivers };
   for (const [id, h] of Object.entries(data.drivers)) {
     const row = drivers[id] ?? emptyRow(id);
+    // the tyre hash carries its lap: never let an older one replace what a newer lap event set
+    const t = data.tyres[id];
+    const tyre =
+      t !== undefined && (row.tyreLifeLap === null || t.lap >= row.tyreLifeLap)
+        ? { tyreLifeLaps: t.tyre_life_laps, tyreLifeAtStartLaps: t.tyre_life_at_start_laps, tyreLifeLap: t.lap }
+        : {};
     drivers[id] = {
       ...row,
+      ...tyre,
       known: true,
       gapAheadS: h.gap_ahead_s,
       gapLeaderS: h.gap_leader_s,
