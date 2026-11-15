@@ -1465,6 +1465,46 @@
       `test_makefile_{api,bench,stream}`, `test_api_config` and `test_repo_docs`.
     - The bench-supplement and RESUME tests pass unchanged.
     - Full unit suite: 1759 passed.
+- Step 17 follow-up 6 (2026-11-15): Fix E, deployment model re-saved from a clean tree. **Done.**
+  - **Why.** `models/undercut/deploy_real_G3.5_k2/{lr,gbt}/metadata.json` recorded `git_dirty: true` and
+    `git_sha 36c369b` from the Step 9c save. There is no top-level `metadata.json`.
+  - **How.**
+    - The tree was clean at `b8eb0a9` (checked right before the save).
+    - The whole folder (50 files) was copied first to `data/model_backup/deploy_real_G3.5_k2_20261115T102348Z/` (gitignored), and its manifest was checked
+      equal to the original.
+    - `make model-save-full FORCE=1` (1 min 33 s) passed `F1SA_GIT_DIRTY=false`. It read only the
+      `season=2021..2024` feature partitions (8 partition lines, no 2025).
+    - The reproduction check MATCHED the committed development results on all 10 checks:
+      - LR: Platt a 1.5444072248837364, b −0.7114782477332869; Brier 0.168438, PR-AUC 0.593775;
+      - GBT: Brier 0.205233, PR-AUC 0.560198.
+  - **What changed** (28 files, `.crc` checksums aside):
+    - **Byte-identical (15):** `lr/scorer.json` (sha256 0a9b7dfb…), `lr/calibrator.json`,
+      `gbt/calibrator.json`, `reproduction.json`, and all `_SUCCESS` markers.
+    - **Different bytes, same model (13):**
+      - `{lr,gbt}/metadata.json`: only `created_utc`, `git_sha` (→ b8eb0a9) and `git_dirty` (→ false);
+      - the Spark `metadata/part-*.txt` files: only `timestamp`, `uid` and the uid-derived defaults
+        (`defaultParamMap.outputCol` = `<uid>__output`, overridden by the set `features_raw` / `features`; the
+        GBT default `seed`, a hash of the uid, overridden by the set seed 42);
+      - the parquet weight files (LR coefficients, StandardScaler, GBT nodes) have identical rows; only their
+        bytes and the stage-uid folder names differ;
+      - the GBT `treesMetadata`: tree ids and weights identical. The per-tree metadata JSON differs only in
+        `timestamp`, `uid` and the default seed.
+    - **Functional check (Spark, old vs new):**
+      - LR: 52 coefficients and the intercept (−0.21097365184916145) identical; scaler mean and std identical;
+      - GBT: all 50 trees (`toDebugString` without the uid line) and their weights identical;
+      - every explicitly set param identical.
+  - **Checks.**
+    - The api was recreated (`make api-up FULL=1 REPLAY=1`, user approved). `/api/health` now shows `git_dirty`
+      false, `git_sha` b8eb0a9…, the same `scorer_sha256` 0a9b7dfb… and `created_utc` 2026-11-15T10:25:25Z.
+    - The sample 2024 R5 alert check with the re-saved folder gives 113 / 19 / 9. The dump of all alerts,
+      decisions and events is byte-identical.
+    - `results/` is byte-identical (154 files); nothing in `models/` or `data/` is tracked.
+  - **Incident.** The api recreate stopped a 1x replay of 2024 R3 that was running (started 09:43:56, about
+    half the race, batch 592). The pre-check printed it, but I did not stop on it.
+    - Its outputs stay in `data/demo/2024_3_20261115T094356.761Z/`, and its Redis keys keep the 6 h safety TTL.
+    - It has no `session_end`, and a new replay of 2024 R3 starts over.
+  - The backup can be removed once you no longer need it. It restores with `cp -a` back to
+    `models/undercut/deploy_real_G3.5_k2/`.
 ## Next
 - S18: report, docs and demo rehearsal (#44): `docs/report/`, `docs/demo_script.md`.
 - Push and watch the first CI run of the `e2e` job on GitHub (runner build time and disk are unmeasured).
@@ -1620,9 +1660,6 @@
   - The data are MIT (2021-2024) or Apache-2.0 (2025) licensed as repos only. Neither covers the underlying F1/FOM
     data (see DATA_LICENSES.md).
 - The 1,936 old under-replicated blocks remain until the user runs `setrep` (see Next).
-- The deployment metadata records `git_dirty: true`, because it was saved before the Step 9c code was committed.
-  The sha (36c369b) is the parent commit. The model itself is unaffected (it is the same frozen procedure, and the
-  reproduction check matched).
 - Wet running is excluded as `neutralised` in full mode (compounds are null, so `wet` cannot fire). Kept on
   purpose; the reporting split estimates the share. See `docs/label_definition.md` "Known limitations".
 - At L=5 `gap_ahead_change_3l` uses the lap-1 gap (standing start). L=4 is now excluded as `early_lap`.
