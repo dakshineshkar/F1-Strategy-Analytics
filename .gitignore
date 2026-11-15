@@ -20,6 +20,8 @@ derby.log
 models/
 node_modules/
 .next/
+# generated knowledge graph (graphify)
+graphify-out/
 # coverage / packaging
 .coverage
 htmlcov/

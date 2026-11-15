@@ -1,0 +1,9 @@
+data/
+models/
+results/
+web/node_modules/
+web/.next/
+.venv/
+graphify-out/
+*.parquet
+*.png

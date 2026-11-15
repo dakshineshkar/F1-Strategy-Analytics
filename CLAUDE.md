@@ -50,3 +50,9 @@ Hadoop 3.4.3, FastF1 3.9.2, Next.js + TypeScript strict.
 - Repo lives in WSL filesystem; Docker via Docker Desktop WSL integration.
 - Spark in tests uses local[2] with spark.sql.shuffle.partitions=4 (see tests/conftest.py).
 - FastF1 3.9 returns empty sessions without F1 TV auth instead of raising.
+
+## graphify (knowledge graph; the /graphify skill is in .claude/skills/graphify/)
+- Build or update it with `/graphify . --update` after larger changes.
+- Query it before broad searches: `graphify query "<question>"`, `graphify path "<A>" "<B>"`,
+  `graphify explain "<concept>"`.
+- `graphify-out/` is generated and gitignored; never commit it. The hooks are personal: `.claude/settings.local.json`.
