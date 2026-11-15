@@ -777,13 +777,28 @@ def append_readme(path: Path, csv_name: str, pairs: Sequence[tuple[str, str]]) -
 def main(argv: Sequence[str] | None = None) -> int:
     """``python -m f1sa.bench.report --replot <scalability.csv> [--out <png>]``: redraw the build
     plot from a recorded CSV (no measurement). Default output: ``scalability_build.png`` next to
-    the CSV; only that file is written."""
+    the CSV; only that file is written. An existing output under ``results/`` is refused unless
+    ``--overwrite`` (``make bench-replot RECORD=1 OVERWRITE=1``), which first moves it to
+    ``data/results_backup/<stamp>/`` (Fix C, ``f1sa.recording``)."""
     import argparse
+
+    from f1sa.recording import RecordRefused, backup, check
 
     p = argparse.ArgumentParser(prog="f1sa-bench-report", description=main.__doc__)
     p.add_argument("--replot", type=Path, required=True, help="a scalability.csv")
     p.add_argument("--out", type=Path, default=None)
+    p.add_argument("--overwrite", action="store_true", help="back up an existing results/ plot")
+    p.add_argument("--repo", type=Path, default=Path.cwd(), help=argparse.SUPPRESS)
     args = p.parse_args(list(argv) if argv is not None else None)
+    target = args.out or args.replot.with_name("scalability_build.png")
+    results_root = (args.repo / "results").resolve()
+    in_results = results_root in (args.repo / target).resolve().parents
+    if in_results:
+        try:
+            check([args.repo / target], overwrite=args.overwrite)
+        except RecordRefused as exc:
+            print(f"replot: refused: {exc}")
+            return 2
     rows = read_csv_rows(args.replot)
     if not rows:
         print(f"replot: no rows in {args.replot}")
@@ -792,6 +807,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     if out.suffix != ".png":
         print(f"replot: {out} is not a .png")
         return 2
+    if in_results and args.overwrite:
+        backup([args.repo / out], root=args.repo / "data" / "results_backup")
     if not plot_build_axes(rows, out):
         print("replot: no ok build rows to plot")
         return 2

@@ -1405,6 +1405,66 @@
     - `web/tests/reducer.test.ts`: the new order gives 0, the old order gives 1 (the artefact), and genuinely
       unknown ids (lap, pit, alert) still increment, once each.
     - Full Python suite 1742 passed; web lint and typecheck clean, Vitest 174 passed.
+- Step 17 follow-up 5 (2026-11-15): Fix C, every recording path refuses to overwrite `results/`. **Done.**
+  - **Audit** (full table in `docs/reproduce.md` §3; all 154 files in `results/` are git-tracked):
+    - Two RECORD paths overwrote committed files silently: `make stream-demo RECORD=1` (the Step 12
+      `streaming_latency.csv`, `stream_{progress,batches}.jsonl`) and `make experiments-spark RECORD=1`
+      (`scalability.csv`, `scalability_{build,telemetry}.png`, `partitioning.csv`,
+      `partitioning_speedup.png`).
+    - `make bench-replot RECORD=1` also overwrote its plot.
+    - `make api-up DEBUG=1` appended to the committed `results/ui_latency.csv` by default.
+    - The deterministic generators (features-*, model-eval-sample, model-dev-*, report-full, etl-ti-full,
+      stream-parity-full, model-test-summary) rewrite their files by design and `make experiments` checks
+      their bytes. They are left as they are (user decision) and listed.
+  - **Change.**
+    - New `src/f1sa/recording.py`, the one guard:
+      - `check` refuses before any work, naming the files and how to proceed;
+      - `backup` moves files to `data/results_backup/<UTC stamp>/`. It never deletes and refuses an
+        existing folder;
+      - a small CLI for Makefile-side checks.
+    - `stream-demo RECORD=1`: refused before any process starts. With `OVERWRITE=1` the files are backed up
+      before the run, because its stream job writes into `results/` while running.
+    - `experiments-spark RECORD=1`:
+      - `python -m f1sa.bench.host check-record` covers all five files before the grid, and each script
+        checks again at its start;
+      - `OVERWRITE=1` backs up only right before the complete run writes, so an interrupted run leaves
+        `results/` intact. The resume command carries `OVERWRITE=1`;
+      - **RESUME of the same run** may rewrite only the files whose last README fingerprint section is that
+        run's (`fingerprinted_file`). Because the 2026-11-14 supplement merged into `scalability.csv` after
+        the original grid, `RESUME=bench_20261113T152740Z RECORD=1` is now refused for scalability, so it
+        cannot drop the merged rows. Its partitioning files still count as its own.
+    - `bench-supplement` keeps its own merge guard and ignores `OVERWRITE`.
+    - `bench-replot RECORD=1` refuses unless `OVERWRITE=1`, with a backup first.
+    - The streaming suite, the UI run and `redis-latency` keep refusing (now through the shared helper) and
+      gained `OVERWRITE=1`.
+    - The pre-registered recordings (`model-test-full`, `ablation-full`, `oracle-dev-full`,
+      `whatif-consistency-full`) stay refuse-only, without `OVERWRITE`.
+    - UI latency: the default is `data/demo/ui_latency/ui_latency.csv` (config, Makefile, compose,
+      `.env.example`). With `DEBUG=1`, `make api-up` checks an explicit `results/` CSV before recreating the
+      container (`OVERWRITE=1` backs it up), and `LatencyRecorder` refuses at api start-up.
+  - **Evidence.** No recording was run.
+    - `sha256sum results/*` (154 files) is identical before and after, and `git status results/` is clean.
+    - Dry runs:
+      - `make -n stream-demo … RECORD=1 OVERWRITE=1` gives `--record --overwrite`;
+      - `make -n experiments-spark RECORD=1` runs `check-record` first;
+      - `make -n bench-supplement … OVERWRITE=1` has no `--overwrite`.
+    - Against the real `results/`:
+      - `python -m f1sa.bench.host check-record --run-id bench_20991231T000000Z` refuses both scripts (exit 2);
+      - with `--overwrite` it passes and says 5 files would be moved;
+      - `python -m f1sa.recording check results/stream*` refuses (exit 2);
+      - `experiments/streaming_latency.py --record` refuses before starting anything.
+  - **Tests.**
+    - New `tests/unit/test_record_guard.py` (15), in temp directories only:
+      - the helper and the CLI;
+      - stream-demo refusal (nothing run, nothing written) and its overwrite backup;
+      - scalability and partitioning refusal (no cell run, no run folder) and overwrite only when complete;
+      - an interrupted overwrite leaves results intact;
+      - resume of the same run, and a later supplement making the run lose ownership;
+      - `check-record`, replot, suite, `redis-latency` and the api recorder.
+    - Updated: `test_demo_outputs` (RECORD=1 now refuses; OVERWRITE=1 records with a backup),
+      `test_makefile_{api,bench,stream}`, `test_api_config` and `test_repo_docs`.
+    - The bench-supplement and RESUME tests pass unchanged.
+    - Full unit suite: 1759 passed.
 ## Next
 - S18: report, docs and demo rehearsal (#44): `docs/report/`, `docs/demo_script.md`.
 - Push and watch the first CI run of the `e2e` job on GitHub (runner build time and disk are unmeasured).
@@ -1416,8 +1476,10 @@
 - Step 17 follow-up 2: the driver hash's `tyre_age_laps` and the event `tyre_age` remain the inferred
   (assumed-new) model age by design. Only the dashboard shows the real life. Sample mode has no real value, so
   it shows its synthetic age as `est.`.
-- Step 17: `make stream-demo RECORD=1` (the Step 12 files) and `make experiments-spark RECORD=1` overwrite their
-  `results/` files without refusing (documented in `docs/reproduce.md`; not changed in this step).
+- Fix C (2026-11-15): UI latency samples now default to `data/demo/ui_latency/ui_latency.csv`.
+  - `make api-up` always passes its own value, so the default wins there.
+  - A local `.env` (not read) that sets both `ENABLE_DEBUG=1` and `API_UI_LATENCY_CSV=results/...` would still
+    apply to a plain `make up` / `up-full`. The api then refuses to start while that results file exists.
 - Step 17: the sample deployment model is degenerate by design: 4 training attempts, 1 validation attempt, identity
   calibration. Its probabilities in the demo are plumbing, not findings.
 - Step 17: the CI `e2e` job has not run on GitHub yet. The app image is about 7 GB, so the job frees runner disk

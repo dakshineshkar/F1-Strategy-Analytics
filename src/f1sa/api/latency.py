@@ -2,8 +2,10 @@
 
 While debug is on, the SSE stream remembers the timings of every event it sends (bounded, newest
 10,000). The dashboard posts ``{event_id, ui_rendered_at_ms}``. The row appended to
-``results/ui_latency.csv`` joins that with the server-side timings of the event as it was sent,
-so the client cannot supply them. Columns, in order:
+``API_UI_LATENCY_CSV`` (default ``data/demo/ui_latency/ui_latency.csv``) joins that with the
+server-side timings of the event as it was sent, so the client cannot supply them. An existing CSV
+under ``results/`` is refused at start-up: samples never append to a committed file (Fix C; the
+recorded copy comes from ``make stream-latency-ui RECORD=1``). Columns, in order:
 
 ``event_id, event_type, season, round, produced_at_ms, batch_received_at_ms,
 redis_written_at_ms, sse_sent_at_ms, ui_rendered_at_ms, recorded_at_ms``
@@ -52,6 +54,12 @@ def _ms(value: Any) -> int | None:
     return value if isinstance(value, int) and not isinstance(value, bool) else None
 
 
+def in_results(path: Path, root: Path | None = None) -> bool:
+    """True if ``path`` lies under ``<root or cwd>/results`` (the committed results folder)."""
+    results = ((root or Path.cwd()) / "results").resolve()
+    return results in Path(path).resolve().parents
+
+
 class LatencyRecorder:
     def __init__(
         self,
@@ -63,6 +71,12 @@ class LatencyRecorder:
     ) -> None:
         if capacity < 1:
             raise ValueError(f"capacity must be >= 1, got {capacity}")
+        if enabled and in_results(path) and path.exists():
+            # never append to a committed results file (Fix C): `make api-up DEBUG=1` uses
+            # data/demo/ by default and refuses this before the container starts
+            from f1sa.recording import RecordRefused, refusal_message
+
+            raise RecordRefused(refusal_message([path]))
         self.path = path
         self.enabled = enabled
         self.capacity = capacity

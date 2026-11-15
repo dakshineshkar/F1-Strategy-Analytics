@@ -94,4 +94,6 @@ def test_reproduce_lists_every_record_target_and_the_integration_tests() -> None
     for t in overwriting.split():
         assert f"make {t}" in doc, t
     assert "tests/integration" in doc and "make test-int" in doc
-    assert "refuses" in doc and "overwrites, no guard" in doc
+    # Fix C: every RECORD path refuses
+    assert "refuses" in doc and "overwrites, no guard" not in doc
+    assert "OVERWRITE=1" in doc and "data/results_backup" in doc

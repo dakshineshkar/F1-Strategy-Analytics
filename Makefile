@@ -201,7 +201,10 @@ nuke: ## DESTRUCTIVE: remove containers AND volumes (requires CONFIRM=yes)
 SEASON ?= 2024
 ROUND ?= 5
 SPEED ?= 10
-STREAM_DEMO_ARGS = --season $(SEASON) --round $(ROUND) --speed $(SPEED)$(if $(filter 1,$(RECORD)), --record,)
+# RECORD=1 refuses before anything runs when one of its results/ files exists (Fix C); RECORD=1
+# OVERWRITE=1 first moves the existing files to data/results_backup/<UTC stamp>/ (never deleted).
+OVERWRITE_FLAG = $(if $(filter 1,$(OVERWRITE)), --overwrite,)
+STREAM_DEMO_ARGS = --season $(SEASON) --round $(ROUND) --speed $(SPEED)$(if $(filter 1,$(RECORD)), --record$(OVERWRITE_FLAG),)
 
 .PHONY: stream-demo stream-parity-full
 stream-demo: ## Replay one race: Kafka -> Streaming -> Redis, outputs in data/demo/<run_id> (SEASON ROUND SPEED [FULL=1] [RECORD=1 -> results/])
@@ -221,7 +224,7 @@ stream-parity-full: ## Batch vs stream feature parity over 2021-2024 (app contai
 # results/ names (refused if they exist; the Step 11/12 files are never touched) and appends one
 # fingerprint section per file to results/README.md. stream-latency-ui needs the api recreated with
 # `make api-up DEBUG=1 UI_LATENCY_CSV=data/demo/ui_latency/ui_latency.csv` and port 3000 free.
-STREAM_RECORD = $(if $(filter 1,$(RECORD)), --record,)
+STREAM_RECORD = $(if $(filter 1,$(RECORD)), --record$(OVERWRITE_FLAG),)
 
 .PHONY: stream-latency-suite stream-latency-ui redis-latency
 stream-latency-suite: ## Replay 2024 R5 at 10x and 60x (full race) and 1x (15-min window) with SSE, resources [RECORD=1]
@@ -268,7 +271,9 @@ whatif-consistency-full: ## What-if consistency + backtest 2021-2024 (app contai
 GRID_ARGS ?=
 PART_ARGS ?=
 RESUME ?=
-BENCH_RECORD = $(if $(filter 1,$(RECORD)), --record,)
+BENCH_RECORD = $(if $(filter 1,$(RECORD)), --record$(OVERWRITE_FLAG),)
+# bench-supplement merges into results/ with its own guard (no OVERWRITE)
+SUPP_RECORD = $(if $(filter 1,$(RECORD)), --record,)
 # := so both scripts get the same run id (evaluated once per make invocation)
 BENCH_RUN := $(or $(RESUME),bench_$(shell date -u +%Y%m%dT%H%M%SZ))
 BENCH_RUN_ARGS = --run-id $(BENCH_RUN)$(if $(RESUME), --resume,)$(BENCH_RECORD)
@@ -283,7 +288,10 @@ bench-smoke: bench-dirs ## Spark smoke (1 season, x1, every master, 1 run; parti
 	$(UV) run python experiments/scalability.py --smoke
 	$(UV) run python experiments/partitioning.py --smoke
 
-experiments-spark: bench-dirs ## FULL Spark grid + partitioning (hours, nothing else running) [RECORD=1 -> results/] [GRID_ARGS=] [PART_ARGS=] [RESUME=<run_id>]
+experiments-spark: bench-dirs ## FULL Spark grid + partitioning (hours, nothing else running) [RECORD=1 -> results/ [OVERWRITE=1]] [GRID_ARGS=] [PART_ARGS=] [RESUME=<run_id>]
+ifeq ($(RECORD),1)
+	$(UV) run python -m f1sa.bench.host check-record --run-id $(BENCH_RUN)$(OVERWRITE_FLAG)
+endif
 	$(UV) run python experiments/scalability.py $(BENCH_RUN_ARGS) $(GRID_ARGS)
 	$(UV) run python experiments/partitioning.py $(BENCH_RUN_ARGS) $(PART_ARGS)
 
@@ -296,14 +304,14 @@ CELLS ?=
 SUPP_RUN := $(or $(RESUME),bench_$(shell date -u +%Y%m%dT%H%M%SZ)_supp)
 bench-supplement: bench-dirs ## Re-run CELLS="..." of the recorded run SUPPLEMENT_OF=<run_id> with its grid [RECORD=1 -> merge into results/] [RESUME=]
 	@test -n "$(SUPPLEMENT_OF)" -a -n "$(CELLS)" || { echo 'bench-supplement needs SUPPLEMENT_OF=<run_id> CELLS="<cell ids>"' >&2; exit 2; }
-	$(UV) run python experiments/scalability.py --run-id $(SUPP_RUN)$(if $(RESUME), --resume,)$(BENCH_RECORD) --supplement-of $(SUPPLEMENT_OF) --only-cells $(CELLS)
+	$(UV) run python experiments/scalability.py --run-id $(SUPP_RUN)$(if $(RESUME), --resume,)$(SUPP_RECORD) --supplement-of $(SUPPLEMENT_OF) --only-cells $(CELLS)
 
 # Redraw the build plot from a scalability CSV (no measurement). RECORD=1 redraws
 # results/scalability_build.png only; otherwise the plot goes to data/bench/replot/.
 REPLOT_OUT = $(if $(filter 1,$(RECORD)),results/scalability_build.png,data/bench/replot/scalability_build.png)
-bench-replot: ## Redraw the build plot from results/scalability.csv [RECORD=1 -> results/scalability_build.png only]
+bench-replot: ## Redraw the build plot from results/scalability.csv [RECORD=1 -> results/scalability_build.png only; refused if it exists unless OVERWRITE=1]
 	@mkdir -p $(dir $(REPLOT_OUT))
-	$(UV) run python -m f1sa.bench.report --replot results/scalability.csv --out $(REPLOT_OUT)
+	$(UV) run python -m f1sa.bench.report --replot results/scalability.csv --out $(REPLOT_OUT)$(if $(filter 1,$(RECORD)),$(OVERWRITE_FLAG),)
 
 bench-clean: ## Delete benchmark data ./data/bench/* and HDFS /f1/bench/* (CONFIRM=yes; lists first)
 	$(UV) run python -m f1sa.bench.paths$(if $(filter yes,$(CONFIRM)), --yes,)
@@ -326,18 +334,26 @@ flag01 = $(if $(filter 1,$(1)),1,0)
 api: ## FastAPI on the host at 127.0.0.1:$(API_PORT) (default 8001; docs /api/docs; needs make up)
 	DATA_LAKE_URI=file://$(CURDIR)/data/lake API_PORT=$(API_PORT) $(UV) run python -m f1sa.api
 
+# DEBUG=1 records UI latency samples to API_UI_CSV (default under data/demo/, gitignored). A CSV
+# under results/ that exists is refused before the container is touched (Fix C); OVERWRITE=1 moves
+# it to data/results_backup/<UTC stamp>/ first.
+API_UI_CSV = $(or $(UI_LATENCY_CSV),data/demo/ui_latency/ui_latency.csv)
+API_UI_GUARD = $(if $(and $(filter 1,$(call flag01,$(DEBUG))),$(filter results/%,$(API_UI_CSV))),yes,)
 api-up: api-dirs ## Recreate only the api container: FULL=1 (HDFS lake; needs make up-full) REPLAY=1 DEBUG=1 TEST_SEASON=1 [UI_LATENCY_CSV=data/demo/...] [MODEL_DIR=models/undercut/...]
+ifneq ($(API_UI_GUARD),)
+	$(UV) run python -m f1sa.recording $(if $(filter 1,$(OVERWRITE)),backup,check) $(API_UI_CSV)
+endif
 ifeq ($(call flag01,$(FULL)),1)
 	@scripts/wait_for.sh -t 5 namenode datanode httpfs >/dev/null 2>&1 || { echo "FULL=1 needs the hdfs profile (namenode, datanode, httpfs healthy): run 'make up-full' first." >&2; exit 1; }
 endif
 	API_DATA_LAKE_URI=$(if $(filter 1,$(FULL)),$(API_HDFS_LAKE),$(API_FILE_LAKE)) \
 	ENABLE_REPLAY=$(call flag01,$(REPLAY)) ENABLE_DEBUG=$(call flag01,$(DEBUG)) \
 	ALLOW_TEST_SEASON=$(call flag01,$(TEST_SEASON)) \
-	API_UI_LATENCY_CSV=$(or $(UI_LATENCY_CSV),results/ui_latency.csv) \
+	API_UI_LATENCY_CSV=$(API_UI_CSV) \
 	API_MODEL_DIR=$(or $(MODEL_DIR),$(API_DEFAULT_MODEL_DIR)) \
 	$(COMPOSE) --profile core up -d --no-deps --no-build --force-recreate api
 	scripts/wait_for.sh -t 120 api
-	@echo "api: lake=$(if $(filter 1,$(FULL)),hdfs (full),file (sample)) replay=$(call flag01,$(REPLAY)) debug=$(call flag01,$(DEBUG)) test_season=$(call flag01,$(TEST_SEASON)) ui_latency_csv=$(or $(UI_LATENCY_CSV),results/ui_latency.csv) model_dir=$(or $(MODEL_DIR),$(API_DEFAULT_MODEL_DIR))"
+	@echo "api: lake=$(if $(filter 1,$(FULL)),hdfs (full),file (sample)) replay=$(call flag01,$(REPLAY)) debug=$(call flag01,$(DEBUG)) test_season=$(call flag01,$(TEST_SEASON)) ui_latency_csv=$(API_UI_CSV) model_dir=$(or $(MODEL_DIR),$(API_DEFAULT_MODEL_DIR))"
 
 api-dirs: # host folders of the bind mounts (Docker would create missing ones root-owned)
 	@mkdir -p data/demo data/checkpoints models/undercut models/sim

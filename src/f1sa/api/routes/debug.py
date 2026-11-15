@@ -21,7 +21,8 @@ router = APIRouter(tags=["debug"])
     },
 )
 async def ui_latency(body: LatencyIn, deps: Deps) -> LatencyOut:
-    """Append one UI render time to ``results/ui_latency.csv`` (``ENABLE_DEBUG=1``)."""
+    """Append one UI render time to ``API_UI_LATENCY_CSV`` (``ENABLE_DEBUG=1``; default
+    ``data/demo/ui_latency/ui_latency.csv``)."""
     try:
         row = await deps.latency.record(body.event_id, body.ui_rendered_at_ms)
     except UnknownEventError as exc:

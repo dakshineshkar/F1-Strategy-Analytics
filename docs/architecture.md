@@ -692,7 +692,7 @@ browser (http://localhost:3000) --CORS--> FastAPI (uvicorn, 127.0.0.1:8000)
   GET  /api/races/{s}/{r}/events           SUBSCRIBE race:{s}:{r}:events -> text/event-stream
   POST /api/races/{s}/{r}/replay           subprocesses: stream_job, then producer (ENABLE_REPLAY=1)
   GET  /api/replays                        running replays + the last 20 with state / error
-  POST /api/debug/latency                  results/ui_latency.csv (ENABLE_DEBUG=1)
+  POST /api/debug/latency                  API_UI_LATENCY_CSV, default data/demo/ui_latency/ (ENABLE_DEBUG=1)
   POST /api/races/{s}/{r}/whatif           Redis state + recorded laps + priors -> sim/ (S15)
 ```
 Run modes (README "API"):
@@ -806,9 +806,13 @@ Docs: `/api/docs`, `/api/openapi.json`.
     into or opened unless `ALLOW_TEST_SEASON=1`. The file reader applies the same table and season limits.
 - **Debug latency** (`latency.py`): with `ENABLE_DEBUG=1` the SSE stream remembers the timings of the last
   10,000 events it sent. A posted `ui_rendered_at_ms` is joined with them server-side and appended to
-  `results/ui_latency.csv` (`event_id, event_type, season, round, produced_at_ms, batch_received_at_ms,
+  `API_UI_LATENCY_CSV` (`event_id, event_type, season, round, produced_at_ms, batch_received_at_ms,
   redis_written_at_ms, sse_sent_at_ms, ui_rendered_at_ms, recorded_at_ms`), so the client supplies only its
   own render time.
+  - The default is `data/demo/ui_latency/ui_latency.csv` (Fix C; it used to be `results/ui_latency.csv`).
+  - An existing CSV under `results/` is refused: by `make api-up DEBUG=1` before the container is
+    recreated (`OVERWRITE=1` backs it up), and by the api at start-up.
+  - The committed `results/ui_latency.csv` comes only from `make stream-latency-ui RECORD=1`.
 - **Security:** binds 127.0.0.1 by default (the container binds 0.0.0.0 and is published on the host's
   127.0.0.1 only); CORS allows the `API_CORS_ORIGINS` list (default `http://localhost:3000` and
   `http://127.0.0.1:3000`; `*` refused), GET/POST, no credentials; replay and

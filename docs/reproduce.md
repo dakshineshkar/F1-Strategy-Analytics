@@ -79,33 +79,56 @@ Needs `make up-full`, which adds namenode, datanode, HttpFS, the Spark master an
 
 ## 3. Every target that writes `results/`
 
-"Refuses" means the target stops before any work if one of its output files exists, so a committed result
-cannot be replaced by accident. "Overwrites" means it rewrites the file. Those targets are deterministic, and
-`make experiments(-sample)` checks that a rerun gives the same bytes.
+Every file in `results/` is tracked by git (154 files; `git ls-files results`).
+- "Refuses" means the target stops before any work if one of its output files exists, prints which ones and
+  exits 2, so a committed result cannot be replaced by accident.
+- "Overwrites" means it rewrites the file. Those targets are deterministic, and `make experiments(-sample)`
+  checks that a rerun gives the same bytes.
 
-| Target | Files in `results/` | Existing file | Opens 2025 | In `make experiments` |
-|---|---|---|---|---|
-| `make features-sample` | `undercut_counts_sample.csv` | overwrites | no | sample: compared |
-| `make model-eval-sample` | `model_eval_sample.csv`, `calibration_sample.csv`, `feature_importance_sample.{csv,png}`, `reliability_sample.png`, `confusion_matrix_sample.png` | overwrites | no | sample: compared |
-| `make features-full` (`pipeline-full`) | `undercut_counts_full.csv` | overwrites | counts only, no model | no |
-| `make report-full` (`pipeline-full`) | `full_data_quality.json`, `constructors_full.csv`, `neutralisation_by_race_full.csv` | overwrites | data quality only | no |
-| `make etl-ti-full` | `tracinginsights_coverage_full.csv` | overwrites | coverage only | no |
-| `make model-dev-full`, `model-dev-tyre-full`, `model-dev-ti-full` | `model_dev_{eval,loso,calibration,class_balance,feature_importance,missing_rates,metadata,...}*` | overwrites | no | full: compared |
-| `make model-dev-permutation-ti-full` | `model_dev_permutation_real_ti*.csv` | overwrites | no | full: compared |
-| `make stream-parity-full` | `stream_parity_full.csv` | overwrites | no | full: compared |
-| `make model-test-full CONFIRM=yes` | `model_eval*`, `calibration*`, `feature_importance*`, `reliability*`, `confusion_matrix*`, `missing_rates*` (per feature set and setting) | **refuses** | **yes**, once | skipped |
-| `make model-test-summary` | `model_test_summary.csv` + the Results tables of `docs/model_results.md` (from the committed files, no evaluation) | overwrites | reads committed files only | skipped (unit-tested) |
-| `make ablation-full RECORD=1` | `ablation_paired.{csv,png}` + README section | **refuses** | **yes** (frozen models) | skipped |
-| `make oracle-dev-full RECORD=1` | `model_dev_{eval,loso}_oracle{,_G5.0_k3}.csv` | **refuses** | no | full: compared (sandbox) |
-| `make whatif-consistency-full RECORD=1` | `whatif_consistency.{csv,png}` (with the 2025 row) | **refuses** | **yes** | without RECORD: compared without the 2025 rows |
-| `make stream-latency-suite RECORD=1` | `streaming_latency_{s10,s60,s1w900}.csv`, `stream_{batches,progress}_{tag}.jsonl`, `streaming_{latency_summary,throughput,resources}.csv` + README sections | **refuses** | no | skipped (measurement) |
-| `make stream-latency-ui RECORD=1` | `ui_latency.csv`, `ui_latency_summary.csv`, `stream_*_s60ui.*`, `ui_streaming_*.csv` | **refuses** | no | skipped (measurement) |
-| `make redis-latency RECORD=1` | `redis_latency_quiet.csv` + README section | **refuses** | no | skipped (measurement) |
-| `make stream-demo RECORD=1` | `streaming_latency.csv`, `stream_progress.jsonl`, `stream_batches.jsonl` (the Step 12 run) | **overwrites, no guard** | no | skipped (measurement) |
-| `make experiments-spark RECORD=1` | `scalability.csv`, `scalability_{build,telemetry}.png`, `partitioning.csv`, `partitioning_speedup.png` + README fingerprints | **overwrites, no guard** (only when the grid is complete) | 2025 timing rows for scale only, no labels | skipped (hours) |
-| `make bench-supplement RECORD=1 SUPPLEMENT_OF=… CELLS=…` | appends re-run rows to `scalability.csv`, redraws the plots | refused if a named cell is `ok` or already re-run | as above | skipped |
-| `make bench-replot RECORD=1` | `scalability_build.png` only | overwrites | no | skipped |
-| api with `ENABLE_DEBUG=1` (`make api-up DEBUG=1`) | appends to `ui_latency.csv` unless `UI_LATENCY_CSV=data/demo/...` | appends | no | — |
+**Escape hatch for a deliberate new recording (Fix C, 2026-11-15): `RECORD=1 OVERWRITE=1`.**
+- The existing output files are first **moved** to `data/results_backup/<UTC stamp>/`, which is gitignored.
+  Nothing is ever deleted, and an existing backup folder is refused.
+- `stream-demo` moves them before it starts, because its stream job writes into `results/` while it runs.
+- `experiments-spark` checks at the start and moves the files only right before it writes, when the grid or
+  partitioning is complete. An interrupted run leaves `results/` intact, and its printed resume command
+  carries `OVERWRITE=1`.
+- **RESUME rule: a resumed run may only rewrite the files it was the last to record.**
+  - `RESUME=<run_id>` of the same recording passes without `OVERWRITE=1` only for files whose last
+    fingerprint section in `results/README.md` is that run's (`bench.host.fingerprinted_file`).
+  - Any other existing file is refused as usual.
+  - A later `bench-supplement` merge into `scalability.csv` therefore takes the file over. A resume of the
+    original run can no longer rewrite it from its own grid and drop the merged rows.
+  - Example: `make experiments-spark RECORD=1 RESUME=bench_20261113T152740Z` is refused for the three
+    scalability files, because `bench_20261114T052031Z_supp` recorded `scalability.csv` after it. Its
+    partitioning files are still its own.
+- The pre-registered recordings (`model-test-full`, `ablation-full`, `oracle-dev-full`,
+  `whatif-consistency-full`) have **no** `OVERWRITE`: the first complete run is the reported one.
+- The shared guard is `src/f1sa/recording.py`.
+
+| Target | Files in `results/` (all git-tracked) | Existing file | `OVERWRITE=1` | Opens 2025 | In `make experiments` |
+|---|---|---|---|---|---|
+| `make features-sample` | `undercut_counts_sample.csv` | overwrites (deterministic) | — | no | sample: compared |
+| `make model-eval-sample` | `model_eval_sample.csv`, `calibration_sample.csv`, `feature_importance_sample.{csv,png}`, `reliability_sample.png`, `confusion_matrix_sample.png` | overwrites (deterministic) | — | no | sample: compared |
+| `make features-full` (`pipeline-full`) | `undercut_counts_full.csv` | overwrites (deterministic) | — | counts only, no model | no |
+| `make report-full` (`pipeline-full`) | `full_data_quality.json`, `constructors_full.csv`, `neutralisation_by_race_full.csv` | overwrites (deterministic) | — | data quality only | no |
+| `make etl-ti-full` | `tracinginsights_coverage_full.csv` | overwrites (deterministic) | — | coverage only | no |
+| `make model-dev-full`, `model-dev-tyre-full`, `model-dev-ti-full` | `model_dev_{eval,loso,calibration,class_balance,feature_importance,missing_rates,metadata,...}*` | overwrites (deterministic) | — | no | full: compared |
+| `make model-dev-permutation-ti-full` | `model_dev_permutation_real_ti*.csv` | overwrites (deterministic) | — | no | full: compared |
+| `make stream-parity-full` | `stream_parity_full.csv` | overwrites (deterministic) | — | no | full: compared |
+| `make model-test-summary` | `model_test_summary.csv` + the Results tables of `docs/model_results.md` (from the committed files, no evaluation) | overwrites (deterministic) | — | reads committed files only | skipped (unit-tested) |
+| `make model-test-full CONFIRM=yes` | `model_eval*`, `calibration*`, `feature_importance*`, `reliability*`, `confusion_matrix*`, `missing_rates*` (per feature set and setting) | **refuses** | no (pre-registered) | **yes**, once | skipped |
+| `make ablation-full RECORD=1` | `ablation_paired.{csv,png}` + README section | **refuses** | no (pre-registered) | **yes** (frozen models) | skipped |
+| `make oracle-dev-full RECORD=1` | `model_dev_{eval,loso}_oracle{,_G5.0_k3}.csv` | **refuses** | no (pre-registered) | no | full: compared (sandbox) |
+| `make whatif-consistency-full RECORD=1` | `whatif_consistency.{csv,png}` (with the 2025 row) | **refuses** | no (pre-registered) | **yes** | without RECORD: compared without the 2025 rows |
+| `make stream-latency-suite RECORD=1` | `streaming_latency_{s10,s60,s1w900}.csv`, `stream_{batches,progress}_{tag}.jsonl`, `streaming_{latency_summary,throughput,resources}.csv` + README sections | **refuses** | yes (backup before copying) | no | skipped (measurement) |
+| `make stream-latency-ui RECORD=1` | `ui_latency.csv`, `ui_latency_summary.csv`, `stream_*_s60ui.*`, `ui_streaming_*.csv` | **refuses** | yes (backup before copying) | no | skipped (measurement) |
+| `make redis-latency RECORD=1` | `redis_latency_quiet.csv` + README section | **refuses** | yes (backup right before the write) | no | skipped (measurement) |
+| `make stream-demo RECORD=1` | `streaming_latency.csv`, `stream_progress.jsonl`, `stream_batches.jsonl` (the Step 12 run) | **refuses** (before any process starts) | yes (backup before the run) | no | skipped (measurement) |
+| `make experiments-spark RECORD=1` | `scalability.csv`, `scalability_{build,telemetry}.png`, `partitioning.csv`, `partitioning_speedup.png` + README fingerprints | **refuses** (`check-record` over all five files before the grid; each script again at its start) | yes (backup only when complete) | 2025 timing rows for scale only, no labels | skipped (hours) |
+| `make experiments-spark RECORD=1 RESUME=<run_id>` | as above | allowed for the files this run recorded last; others refused | as above | as above | skipped |
+| `make bench-supplement RECORD=1 SUPPLEMENT_OF=… CELLS=…` | appends re-run rows to `scalability.csv`, redraws the plots | own guard: refused if a named cell is `ok` or already re-run | not applicable (a merge) | as above | skipped |
+| `make bench-replot RECORD=1` | `scalability_build.png` only | **refuses** | yes (backup before redrawing) | no | skipped |
+| api with `ENABLE_DEBUG=1` (`make api-up DEBUG=1`) | none by default: samples go to `data/demo/ui_latency/ui_latency.csv`. With `UI_LATENCY_CSV=results/...` it appends | **refuses** an existing results/ CSV (before the container is recreated, and again at api start-up) | yes (`make api-up … OVERWRITE=1` backs it up host-side) | no | — |
 
 No other target writes `results/`. `make demo`, `make stream-demo` (without RECORD), API replays,
 `make sim-tyre-model-*`, `make model-save-full` and `make bench-smoke` write only `data/` or `models/`. A pytest

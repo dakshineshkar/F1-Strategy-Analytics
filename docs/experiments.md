@@ -11,11 +11,11 @@ Code: `src/f1sa/bench/` (entry points `experiments/scalability.py`, `experiments
 |---|---|---|
 | `make bench-smoke` | scalability at 1 season, x1, every master, 0 warm-up + 1 run; partitioning at laps x1, 5 telemetry rounds, 1 run; prints the full-grid estimate and, over 8 h, a reduced grid | `data/bench/<run_id>/` only |
 | `make experiments-spark` | full grid + full partitioning run | `data/bench/<run_id>/` |
-| `make experiments-spark RECORD=1` | the recorded run (overnight, nothing else running) | `results/scalability.csv`, `scalability_build.png`, `scalability_telemetry.png`, `partitioning.csv`, `partitioning_speedup.png`; fingerprints appended to `results/README.md` |
+| `make experiments-spark RECORD=1` | the recorded run (overnight, nothing else running). **Refused before the grid starts** while any of its five results files exists (Fix C); `OVERWRITE=1` moves them to `data/results_backup/<stamp>/` right before the complete run writes | `results/scalability.csv`, `scalability_build.png`, `scalability_telemetry.png`, `partitioning.csv`, `partitioning_speedup.png`; fingerprints appended to `results/README.md` |
 | `make experiments-spark RECORD=1 GRID_ARGS="..."` | a reduced grid, e.g. the one `bench-smoke` proposes | as above |
-| `make experiments-spark [RECORD=1] RESUME=<run_id>` | continues an interrupted run (the command is printed at the start of every run): reuses its prepared data when its marker exists (or prepares it again), skips cells already in its CSV, reruns an interrupted cell from its warm-up | the same run folders |
+| `make experiments-spark [RECORD=1 [OVERWRITE=1]] RESUME=<run_id>` | continues an interrupted run (the command is printed at the start of every run, with `OVERWRITE=1` if the recording used it): reuses its prepared data when its marker exists (or prepares it again), skips cells already in its CSV, reruns an interrupted cell from its warm-up. With RECORD=1 it may rewrite only the results files this run recorded last | the same run folders |
 | `make bench-supplement SUPPLEMENT_OF=<run_id> CELLS="<cell ids>" [RECORD=1] [RESUME=<id>]` | re-runs only the named build/telemetry cells of a recorded grid (and their prep cells) with that grid's settings (`data/bench/<run_id>/grid_spec.json`); no partitioning run | `data/bench/<id>_supp/`; with `RECORD=1` appends the re-run rows to `results/scalability.csv` (new columns `rerun_of`, `note`; the original failed rows stay), a fingerprint to `results/README.md`, and redraws the plots. Refused before running if a cell's recorded row is `ok` or already re-run |
-| `make bench-replot [RECORD=1]` | redraws the build plot from `results/scalability.csv` (no measurement) | `data/bench/replot/`; with `RECORD=1` only `results/scalability_build.png` |
+| `make bench-replot [RECORD=1 [OVERWRITE=1]]` | redraws the build plot from `results/scalability.csv` (no measurement); `RECORD=1` refuses while `results/scalability_build.png` exists unless `OVERWRITE=1` (backup first) | `data/bench/replot/`; with `RECORD=1` only `results/scalability_build.png` |
 | `make bench-clean [CONFIRM=yes]` | lists (exit 1), or deletes, every entry of `./data/bench` and every child of HDFS `/f1/bench` | deletes only there |
 
 ### Interruptions and resume
@@ -32,6 +32,8 @@ Code: `src/f1sa/bench/` (entry points `experiments/scalability.py`, `experiments
 - `make experiments-spark` gives both scripts one run id; `RESUME=<run_id>` resumes the grid and then
   the partitioning run (started fresh if it never began). `GRID_ARGS` must not change on resume (the
   stored `grid_spec.json` is used).
+- With `RECORD=1` the run is refused before any work while one of its results files exists, unless this run
+  recorded it last (a resumed recording) or `OVERWRITE=1` is given (`docs/reproduce.md` §3).
 - With `RECORD=1`, `results/` is written only when the whole grid is complete (and partitioning only
   when it is complete), and each run id's fingerprint is appended once. HDFS data are deleted only
   after a complete run, so an incomplete run keeps everything it needs to resume.

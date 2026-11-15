@@ -126,10 +126,15 @@ def record_targets(runs: Sequence[RunSpec], ui: bool) -> list[str]:
     return names
 
 
-def check_record(results_dir: Path, names: Sequence[str]) -> None:
-    existing = [n for n in names if (results_dir / n).exists()]
-    if existing:
-        raise SuiteError(f"{existing} exist in {results_dir} and are never overwritten")
+def check_record(results_dir: Path, names: Sequence[str], *, overwrite: bool = False) -> None:
+    """Refuse (``SuiteError``) if a target exists, unless ``overwrite`` (``RECORD=1 OVERWRITE=1``;
+    ``record`` then moves them to ``data/results_backup/<stamp>/`` first). ``f1sa.recording``."""
+    from f1sa.recording import RecordRefused, check
+
+    try:
+        check([results_dir / n for n in names], overwrite=overwrite)
+    except RecordRefused as exc:
+        raise SuiteError(str(exc)) from exc
 
 
 # ------------------------------------------------------------------ one run
@@ -366,13 +371,20 @@ def record(
     ui: bool,
     pairs: Sequence[tuple[str, str]],
     results_dir: Path = RESULTS_DIR,
+    *,
+    overwrite: bool = False,
+    backup_root: Path | None = None,
 ) -> list[str]:
     """Copy the suite's files to their new ``results/`` names and append one fingerprint section
-    per file; returns the names written."""
+    per file; returns the names written. With ``overwrite`` the existing targets are first moved
+    to ``data/results_backup/<stamp>/`` (never deleted)."""
+    from f1sa.recording import BACKUP_ROOT, backup
     from f1sa.serving.latency_bench import append_readme
 
     names = record_targets([r.spec for r in results], ui)
-    check_record(results_dir, names)
+    check_record(results_dir, names, overwrite=overwrite)
+    if overwrite:
+        backup([results_dir / n for n in names], root=backup_root or BACKUP_ROOT)
     written = []
     for r in results:
         for src, dst in record_names(r.spec.tag).items():
@@ -445,15 +457,23 @@ def main(argv: Iterable[str] | None = None, *, out: Callable[[str], None] = prin
     mode.add_argument("--suite", action="store_true", help="s10, s60 and s1w900")
     mode.add_argument("--ui", action="store_true", help="one s60 run with the dashboard open")
     p.add_argument("--record", action="store_true", help="copy to new results/ names")
+    p.add_argument(
+        "--overwrite",
+        action="store_true",
+        help="RECORD=1 OVERWRITE=1: move existing results files to data/results_backup/ first",
+    )
     p.add_argument("--only", nargs="+", default=None, help="suite: run only these tags")
     p.add_argument("--pause-s", type=float, default=PAUSE_S)
     p.add_argument("--ui-csv", type=Path, default=UI_CSV)
     args = p.parse_args(list(argv) if argv is not None else None)
     runs = [UI_RUN] if args.ui else [r for r in SUITE if not args.only or r.tag in args.only]
     now = datetime.now(UTC)
+    if args.overwrite and not args.record:
+        out("refused: --overwrite (OVERWRITE=1) only applies to a recording (RECORD=1)")
+        return 2
     try:
         if args.record:
-            check_record(RESULTS_DIR, record_targets(runs, args.ui))
+            check_record(RESULTS_DIR, record_targets(runs, args.ui), overwrite=args.overwrite)
         if args.ui:
             check_debug_api()
             if args.ui_csv.exists() and args.ui_csv.stat().st_size > 0:
@@ -524,7 +544,9 @@ def main(argv: Iterable[str] | None = None, *, out: Callable[[str], None] = prin
             "resources": "docker stats 2 s per container; psutil 0.5 s host job tree",
             "suite": str(suite_dir),
         }
-        written = record(suite_dir, results, args.ui, fingerprint(now, params))
+        written = record(
+            suite_dir, results, args.ui, fingerprint(now, params), overwrite=args.overwrite
+        )
         out(f"recorded {written}; fingerprints appended to results/{README_NAME}")
     return 0
 

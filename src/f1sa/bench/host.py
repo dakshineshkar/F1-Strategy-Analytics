@@ -111,11 +111,13 @@ def resume_command(
     script: str,
     supplement_of: str | None = None,
     only: Sequence[str] = (),
+    overwrite: bool = False,
 ) -> str:
-    """The exact command that continues ``run_id``."""
+    """The exact command that continues ``run_id`` (with ``OVERWRITE=1`` when the recording was
+    started with it, so the resumed run passes the same results/ guard)."""
     if smoke:
         return f"uv run python experiments/{script}.py --smoke --resume --run-id {run_id}"
-    rec = "RECORD=1 " if record else ""
+    rec = ("RECORD=1 OVERWRITE=1 " if overwrite else "RECORD=1 ") if record else ""
     if supplement_of:
         cells = " ".join(only)
         return (
@@ -179,8 +181,98 @@ def _cleanup_hdfs(run_id: str, out: Callable[[str], None]) -> None:
         out(f"could not delete hdfs {HDFS_BENCH}/{run_id} ({exc}); run `make bench-clean`")
 
 
+# ------------------------------------------------------------------ results/ guard (Fix C)
+RECORD_OUTPUTS: dict[str, tuple[str, ...]] = {
+    "scalability": (G.CSV_NAME, "scalability_build.png", "scalability_telemetry.png"),
+    "partitioning": ("partitioning.csv", "partitioning_speedup.png"),
+}
+"""What each recorded script writes to ``results/`` (plus its ``README.md`` fingerprint section)."""
+
+
+def fingerprinted_file(readme: Path, name: str, run_id: str) -> bool:
+    """True if the **last** fingerprint section for ``name`` in ``readme`` is from ``run_id``: this
+    run recorded the file and nothing changed it since, so a resumed recording may write it again.
+    A later section (e.g. a ``bench-supplement`` merge into ``scalability.csv``) makes it False:
+    rewriting would drop that later change."""
+    if not readme.exists():
+        return False
+    sections = [
+        sec
+        for sec in readme.read_text(encoding="utf-8").split("\n## `")[1:]
+        if sec.startswith(f"{name}`")
+    ]
+    return bool(sections) and f"run_id={run_id}," in sections[-1]
+
+
+def record_check(
+    script: str, run_id: str, repo: Path, *, overwrite: bool
+) -> tuple[list[Path], list[Path]]:
+    """``(to_back_up, allowed)`` of a recording's results/ files, refusing (``RunError``) when one
+    exists that this run did not record, unless ``overwrite``. ``allowed`` are the files this same
+    run already recorded (``RESUME``)."""
+    from f1sa.recording import RecordRefused, check
+
+    dest = output_dir(run_id, record=True, base=repo)
+    names = RECORD_OUTPUTS[script]
+    paths = [dest / n for n in names]
+    mine = fingerprinted_file(dest / "README.md", names[0], run_id)
+    allowed = [p for p in paths if mine and p.exists()]
+    try:
+        found = check(paths, overwrite=overwrite, allowed=allowed)
+    except RecordRefused as exc:
+        raise RunError(str(exc)) from exc
+    return found, allowed
+
+
+def _backup_before_write(
+    script: str, run_id: str, repo: Path, *, overwrite: bool, out: Callable[[str], None]
+) -> None:
+    """Right before a recording writes results/: refuse again (files may have appeared), or with
+    ``overwrite`` move the existing ones (not recorded by this run) to data/results_backup/."""
+    from f1sa.recording import backup
+
+    found, _ = record_check(script, run_id, repo, overwrite=overwrite)
+    if found:
+        backup(found, root=repo / "data" / "results_backup", out=out)
+
+
+def main_check_record(
+    argv: Sequence[str] | None = None, *, out: Callable[[str], None] = say
+) -> int:
+    """``make experiments-spark RECORD=1`` runs this first: both scripts' results/ files, checked
+    before the grid starts, so partitioning cannot refuse only after hours of grid."""
+    p = argparse.ArgumentParser(prog="check-record")
+    p.add_argument("--run-id", required=True)
+    p.add_argument("--overwrite", action="store_true")
+    p.add_argument("--repo", type=Path, default=Path.cwd())
+    args = p.parse_args(list(argv) if argv is not None else None)
+    repo = args.repo.resolve()
+    found: list[Path] = []
+    refused: list[str] = []
+    for script, rid in (("scalability", args.run_id), ("partitioning", f"{args.run_id}_part")):
+        try:
+            found += record_check(script, rid, repo, overwrite=args.overwrite)[0]
+        except RunError as exc:
+            refused.append(f"{script}: {exc}")
+    if refused:
+        for line in refused:
+            out(f"refused: {line}")
+        return 2
+    if found:
+        out(
+            f"OVERWRITE=1: {len(found)} results file(s) will be moved to data/results_backup/ "
+            "right before the recording writes (only if the run completes)"
+        )
+    return 0
+
+
 def _common(p: argparse.ArgumentParser) -> None:
     p.add_argument("--record", action="store_true", help="write to results/ (RECORD=1)")
+    p.add_argument(
+        "--overwrite",
+        action="store_true",
+        help="RECORD=1 OVERWRITE=1: move existing results/ files to data/results_backup/ first",
+    )
     p.add_argument("--run-id", default=None, help="run id (default: a new bench_<UTC time>)")
     p.add_argument(
         "--resume", action="store_true", help="continue --run-id (RESUME=<run_id> in make)"
@@ -217,6 +309,10 @@ def main_scalability(
         p.error("--supplement-of cannot be combined with --smoke")
     if args.resume and not args.run_id:
         p.error("--resume needs --run-id (RESUME=<run_id>)")
+    if args.overwrite and not args.record:
+        p.error("--overwrite (OVERWRITE=1) only applies to a recording (RECORD=1)")
+    if args.overwrite and args.supplement_of:
+        p.error("bench-supplement merges into results/ with its own guard; drop OVERWRITE=1")
     repo: Path = args.repo.resolve()
     now = now or datetime.now(UTC)
     suffix = "_smoke" if args.smoke else ("_supp" if args.supplement_of else "")
@@ -228,6 +324,8 @@ def main_scalability(
             if args.record:
                 _check_mergeable(repo, args.supplement_of, spec.only or ())
         else:
+            if args.record:  # before the run folder or any cell: refuse existing results/
+                record_check("scalability", run_id, repo, overwrite=args.overwrite)
             spec = _scalability_spec(args, rdir)
     except (RunError, ValueError) as exc:
         out(f"scalability: {exc}")
@@ -241,6 +339,7 @@ def main_scalability(
         script="scalability",
         supplement_of=args.supplement_of,
         only=spec.only or (),
+        overwrite=args.overwrite,
     )
     out(f"scalability: run {run_id}, {sum(1 for _ in G.cells(spec))} cells -> {rdir}")
     out(f"scalability: to resume this run: {resume_cmd}")
@@ -294,6 +393,11 @@ def main_scalability(
         out(f"scalability: merged {len(spec.only or ())} re-run row(s) into {dest / G.CSV_NAME}")
     elif args.record:
         dest = output_dir(run_id, record=True, base=repo)
+        try:
+            _backup_before_write("scalability", run_id, repo, overwrite=args.overwrite, out=out)
+        except (RunError, RuntimeError) as exc:
+            out(f"scalability: results/ not written: {exc}")
+            return 2
         write_csv(dest / G.CSV_NAME, rows, SCALABILITY_COLUMNS)
         _scalability_plots(rows, dest)
         pairs = fingerprint(
@@ -410,6 +514,8 @@ def main_partitioning(
         p.error("--smoke cannot be recorded")
     if args.resume and not args.run_id:
         p.error("--resume needs --run-id (RESUME=<run_id>)")
+    if args.overwrite and not args.record:
+        p.error("--overwrite (OVERWRITE=1) only applies to a recording (RECORD=1)")
     if args.smoke:
         args.laps_factor, args.telemetry_rounds, args.warmup, args.repeats = 1, 5, 0, 1
     repo: Path = args.repo.resolve()
@@ -418,7 +524,9 @@ def main_partitioning(
     run_id = f"{base_id}_{'psmoke' if args.smoke else 'part'}"
     try:
         rdir = run_dir(run_id, repo)
-    except ValueError as exc:
+        if args.record:  # before the run folder or any work: refuse existing results/
+            record_check("partitioning", run_id, repo, overwrite=args.overwrite)
+    except (ValueError, RunError) as exc:
         out(f"partitioning: {exc}")
         return 2
     resuming = args.resume and rdir.exists()
@@ -427,7 +535,11 @@ def main_partitioning(
         return 2
     rdir.mkdir(parents=True, exist_ok=True)
     resume_cmd = resume_command(
-        base_id, record=args.record, smoke=args.smoke, script="partitioning"
+        base_id,
+        record=args.record,
+        smoke=args.smoke,
+        script="partitioning",
+        overwrite=args.overwrite,
     )
     out(f"partitioning: run {run_id} -> {rdir}{' (resuming)' if resuming else ''}")
     out(f"partitioning: to resume this run: {resume_cmd}")
@@ -467,6 +579,11 @@ def main_partitioning(
         _cleanup_hdfs(run_id, out)
     if args.record:
         dest = output_dir(run_id, record=True, base=repo)
+        try:
+            _backup_before_write("partitioning", run_id, repo, overwrite=args.overwrite, out=out)
+        except (RunError, RuntimeError) as exc:
+            out(f"partitioning: results/ not written: {exc}")
+            return 2
         write_csv(dest / "partitioning.csv", rows, PARTITIONING_COLUMNS)
         plot_partitioning(rows, dest / "partitioning_speedup.png")
         params = {
@@ -514,3 +631,11 @@ def scalability_entry() -> None:
 
 def partitioning_entry() -> None:
     sys.exit(main_partitioning())
+
+
+def check_record_entry() -> None:
+    sys.exit(main_check_record())
+
+
+if __name__ == "__main__" and len(sys.argv) > 1 and sys.argv[1] == "check-record":
+    sys.exit(main_check_record(sys.argv[2:]))

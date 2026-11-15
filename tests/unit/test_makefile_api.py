@@ -54,10 +54,21 @@ def test_api_up_full_mode_and_flags() -> None:
     assert "ENABLE_REPLAY=0" in _api_up("REPLAY=yes"), "only 1 enables a flag"
 
 
-def test_api_up_ui_latency_csv_defaults_to_results_and_can_go_to_data() -> None:
-    assert "API_UI_LATENCY_CSV=results/ui_latency.csv" in _api_up()
-    out = _api_up("DEBUG=1", "UI_LATENCY_CSV=data/demo/ui_latency/ui_latency.csv")
-    assert "API_UI_LATENCY_CSV=data/demo/ui_latency/ui_latency.csv" in out
+def test_api_up_ui_latency_csv_defaults_to_data_and_guards_results() -> None:
+    """Fix C: DEBUG=1 never appends to a committed results/ file by default. An explicit path
+    under results/ is checked (refused if it exists) or, with OVERWRITE=1, backed up before the api
+    starts."""
+    plain = _api_up()
+    assert "API_UI_LATENCY_CSV=data/demo/ui_latency/ui_latency.csv" in plain
+    assert "f1sa.recording" not in plain
+    assert "f1sa.recording" not in _api_up("DEBUG=1")  # data/demo: nothing to guard
+    out = _api_up("DEBUG=1", "UI_LATENCY_CSV=results/ui_latency.csv")
+    assert "API_UI_LATENCY_CSV=results/ui_latency.csv" in out
+    guard = out.index("python -m f1sa.recording check results/ui_latency.csv")
+    assert guard < out.index("up -d --no-deps"), "checked before the container is recreated"
+    over = _api_up("DEBUG=1", "UI_LATENCY_CSV=results/ui_latency.csv", "OVERWRITE=1")
+    assert "python -m f1sa.recording backup results/ui_latency.csv" in over
+    assert "f1sa.recording" not in _api_up("UI_LATENCY_CSV=results/ui_latency.csv")  # debug off
 
 
 def test_api_up_recreates_only_the_api_service() -> None:
@@ -103,7 +114,7 @@ def test_compose_api_service() -> None:
     assert env["ENABLE_REPLAY"] == "${ENABLE_REPLAY:-0}"
     assert env["ENABLE_DEBUG"] == "${ENABLE_DEBUG:-0}"
     assert env["ALLOW_TEST_SEASON"] == "${ALLOW_TEST_SEASON:-0}"
-    assert env["API_UI_LATENCY_CSV"] == "${API_UI_LATENCY_CSV:-results/ui_latency.csv}"
+    assert env["API_UI_LATENCY_CSV"] == "${API_UI_LATENCY_CSV:-data/demo/ui_latency/ui_latency.csv}"
     assert api["mem_limit"] == "2048m"
     assert set(api["depends_on"]) == {"kafka", "kafka-init", "redis"}
     assert "healthcheck" in api

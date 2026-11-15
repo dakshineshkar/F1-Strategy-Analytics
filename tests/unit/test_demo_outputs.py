@@ -118,12 +118,22 @@ def test_default_demo_run_leaves_results_unchanged(
     assert sorted(p.name for p in out.iterdir()) == sorted(STREAM_FILES)
 
 
-def test_record_run_writes_results(tmp_path: Path, committed_results: Path) -> None:
+def test_record_run_refuses_existing_results_and_overwrite_backs_up(
+    tmp_path: Path, committed_results: Path
+) -> None:
+    """Fix C: RECORD=1 refuses while the committed files exist; RECORD=1 OVERWRITE=1 moves them to
+    data/results_backup/<stamp>/ first, then records."""
+    args = ["--season", "2024", "--round", "5", "--speed", "60", "--record"]
     before = _hashes(committed_results)
-    assert _run(["--season", "2024", "--round", "5", "--speed", "60", "--record"]) == 0
+    assert _run(args) == 2
+    assert _hashes(committed_results) == before, "refused: nothing written"
+    assert not (tmp_path / "data").exists()
+    assert _run([*args, "--overwrite"]) == 0
     after = _hashes(committed_results)
     assert after.keys() == before.keys()
-    assert after != before, "RECORD=1 must write results/"
+    assert after != before, "RECORD=1 OVERWRITE=1 must write results/"
+    backups = list((tmp_path / "data" / "results_backup").iterdir())
+    assert len(backups) == 1 and _hashes(backups[0]) == before, "the old files, moved intact"
     assert not (tmp_path / "data" / "demo").exists()
 
 

@@ -94,7 +94,7 @@ class Settings(BaseSettings):
     """The deployed model reported by ``/api/health`` (the stream job's default model)."""
     api_sim_dir: Path = Path("models/sim")
     """What-if tyre models: ``tyre_model_sample.json`` (sample), ``tyre_model_full.json``."""
-    api_ui_latency_csv: Path = Path("results/ui_latency.csv")
+    api_ui_latency_csv: Path = Path("data/demo/ui_latency/ui_latency.csv")
     api_replay_ready_timeout_s: float = Field(default=60.0, gt=0, le=600)
     """A replay's stream job must be ready (first trigger done) within this; else it is killed."""
     api_replay_end_timeout_s: float = Field(default=180.0, gt=0, le=3600)

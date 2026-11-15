@@ -27,7 +27,9 @@ The benchmark writes only to its own race, season 2100 round 30 (drivers ``bench
 Outputs (Step 16): by default ``data/redis_latency/<UTC stamp>/redis_latency.csv`` with its own
 ``README.md``, so a rerun never overwrites the committed Step 11 ``results/redis_latency.csv``.
 ``--record`` (``make redis-latency RECORD=1``) writes ``results/redis_latency_quiet.csv`` and
-appends its fingerprint to ``results/README.md``; it refuses if that file exists. An explicit
+appends its fingerprint to ``results/README.md``; it refuses if that file exists, unless
+``--overwrite`` (``RECORD=1 OVERWRITE=1``), which first moves it to ``data/results_backup/<stamp>/``
+(``f1sa.recording``; never deleted). An explicit
 ``--results-dir`` must lie under ``./results`` and refuses an existing CSV.
 """
 
@@ -284,7 +286,7 @@ def check_results_dir(results_dir: Path) -> None:
 
 
 def output_target(
-    results_dir: Path | None, record: bool, now: datetime | None = None
+    results_dir: Path | None, record: bool, now: datetime | None = None, *, overwrite: bool = False
 ) -> tuple[Path, str]:
     """``(folder, csv name)``: ``results/redis_latency_quiet.csv`` with ``record`` (refused if it
     exists), an explicit folder under ``./results`` (refused if its CSV exists), else a new
@@ -292,9 +294,13 @@ def output_target(
     if record:
         if results_dir is not None:
             raise BenchError("--record writes results/; do not combine it with --results-dir")
+        from f1sa.recording import RecordRefused, check
+
         target = Path("results")
-        if (target / RECORD_CSV_NAME).exists():
-            raise BenchError(f"{target / RECORD_CSV_NAME} exists and is never overwritten")
+        try:
+            check([target / RECORD_CSV_NAME], overwrite=overwrite)
+        except RecordRefused as exc:
+            raise BenchError(str(exc)) from exc
         return target, RECORD_CSV_NAME
     if results_dir is not None:
         check_results_dir(results_dir)
@@ -454,9 +460,18 @@ def main(argv: Sequence[str] | None = None) -> int:
     ap.add_argument("--skip-cli", action="store_true", help="skip redis-cli --latency")
     ap.add_argument("--results-dir", type=Path, default=None)
     ap.add_argument("--record", action="store_true", help=f"write results/{RECORD_CSV_NAME}")
+    ap.add_argument(
+        "--overwrite",
+        action="store_true",
+        help="RECORD=1 OVERWRITE=1: move the existing results file to data/results_backup/ first",
+    )
     args = ap.parse_args(argv)
     try:
-        results_dir, csv_name = output_target(args.results_dir, args.record)
+        if args.overwrite and not args.record:
+            raise BenchError("--overwrite (OVERWRITE=1) only applies to a recording (RECORD=1)")
+        results_dir, csv_name = output_target(
+            args.results_dir, args.record, overwrite=args.overwrite
+        )
         settings = get_settings()
         store = RaceStore.from_settings(settings)
         reader = redis.Redis.from_url(settings.redis_url, decode_responses=True)
@@ -470,6 +485,10 @@ def main(argv: Sequence[str] | None = None) -> int:
                 with_cli=not args.skip_cli,
             )
             csv_path = results_dir / csv_name
+            if args.record and args.overwrite:
+                from f1sa.recording import backup
+
+                backup([csv_path])  # just before the write: a failed run replaces nothing
             write_csv(csv_path, rows)
             params = {
                 "rates_per_s": "/".join(f"{r:g}" for r in args.rates),

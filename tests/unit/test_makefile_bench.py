@@ -117,3 +117,23 @@ def test_bench_replot_writes_results_only_with_record_1() -> None:
     rec = _make("bench-replot", "RECORD=1")
     assert "--replot results/scalability.csv --out results/scalability_build.png" in rec
     assert "scalability.csv --out results/scalability.csv" not in rec
+
+
+def test_recording_guards_and_overwrite_flags() -> None:
+    """Fix C: experiments-spark RECORD=1 checks all five results/ files first (before any grid);
+    OVERWRITE=1 reaches both scripts and bench-replot; bench-supplement ignores it (own guard)."""
+    rid = "bench_20261115T100000Z"
+    rec = _make("experiments-spark", "RECORD=1", f"RESUME={rid}")
+    check = rec.index(f"python -m f1sa.bench.host check-record --run-id {rid}")
+    assert check < rec.index("python experiments/scalability.py")
+    assert "--overwrite" not in rec
+    over = _make("experiments-spark", "RECORD=1", "OVERWRITE=1", f"RESUME={rid}")
+    assert f"check-record --run-id {rid} --overwrite" in over
+    assert all("--record --overwrite" in ln for ln in _python_lines(over))
+    assert "check-record" not in _make("experiments-spark")  # no RECORD: nothing to guard
+    assert "--overwrite" not in _make("experiments-spark", "OVERWRITE=1")  # only with RECORD=1
+    supp = _make("bench-supplement", "RECORD=1", "SUPPLEMENT_OF=bench_A", "CELLS=x", "OVERWRITE=1")
+    assert "--record" in supp and "--overwrite" not in supp
+    replot = _make("bench-replot", "RECORD=1", "OVERWRITE=1")
+    assert "--out results/scalability_build.png --overwrite" in replot
+    assert "--overwrite" not in _make("bench-replot", "OVERWRITE=1")

@@ -48,3 +48,19 @@ def test_streaming_targets_never_touch_services(args: tuple[str, ...]) -> None:
     out = _dry_run(*args)
     for forbidden in (" up ", "--build", " down", " restart", " stop", "prune", " rm "):
         assert forbidden not in out, (args, forbidden)
+
+
+def test_stream_recordings_pass_overwrite_only_with_record() -> None:
+    """Fix C: RECORD=1 OVERWRITE=1 reaches stream-demo (both modes), the suite, the UI run and
+    redis-latency; OVERWRITE=1 alone does nothing."""
+    base = ("SEASON=2024", "ROUND=5", "SPEED=60")
+    assert "--record --overwrite" in _dry_run("stream-demo", *base, "RECORD=1", "OVERWRITE=1")
+    assert "--record --overwrite" in _dry_run(
+        "stream-demo", *base, "RECORD=1", "OVERWRITE=1", "FULL=1"
+    )
+    rec = _dry_run("stream-demo", *base, "RECORD=1")
+    assert "--record" in rec and "--overwrite" not in rec
+    assert "--overwrite" not in _dry_run("stream-demo", *base, "OVERWRITE=1")
+    for target in ("stream-latency-suite", "redis-latency"):
+        assert "--record --overwrite" in _dry_run(target, "RECORD=1", "OVERWRITE=1")
+        assert "--overwrite" not in _dry_run(target, "OVERWRITE=1")

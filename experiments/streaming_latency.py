@@ -10,7 +10,9 @@ Writes ``streaming_latency.csv``, ``stream_progress.jsonl`` and ``stream_batches
 
 * by default to ``data/demo/<run_id>/`` (``Settings.demo_dir``, gitignored), so a demo run never
   overwrites the committed results;
-* with ``--record`` (``make stream-demo RECORD=1``) to ``results/``.
+* with ``--record`` (``make stream-demo RECORD=1``) to ``results/``. That is refused before anything
+  runs when one of the three files exists (``f1sa.recording``, Fix C). ``--overwrite``
+  (``RECORD=1 OVERWRITE=1``) first moves the existing files to ``data/results_backup/<stamp>/``.
 
 Step 16: ``--suite`` (``make stream-latency-suite``) and ``--ui`` (``make stream-latency-ui``) run
 the quiet-stack replays of ``f1sa.bench.streaming_runs`` (outputs in ``data/demo/<suite_id>/``;
@@ -31,9 +33,12 @@ from typing import Any
 
 from f1sa.config import get_settings
 from f1sa.demo_runs import run_dir, run_id
+from f1sa.recording import BACKUP_ROOT, RecordRefused, backup, check
 from f1sa.streaming.demo import main as demo_main
 
 RECORD_DIR = Path("results")
+RECORD_FILES = ("streaming_latency.csv", "stream_progress.jsonl", "stream_batches.jsonl")
+"""What a recorded ``stream-demo`` writes to ``results/`` (the Step 12 files)."""
 
 
 def _utc_now() -> datetime:
@@ -61,12 +66,41 @@ def demo_argv(argv: Sequence[str], *, now: Callable[[], datetime] | None = None)
     return [*args, "--results-dir", str(out)]
 
 
+def guard_record(
+    argv: Sequence[str],
+    *,
+    results_dir: Path = RECORD_DIR,
+    backup_root: Path = BACKUP_ROOT,
+    out: Callable[[str], None] = print,
+) -> list[str]:
+    """``argv`` without ``--overwrite``, after the recording guard: with ``--record`` it raises
+    ``RecordRefused`` if one of ``RECORD_FILES`` exists in ``results_dir``, unless ``--overwrite``,
+    which first moves them to ``backup_root/<stamp>/``. ``--overwrite`` alone is an error."""
+    args = list(argv)
+    overwrite = "--overwrite" in args
+    args = [a for a in args if a != "--overwrite"]
+    record = "--record" in args
+    if overwrite and not record:
+        raise SystemExit("error: --overwrite (OVERWRITE=1) only applies to a recording (RECORD=1)")
+    if record:
+        paths = [results_dir / n for n in RECORD_FILES]
+        check(paths, overwrite=overwrite)
+        if overwrite:
+            backup(paths, root=backup_root, out=out)
+    return args
+
+
 def main(argv: Sequence[str] | None = None, **kwargs: Any) -> int:
     args = list(sys.argv[1:] if argv is None else argv)
     if "--suite" in args or "--ui" in args:
         from f1sa.bench.streaming_runs import main as suite_main
 
         return suite_main(args)
+    try:
+        args = guard_record(args)
+    except RecordRefused as exc:
+        print(f"refused: {exc}", file=sys.stderr)
+        return 2
     return demo_main(demo_argv(args), **kwargs)
 
 

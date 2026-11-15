@@ -19,7 +19,7 @@ def test_defaults_are_closed() -> None:
     assert (s.enable_replay, s.enable_debug, s.allow_test_season) == (False, False, False)
     assert s.api_max_replays == 1
     assert s.api_sse_heartbeat_s == 15.0
-    assert s.api_ui_latency_csv == Path("results/ui_latency.csv")
+    assert s.api_ui_latency_csv == Path("data/demo/ui_latency/ui_latency.csv")  # never results/
     assert s.api_replay_ready_timeout_s == 60.0
     assert s.demo_dir == Path("data/demo")
 
