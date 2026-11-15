@@ -55,6 +55,34 @@ test("sample race: a 60× replay fills the tower and updates laps", async ({ pag
   await expect.poll(async () => rows.count(), { timeout: 120_000, intervals: [1000] }).toBeGreaterThanOrEqual(20);
   await expect(page.locator(".conn")).toContainText("Live");
 
+  // How to read this: the legend opens by keyboard and explains the markers in text.
+  const legend = page.locator("details.legend");
+  await legend.locator("summary").focus();
+  await page.keyboard.press("Enter");
+  await expect(legend).toHaveAttribute("open", "");
+  await expect(legend.getByText(/Calibrated model probability that an undercut/)).toBeVisible();
+  await expect(legend.getByText(/assumes a new set/)).toBeVisible();
+  await expect(legend.getByText(/just become an undercut candidate/)).toBeVisible();
+
+  // Column tooltips: keyboard focus shows the text and it is the button's accessible description;
+  // Escape hides it, Enter (a click) opens it again.
+  const tipButton = page.getByRole("button", { name: "About Undercut" });
+  const tipText = page.locator("#tip-undercut");
+  await expect(tipText).toBeHidden();
+  await tipButton.focus();
+  await expect(tipButton).toHaveAccessibleDescription(/calibrated model probability/i);
+  await expect(tipText).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(tipText).toBeHidden();
+  await page.keyboard.press("Enter");
+  await expect(tipText).toBeVisible();
+  await expect(tipButton).toHaveAttribute("aria-expanded", "true");
+  await page.keyboard.press("Escape");
+  await expect(tipButton).toHaveAttribute("aria-expanded", "false");
+  for (const name of ["About Int", "About Gap", "About Age", "About tyre age", "About the undercut flag", "About Opportunity", "About Attempt"]) {
+    await expect(page.getByRole("button", { name })).toHaveAccessibleDescription(/\w+/);
+  }
+
   // At least one lap update after the tower filled.
   const lapNow = page.locator(".lc-now");
   const before = (await lapNow.textContent())?.trim() ?? "";

@@ -1323,6 +1323,54 @@
       the 9 fields.
     - After the smoke's replay finished, the api was restored with `make api-up FULL=1 REPLAY=1`.
     - All 11 services are healthy: health ok (redis, kafka, model). Volumes were not touched.
+- Step 17 follow-up 3 (2026-11-15): self-explanatory dashboard markers (web only). **Done.**
+  - **Problem.** Viewers could not tell what these meant: the yellow left bar and ▲, the Undercut % and its
+    "—", Age with `used` / `est.`, Int / Gap, "+1 L", the alert badges and %, and the what-if rows.
+  - **Change.** No data, API, model, Python or Redis change.
+    - `web/src/lib/legend.ts`: one glossary (`GLOSSARY`) is the only source of every explanation, so the
+      legend and the tooltips cannot disagree. The wording follows the shared undercut rule, the alert
+      triggers (threshold 50% = the deployed `decision_threshold`) and `lib/tyre.ts`.
+    - `components/Legend.tsx`: "How to read this", a native `<details>` above the timing tower, collapsed by
+      default and keyboard-operable without script. Grouped tower / alerts / what-if; the yellow bar is shown
+      next to its text.
+    - `components/InfoTip.tsx`: a "?" `<button>` named "About …".
+      - Its text is an always-present `role="tooltip"` linked with `aria-describedby`.
+      - It shows on hover, on keyboard focus or after a click/tap. Escape hides it (also when it was shown by
+        hover or focus). Blur closes a click-opened one.
+      - Hidden tips use `display: none`, so the 375 px no-scroll check holds. Width is clamped to the
+        viewport.
+    - Timing tower: tips on the Pos (flag), Driver (+n L, IN PIT), Int, Gap, Age and Undercut headers.
+      - Per-row markers keep their visible text and a screen-reader sentence ("Undercut opportunity on the car
+        ahead", "not a candidate", "undercut success probability").
+      - They point to the header tip with `aria-describedby`, so a column has one tab stop, not 20.
+    - Alerts: a short visible key under the heading ("Opportunity new candidate or ≥ 50%", "Attempt attacker
+      pitted", "% = success probability"), each with a tip. Badges and percentages are described by them.
+    - What-if: one line ("The rows compare three pit strategies with a race simulator; the model probability
+      below them is the stream's calibrated outcome estimate.").
+    - Tyre panel: its own Age tip, "About tyre age", so no two tips share an accessible name. The smoke
+      caught the duplicate "About Age".
+  - **Tests.**
+    - `web/tests/legend.test.ts` (10, `renderToStaticMarkup`):
+      - the glossary;
+      - InfoTip markup and its accessible name and description;
+      - the legend's entries and groups;
+      - the tower's header tips;
+      - that the row markers reference them;
+      - the alert key;
+      - the what-if line;
+      - unique ids and names, with every `aria-describedby` resolving, across the dashboard.
+    - `e2e/smoke.spec.ts` now:
+      - opens the legend by keyboard and checks three explanations;
+      - focuses "About Undercut" (the tooltip shows; the accessible description matches);
+      - Escape hides it, and Enter opens it again with `aria-expanded="true"`;
+      - checks that six more tip buttons have descriptions.
+    - Web lint and typecheck clean; Vitest 171 passed.
+  - **Services** (user approved).
+    - Rebuilt `f1sa-web:dev` (0f7a3bed7ee0) and recreated only `web`.
+    - The api was recreated in sample mode (`make api-up REPLAY=1`) for the smoke. The Playwright smoke
+      (`E2E_NO_SERVER=1 npx playwright test e2e/smoke.spec.ts`) passed in 1.6 min.
+    - The api was then restored with `make api-up FULL=1 REPLAY=1`. All 11 services are healthy and volumes
+      were not touched.
 ## Next
 - S18: report, docs and demo rehearsal (#44): `docs/report/`, `docs/demo_script.md`.
 - Push and watch the first CI run of the `e2e` job on GitHub (runner build time and disk are unmeasured).

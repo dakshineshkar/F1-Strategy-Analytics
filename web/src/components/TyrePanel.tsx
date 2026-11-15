@@ -1,7 +1,9 @@
 import { driverCode, driverName } from "@/lib/format";
 import type { DriverRow } from "@/lib/reducer";
+import { tipId } from "@/lib/legend";
 import { tyreAgeView } from "@/lib/tyre";
 
+import { InfoTip } from "./InfoTip";
 import { TyreAge } from "./TyreAge";
 import { COMPOUND_LABEL, TyreGlyph } from "./TyreGlyph";
 
@@ -12,7 +14,10 @@ export const AGE_SCALE_LAPS = 40;
 export function TyrePanel({ rows }: { rows: DriverRow[] }) {
   return (
     <section className="panel tyre-panel" aria-labelledby="tyres-h">
-      <h2 id="tyres-h">Tyres</h2>
+      <div className="panel-head">
+        <h2 id="tyres-h">Tyres</h2>
+        <InfoTip id="age" scope="panel" align="end" label="tyre age" />
+      </div>
       <ul className="tyres">
         {rows.map((r) => {
           const age = tyreAgeView(r).laps;
@@ -27,7 +32,7 @@ export function TyrePanel({ rows }: { rows: DriverRow[] }) {
                 <span className="age-fill" style={{ width: `${pct}%` }} />
               </span>
               <span className="age-num">
-                <TyreAge row={r} unit />
+                <TyreAge row={r} unit describedBy={tipId("age", "panel")} />
               </span>
             </li>
           );

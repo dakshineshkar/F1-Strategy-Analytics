@@ -7,14 +7,22 @@ import { ESTIMATED_NOTE, tyreAgeView } from "@/lib/tyre";
 export function TyreAge({
   row,
   unit = false,
+  describedBy,
 }: {
   row: Pick<DriverRow, "tyreLifeLaps" | "tyreLifeAtStartLaps" | "tyreAgeLaps">;
   unit?: boolean;
+  /** Id of the tooltip that explains Age, used and est. (``lib/legend.tipId("age")``). */
+  describedBy?: string;
 }) {
   const v = tyreAgeView(row);
   const num = v.laps === null ? "—" : unit ? `${v.laps} ${v.laps === 1 ? "lap" : "laps"}` : String(v.laps);
   return (
-    <span className={`tyre-age tyre-age-${v.kind}`} title={v.description} data-tyre-age={v.kind}>
+    <span
+      className={`tyre-age tyre-age-${v.kind}`}
+      title={v.description}
+      data-tyre-age={v.kind}
+      aria-describedby={describedBy}
+    >
       <span aria-hidden="true">
         {num}
         {v.used ? <span className="tag tag-used">used</span> : null}

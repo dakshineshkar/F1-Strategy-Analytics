@@ -1,0 +1,124 @@
+/** What every dashboard marker means: the one source of the legend ("How to read this") and of the
+ * tooltips, so the two can never disagree. The wording follows the stream's definitions
+ * (``streaming/events.py`` ALERT_TRIGGERS, the shared undercut rule, ``lib/tyre.ts``). */
+
+export type GlossaryGroup = "tower" | "alerts" | "whatif";
+
+export interface GlossaryEntry {
+  id: string;
+  group: GlossaryGroup;
+  /** The marker as it appears on screen. */
+  term: string;
+  /** Accessible name of its tooltip button: "About <label>". */
+  label: string;
+  /** One or two sentences, shown in the tooltip and the legend. */
+  text: string;
+}
+
+/** The deployed model's decision threshold (``decision_threshold``, fixed at 0.5 since Step 9). */
+export const THRESHOLD_PCT = 50;
+
+export const GLOSSARY = [
+  {
+    id: "flag",
+    group: "tower",
+    term: "▲ and yellow left bar",
+    label: "the undercut flag",
+    text:
+      "Live undercut opportunity: at its latest evaluated lap this car passes the undercut rule against the car " +
+      "directly ahead (within 3.5 s, not teammates, no car between them, neither lapped or in the pits, green lap).",
+  },
+  {
+    id: "undercut",
+    group: "tower",
+    term: "Undercut %",
+    label: "Undercut",
+    text:
+      "Calibrated model probability that an undercut on the car directly ahead succeeds (pitting next lap and " +
+      "coming out ahead). — means the car is not a candidate.",
+  },
+  {
+    id: "age",
+    group: "tower",
+    term: "Age, used, est.",
+    label: "Age",
+    text:
+      "Tyre life in laps. “used”: the set already had laps on it before this stint (for example from " +
+      "qualifying). “est.”: no real value, so the inferred stint age, which assumes a new set.",
+  },
+  {
+    id: "int",
+    group: "tower",
+    term: "Int",
+    label: "Int",
+    text: "Interval: time behind the car directly ahead, measured at the timing line.",
+  },
+  {
+    id: "gap",
+    group: "tower",
+    term: "Gap",
+    label: "Gap",
+    text: "Time behind the leader, measured at the timing line.",
+  },
+  {
+    id: "lapsDown",
+    group: "tower",
+    term: "+1 L, IN PIT",
+    label: "the driver tags",
+    text: "“+n L”: the car is n laps behind the leader. “IN PIT”: the car is in the pit lane now.",
+  },
+  {
+    id: "opportunity",
+    group: "alerts",
+    term: "Opportunity",
+    label: "Opportunity",
+    text:
+      `The pair has just become an undercut candidate, or its probability rose to ${THRESHOLD_PCT}% or more ` +
+      "while it stayed a candidate.",
+  },
+  {
+    id: "attempt",
+    group: "alerts",
+    term: "Attempt",
+    label: "Attempt",
+    text: "The attacker of a candidate pair has pitted: the undercut is being tried now.",
+  },
+  {
+    id: "alertProb",
+    group: "alerts",
+    term: "Alert %",
+    label: "the alert percentage",
+    text: "The calibrated probability that the undercut succeeds, as estimated at the decision lap.",
+  },
+  {
+    id: "whatif",
+    group: "whatif",
+    term: "What-if rows",
+    label: "the what-if",
+    text:
+      "The rows compare three pit strategies with a race simulator; the model probability below them is the " +
+      "stream's calibrated outcome estimate.",
+  },
+] as const satisfies readonly GlossaryEntry[];
+
+export type GlossaryId = (typeof GLOSSARY)[number]["id"];
+
+export const GROUP_TITLE: Record<GlossaryGroup, string> = {
+  tower: "Timing tower",
+  alerts: "Undercut alerts",
+  whatif: "What-if",
+};
+
+export function glossary(id: GlossaryId): GlossaryEntry {
+  const e = GLOSSARY.find((g) => g.id === id);
+  if (e === undefined) throw new Error(`unknown glossary id ${id}`);
+  return e;
+}
+
+/** The element id of a marker's tooltip text. ``scope`` keeps ids unique when one entry has a tip in
+ * two places on a page (the tower's Age header and the tyre panel). */
+export const tipId = (id: GlossaryId, scope?: string): string => `tip-${id}${scope ? `-${scope}` : ""}`;
+
+/** Whether a key press dismisses an open or focused tooltip (WCAG 1.4.13): Escape only. Enter and
+ * Space reach the button's click, which toggles the tooltip for touch and keyboard users. */
+export const dismissesTip = (key: string): boolean => key === "Escape" || key === "Esc";

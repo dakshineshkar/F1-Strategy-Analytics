@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 
 import { driverCode, driverName, probability } from "@/lib/format";
+import { glossary } from "@/lib/legend";
 import {
   attackerChoices,
   barWidth,
@@ -102,6 +103,9 @@ export function WhatIfPanel({ season, round, order }: { season: number; round: n
         <h2 id="whatif-h">What-if: pit strategy</h2>
         {result?.inputs.synthetic ? <span className="badge">Synthetic tyres</span> : null}
       </div>
+      <p id="whatif-note" className="panel-note">
+        {glossary("whatif").text}
+      </p>
       <form
         className="whatif-form"
         onSubmit={(e) => {
@@ -172,7 +176,7 @@ export function WhatIfPanel({ season, round, order }: { season: number; round: n
                 ))}
               </tbody>
             </table>
-            <p className="whatif-model">
+            <p className="whatif-model" aria-describedby="whatif-note">
               <span className="wi-model-label">Model (calibrated LR, from the stream):</span>{" "}
               <strong>{probability(result.model.probability)}</strong>
               {result.model.undercut_flag ? " · flagged as an undercut opportunity" : ""}

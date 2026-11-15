@@ -12,6 +12,7 @@ import { useReplays } from "@/lib/useReplays";
 import { AlertFeed } from "./AlertFeed";
 import { ConnectionIndicator } from "./ConnectionIndicator";
 import { GapChart } from "./GapChart";
+import { Legend } from "./Legend";
 import { ReplayControl } from "./ReplayControl";
 import { TimingTower } from "./TimingTower";
 import { TyrePanel } from "./TyrePanel";
@@ -62,6 +63,7 @@ export function RaceDashboard({ season, round }: { season: number; round: number
       ) : null}
       <div className="dash">
         <div className="dash-main">
+          <Legend />
           <TimingTower rows={rows} lapsDown={(id) => lapsDown(state, id)} />
           <GapChart state={state} />
           <WhatIfPanel season={season} round={round} order={state.order} />
