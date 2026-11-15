@@ -23,13 +23,20 @@ driver hash + the order set, one pipeline, ``api/state.py``) and sends it as::
 
     event: snapshot
     id: snapshot-<lap>
-    data: {"type": "snapshot", "season", "round", "lap", "drivers", "order",
+    data: {"type": "snapshot", "season", "round", "lap", "drivers", "order", "tyres",
            "event_id", "sse_sent_at_ms"}
 
 * once right after connect (``snapshot-0``; the drivers are found with one SCAN);
 * once per race lap: when a ``lap`` event arrives whose lap number is higher than the lap of the
-  last snapshot (the leader's lap), right after that lap frame. These read the drivers already
-  known (the previous snapshot and the events since), so they need no SCAN.
+  last snapshot, **before** that lap frame. The sink writes a batch's hashes and order set before
+  its PUBLISH in one pipeline, so this snapshot already lists the event's car (and every car of
+  that batch). A client therefore never receives an event for a car before a snapshot that lists
+  it, unless Redis itself lacks the car; the dashboard's "unknown drivers" counter counts only
+  those. (Fix D: with the frame first, a fresh race's first lap frame always followed an empty
+  connect snapshot and was counted unknown.)
+* Per-lap snapshots read the drivers already known (the previous snapshot and the events since),
+  so they need no SCAN, except while the last snapshot found no driver (a race that had not
+  started at connect): then they SCAN again, so the first lap's snapshot holds every hash.
 
 The alert stream only says when a pair *becomes* a candidate, so these snapshots are what clears a
 stale ``undercut_flag`` in the browser. A snapshot that cannot be read (Redis error, a hash that
@@ -132,13 +139,15 @@ class EventStream:
         self.snapshot_lap: int | None = None
         """Lap of the last snapshot (0 = the connect snapshot); a higher lap event triggers one."""
         self.known_drivers: set[str] = set()
-        self._pending_lap: int | None = None
+        self._last_snapshot_empty = True
+        """The last snapshot (or none yet) found no driver hash: the next one SCANs again."""
 
     async def snapshot(self, lap: int) -> bytes | None:
         """The ``snapshot`` frame of the race's current Redis state, or ``None`` when it cannot be
-        read. The first one finds the drivers with one SCAN; later ones read the known drivers."""
+        read. The first one, and any after a snapshot that found no driver (a race that had not
+        started), find the drivers with one SCAN; later ones read the known drivers."""
         try:
-            if self.snapshot_lap is None:
+            if self.snapshot_lap is None or self._last_snapshot_empty:
                 keys = await scan_race_keys(self.client, self.season, self.round)
                 self.known_drivers |= set(driver_ids_from_keys(keys, self.season, self.round))
             state = await read_race_state(
@@ -154,6 +163,7 @@ class EventStream:
         finally:
             self.snapshot_lap = lap
         self.known_drivers |= set(state.drivers) | {o.driver_id for o in state.order}
+        self._last_snapshot_empty = not state.drivers
         event_id = f"snapshot-{lap}"
         data = {
             "type": SNAPSHOT,
@@ -180,8 +190,9 @@ class EventStream:
             return None
         return lap
 
-    def frame(self, data: str | bytes) -> tuple[bytes, str] | None:
-        """``(frame, type)`` for one Pub/Sub message body, or ``None`` if it is skipped."""
+    def parse(self, data: str | bytes) -> tuple[dict[str, Any], str] | None:
+        """``(message, event_id)`` of one Pub/Sub message body of this race, or ``None`` if it is
+        skipped (counted)."""
         raw = data.decode("utf-8", errors="replace") if isinstance(data, bytes) else data
         try:
             msg = json.loads(raw)
@@ -196,18 +207,21 @@ class EventStream:
             self.skipped += 1
             log.warning("skipped message", extra={"channel": self.channel, "skipped": self.skipped})
             return None
-        eid = event_id_for(raw, msg)
+        return msg, event_id_for(raw, msg)
+
+    def frame(self, msg: Mapping[str, Any], eid: str) -> bytes | None:
+        """The SSE frame of a parsed message, stamped with ``sse_sent_at_ms`` right before it is
+        sent, or ``None`` if it cannot be framed (counted)."""
         out = {**msg, "event_id": eid, "sse_sent_at_ms": self.clock_ms()}
         try:
-            frame = format_event(msg["type"], eid, out)
+            frame = format_event(str(msg["type"]), eid, out)
         except ValueError:
             self.skipped += 1
             log.warning("skipped message", extra={"channel": self.channel, "skipped": self.skipped})
             return None
         if self.on_sent is not None:
             self.on_sent(eid, out)
-        self._pending_lap = self._note(msg)
-        return frame, msg["type"]
+        return frame
 
     async def frames(self) -> AsyncIterator[bytes]:
         """Subscribe, then yield the preamble, event frames and heartbeats until ``session_end``."""
@@ -235,18 +249,23 @@ class EventStream:
                     # do not block at all): back off briefly instead of spinning.
                     await asyncio.sleep(min(IDLE_BACKOFF_S, max(next_beat - loop.time(), 0.0)))
                     continue
-                framed = self.frame(msg["data"])
-                if framed is None:
+                parsed = self.parse(msg["data"])
+                if parsed is None:
                     continue
-                self.sent += 1
-                yield framed[0]
-                if framed[1] == "session_end":
-                    return
-                lap, self._pending_lap = self._pending_lap, None
+                body, eid = parsed
+                # A lap of a new race lap: its snapshot goes first (see the module docstring).
+                lap = self._note(body)
                 if lap is not None:
                     snap = await self.snapshot(lap)
                     if snap is not None:
                         yield snap
+                framed = self.frame(body, eid)
+                if framed is None:
+                    continue
+                self.sent += 1
+                yield framed
+                if body["type"] == "session_end":
+                    return
         finally:
             await self.close()
 

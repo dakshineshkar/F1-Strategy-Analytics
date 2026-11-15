@@ -108,11 +108,11 @@ async def test_stream_events_heartbeat_and_close_after_session_end(tmp_path: Pat
     assert resp.headers["x-accel-buffering"] == "no"
     frames = parse_sse(resp.text)
     assert frames[0] == {"retry": "3000", "comments": ["connected"]}
-    # A snapshot follows the connect and the first lap event of each new lap (snapshot tests).
+    # A snapshot follows the connect and precedes the first lap event of each new lap.
     assert [f.get("event") for f in frames if "event" in f] == [
         "snapshot",
-        "lap",
         "snapshot",
+        "lap",
         "pit_in",
         "session_end",
     ]
@@ -277,7 +277,7 @@ async def _stream(api: ApiHarness, publisher) -> list[dict[str, Any]]:  # type: 
     return [f for f in parse_sse(resp.text) if "event" in f]
 
 
-async def test_snapshot_after_connect_and_once_per_leader_lap(tmp_path: Path) -> None:
+async def test_snapshot_after_connect_and_before_each_new_lap(tmp_path: Path) -> None:
     api = make_api(make_settings(tmp_path))
     await _seed(api, {"alpha": False, "bravo": True, "charlie": False})
 
@@ -297,9 +297,10 @@ async def test_snapshot_after_connect_and_once_per_leader_lap(tmp_path: Path) ->
 
     events = await _stream(api, publisher)
     names = [e["event"] for e in events]
+    # the lap snapshot precedes the frame that starts its lap (Fix D)
     assert names == [
-        "snapshot", "lap", "snapshot", "lap", "lap", "pit_in", "undercut_alert",
-        "lap", "snapshot", "lap", "lap", "lap", "session_end",
+        "snapshot", "snapshot", "lap", "lap", "lap", "pit_in", "undercut_alert",
+        "snapshot", "lap", "lap", "lap", "lap", "session_end",
     ]  # fmt: skip
     snaps = [e for e in events if e["event"] == "snapshot"]
     assert [s["id"] for s in snaps] == ["snapshot-0", "snapshot-1", "snapshot-2"]
@@ -318,6 +319,47 @@ async def test_snapshot_after_connect_and_once_per_leader_lap(tmp_path: Path) ->
         ]
     assert snaps[0]["data"]["drivers"]["alpha"]["gap_ahead_s"] is None  # "" -> null
     assert snaps[0]["data"]["drivers"]["bravo"]["undercut_flag"] is True
+
+
+async def test_a_fresh_race_never_sends_an_event_before_a_snapshot_listing_its_car(
+    tmp_path: Path,
+) -> None:
+    """Fix D: the dashboard connects before the race has any key (empty ``snapshot-0``). The sink's
+    first batch writes every hash, the order and the lap events in one pipeline; the lap-1 snapshot
+    must come before the first lap frame and hold every car (SCAN again after an empty snapshot)."""
+    api = make_api(make_settings(tmp_path))
+    cars = ("alpha", "bravo", "charlie")
+
+    async def publisher() -> None:
+        await _wait_subscribed(api)
+        await asyncio.sleep(0.05)  # the (empty) connect snapshot is done
+        await _store(api).write_batch(  # the stream job's first micro-batch
+            2024,
+            5,
+            Batch(
+                states={d: _state(i + 1, False, None) for i, d in enumerate(cars)},
+                order={d: i + 1 for i, d in enumerate(cars)},
+                events=[_lap_event(d, 1) for d in ("bravo", "alpha", "charlie")],
+            ),
+        )
+        await _publish(api, *[_lap_event(d, 2) for d in cars])
+        await _store(api).end_session(2024, 5)
+
+    events = await _stream(api, publisher)
+    assert [e["event"] for e in events] == [
+        "snapshot", "snapshot", "lap", "lap", "lap", "snapshot", "lap", "lap", "lap", "session_end",
+    ]  # fmt: skip
+    first, lap1 = events[0]["data"], events[1]["data"]
+    assert (first["lap"], first["drivers"], first["order"]) == (0, {}, [])
+    assert lap1["lap"] == 1 and sorted(lap1["drivers"]) == list(cars)
+    assert [o["driver_id"] for o in lap1["order"]] == list(cars)
+    # every event's car is in a snapshot sent before it
+    listed: set[str] = set()
+    for e in events:
+        if e["event"] == "snapshot":
+            listed |= set(e["data"]["drivers"]) | {o["driver_id"] for o in e["data"]["order"]}
+        elif e["event"] == "lap":
+            assert e["data"]["payload"]["driver_id"] in listed
 
 
 async def test_snapshot_refreshes_a_stale_undercut_flag(tmp_path: Path) -> None:

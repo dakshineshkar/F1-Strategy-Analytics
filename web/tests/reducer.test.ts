@@ -299,3 +299,44 @@ describe("pushed snapshots (event: snapshot)", () => {
     expect(foreign.drivers).toEqual({});
   });
 });
+
+describe("unknown drivers (Fix D)", () => {
+  const ev2 = (raw: string): RaceAction => ({ type: "event", raw });
+
+  it("the API's order (lap snapshot before its first lap frame) gives 0 on a fresh race", () => {
+    const s = run([
+      ev2(snapshotMsg([], 0)), // connect before the race has any key
+      ev2(snapshotMsg(["a", "b", "c"], 1)),
+      ev2(lap("b", 1, 90, 2)),
+      ev2(lap("a", 1, 89, 1)),
+      ev2(lap("c", 1, 91, 3)),
+    ]);
+    expect(s.unknownDrivers).toBe(0);
+    expect(towerRows(s).map((r) => r.driverId)).toEqual(["a", "b", "c"]);
+  });
+
+  it("the old order (first lap frame before its snapshot) counted that car: the artefact seen live", () => {
+    const s = run([
+      ev2(snapshotMsg([], 0)),
+      ev2(lap("b", 1, 90, 2)), // e.g. leclerc P2, the first lap-1 message of 2024 R1
+      ev2(snapshotMsg(["a", "b", "c"], 1)),
+      ev2(lap("a", 1, 89, 1)),
+      ev2(lap("c", 1, 91, 3)),
+    ]);
+    expect(s.unknownDrivers).toBe(1);
+  });
+
+  it("a genuinely unknown driver id still increments the counter (lap, pit and alert)", () => {
+    const s = run([
+      ev2(snapshotMsg(["a", "b"], 1)),
+      ev2(lap("a", 2, 180, 1)),
+      ev2(lap("ghost", 2, 181, 3)),
+      ev2(msg("pit_in", { driver_id: "phantom", lap: 2, race_time_s: 182 })),
+      ev2(alertMsg("spectre", "a", "opportunity", "new_candidate", 0.4)),
+    ]);
+    expect(s.unknownDrivers).toBe(3);
+    expect(Object.keys(s.drivers)).toEqual(expect.arrayContaining(["ghost", "phantom", "spectre"]));
+    // the same id again is a known row now: counted once
+    expect(run([ev2(lap("ghost", 3, 270, 3))], s).unknownDrivers).toBe(3);
+  });
+});

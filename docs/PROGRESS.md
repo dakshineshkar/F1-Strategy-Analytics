@@ -1371,6 +1371,40 @@
       (`E2E_NO_SERVER=1 npx playwright test e2e/smoke.spec.ts`) passed in 1.6 min.
     - The api was then restored with `make api-up FULL=1 REPLAY=1`. All 11 services are healthy and volumes
       were not touched.
+- Step 17 follow-up 4 (2026-11-15): Fix D, "1 unknown drivers" in the dashboard footer. **Done.**
+  - **Evidence** (SSE recorded with `curl -N` and folded through the real `raceReducer`; scratchpad harness):
+    - 2024 R1, full mode, 60x, subscribed before the replay with no race keys: footer "1341 events applied ·
+      0 malformed · 1 unknown drivers". The one unknown is frame #1: `lap`, leclerc, lap 1, P2. It came after
+      an empty `snapshot-0` (0 drivers, 0 order) and just before `snapshot-1`.
+    - `snapshot-1` held only leclerc's hash plus the full order zset (20). The zset created the other 19 rows,
+      so every later event was known.
+    - 2024 R5 behaved the same way: 1 unknown, `lap` russell lap 1 P6.
+    - A mid-race connect of 2024 R1 showed 0: the connect snapshot already listed 20 drivers.
+    - **Cause:** `api/sse.py` sent the per-lap snapshot after the first lap frame of the lap. On a race without
+      keys at connect, that frame always reached the browser before any snapshot listing its car.
+    - The driver was never missing from Redis: the sink writes hashes and order before its PUBLISH in one
+      pipeline.
+  - **Fix** (API stream only; no reducer, streaming, Redis-contract or model change; the counter is kept).
+    - The per-lap snapshot is now read and sent **before** the lap frame that starts its lap.
+    - `sse_sent_at_ms` is stamped right before each frame is sent.
+    - A snapshot SCANs again while the previous one found no driver, so a fresh race's lap-1 snapshot holds
+      all 20 hashes, not 1.
+  - **Proof.**
+    - Stream parity 2021-2024 (`--out data/demo/parity_check3/`): byte-identical to
+      `results/stream_parity_full.csv` (sha256 aad8df67…; 90 races, 157 labelled, 0 mismatches).
+    - Sample 2024 R5 alert check: 113 / 19 / 9, and the dump is byte-identical to the previous one.
+    - After the fix (api recreated with `make api-up FULL=1 REPLAY=1`, and the race keys deleted first, user
+      approved), the browser footer read "0 unknown drivers" on both races: "1341 events applied · 0
+      malformed · 0 unknown drivers" (2024 R1) and "1251 … · 0 unknown drivers" (2024 R5). The harness agrees.
+  - **Latency** (`docs/experiments.md`, "Change after Step 16"): the lap's first frame went from Redis → SSE
+    send p50 2 → 5 ms, and the other lap frames gained 0–1 ms at p50 and about +3 ms at p95 (one subscriber,
+    same races). The committed latency results are unchanged.
+  - **Tests.**
+    - `test_api_events.py`: a fresh race never sends an event before a snapshot that lists its car, and the
+      lap-1 snapshot holds every hash. The order expectations of two tests were updated.
+    - `web/tests/reducer.test.ts`: the new order gives 0, the old order gives 1 (the artefact), and genuinely
+      unknown ids (lap, pit, alert) still increment, once each.
+    - Full Python suite 1742 passed; web lint and typecheck clean, Vitest 174 passed.
 ## Next
 - S18: report, docs and demo rehearsal (#44): `docs/report/`, `docs/demo_script.md`.
 - Push and watch the first CI run of the `e2e` job on GitHub (runner build time and disk are unmeasured).
@@ -1445,7 +1479,7 @@
 - Step 14 follow-up: the replay control still polls `GET /api/replays` (1 s while running, 5 s otherwise),
   because replay status (starting/failed) is not on the race channel. The race state itself is never
   polled.
-- Step 14 follow-up: a snapshot is taken right after the leader's lap event. Redis keeps changing during
+- Step 14 follow-up (order changed by Fix D: the snapshot now precedes the lap's first frame): a snapshot is taken around the leader's lap event. Redis keeps changing during
   the lap (later cars' batches), so the UI is exact at each snapshot and event-driven in between (measured
   UI = Redis on 26/27 laps when read right after).
 - 2026-11-12: Docker Desktop's host port forwards for Redis (6379) and Kafka (9092) broke after a failed

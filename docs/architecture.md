@@ -738,8 +738,17 @@ Docs: `/api/docs`, `/api/openapi.json`.
     `GET /state`) and sends `event: snapshot`, `id: snapshot-<lap>`, with data `{type: "snapshot", season,
     round, lap, drivers, order, tyres, event_id, sse_sent_at_ms}`:
     - once right after connect (`snapshot-0`; the drivers are found with one SCAN);
-    - once per race lap, right after the first `lap` event whose lap number is higher than the last
-      snapshot's (the leader's lap). These read the drivers already known, so they never SCAN.
+    - once per race lap, **before** the first `lap` event whose lap number is higher than the last
+      snapshot's (Fix D, 2026-11-15; it used to follow that frame).
+      - The sink writes a batch's hashes and order set before its PUBLISH in one pipeline, so this
+        snapshot already lists the event's car. A client never gets an event for a car before a snapshot
+        listing it, unless Redis lacks that car, so the dashboard's "unknown drivers" counter counts only
+        those.
+      - With the old order, a race that had no keys at connect (an empty `snapshot-0`) always showed
+        "1 unknown drivers": the first lap-1 message (2024 R1: leclerc P2; 2024 R5: russell P6).
+      - These snapshots read the drivers already known and do not SCAN, except while the last snapshot
+        found no driver: then they SCAN again, so the first lap's snapshot holds every hash, not only the
+        triggering car's.
 
     The alert stream only says when a pair *becomes* a candidate, so these snapshots are what clear a stale
     `undercut_flag` in the browser. A snapshot that cannot be read is skipped and logged, and the event

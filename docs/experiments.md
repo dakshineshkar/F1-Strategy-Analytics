@@ -541,6 +541,35 @@ Setup:
   `streaming_runs.resummarise_ui` (no new measurement). `ui_latency.csv` was byte-identical, and the summary
   now shows 1.0.
 
+### Change after Step 16: the per-lap snapshot now precedes its lap frame (Fix D, 2026-11-15)
+The committed latency results above were measured with the old order and are unchanged.
+- **What changed.** `api/sse.py` now reads and sends `snapshot-<lap>` before the first lap frame of that lap
+  (it used to send it after that frame). This removes the "1 unknown drivers" artefact on races without keys
+  at connect (`docs/architecture.md`, "SSE framing").
+- **Cost.** One Redis read (driver hashes, tyre hashes and the order zset in one pipeline) now sits in front
+  of the lap's first frame. The frames queued behind it in the same batch also wait for it.
+- **Measurement.** 2024 R1 and 2024 R5, full mode (HDFS lake), 60x, one replay each before and after the
+  change.
+  - Each run started with no race keys, with a single SSE client (`curl -N`) subscribed before the replay.
+  - The metric is the lap frames' `sse_sent_at_ms − payload.redis_written_at_ms` (Redis → API SSE send, one
+    host clock).
+  - Recordings are in the session scratchpad, not in `results/`.
+
+| Race | Lap frames | Before p50 / p95 / p99 ms | After p50 / p95 / p99 ms |
+|---|---|---|---|
+| 2024 R1 | first frame of a lap (n = 57) | 2.0 / 5.0 / 39.2 | 5.0 / 8.8 / 16.5 |
+| 2024 R1 | other lap frames (n = 1072) | 2.0 / 10.0 / 48.0 | 3.0 / 13.0 / 22.3 |
+| 2024 R5 | first frame of a lap (n = 56) | 2.0 / 3.2 / 7.0 | 5.0 / 9.0 / 15.5 |
+| 2024 R5 | other lap frames (n = 974) | 3.0 / 8.0 / 11.0 | 3.0 / 11.0 / 12.0 |
+
+- The lap's first frame now arrives about **+3 ms** later at the median (the snapshot read). The other frames
+  of the same batch gain 0–1 ms at the median and about +3 ms at p95.
+- The p99 differences (R1 48 → 22 ms) are run-to-run variance on this host, not an effect of the change.
+- Against the end-to-end latency (about 0.7–0.8 s at the median, dominated by the 500 ms trigger and Kafka,
+  above), the change is under 1%.
+- Side effect: the lap-1 snapshot of a fresh race now holds all 20 driver hashes instead of only the triggering
+  car's (it SCANs again while the previous snapshot had no driver).
+
 ## Redis latency: first run and quiet rerun (#37)
 
 | Rate | Operation | First run (Step 11, 2026-11-12; noisy, other services up) p50 / p95 / p99 ms | Quiet rerun (Step 16, 2026-11-14) p50 / p95 / p99 ms | Achieved rate / late ticks (first → quiet) |
