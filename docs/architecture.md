@@ -539,6 +539,21 @@ clean zone (one race) --producer: race order x SPEED, key=driver_id, acks=all, i
   - one `session_end` per partition.
 
   Season 2025 is refused unless `--allow-test-season` is given.
+- **Lap-event compound** (`producer.resolve_compound`, display only). `tyre_age` always comes from
+  `df_jobs.tyre_age` over the v1 clean `stints`, as in the batch features. The compound is resolved per lap:
+  1. the real compound of the additive `clean/stints_tracinginsights` stint in progress: the driver's stint with
+     the largest `start_lap <= lap` (`sim.whatif.stint_starts`, the what-if's convention). `end_lap` is never
+     read and later stints are ignored, so the in-lap keeps the old tyre and the out-lap shows the new one.
+     A `compound_conflict` stint has no compound;
+  2. else the v1 stint's compound (synthetic in sample mode, null in full mode);
+  3. else null, which the Redis hash writes as `UNKNOWN`.
+
+  Names are normalised to SOFT/MEDIUM/HARD/INTERMEDIATE/WET (anything else is null). A race whose v1 stints are
+  synthetic ignores TracingInsights, so sample mode keeps its synthetic compounds. Without the table (the sample
+  lake) the producer logs a warning and uses the v1 stints. It prints the share per source
+  (`compound: … tracinginsights, … v1_stints, … unknown of N laps`). No rule, live feature, scorer input or alert
+  reads the compound (`test_tracinginsights_compound_changes_no_model_input`), and `stream-parity-full` replays
+  this path.
 - **Event schema** (`events.py`): `RaceEvent` with JSON (de)serialisation and the matching Spark `StructType`.
   - Besides the requested fields it carries `race_time_s` (pacing and watermark) and three **replayed context**
     fields: `track_neutral`, `track_red_flag` and `race_laps`.
@@ -601,7 +616,8 @@ or feature tables apart from the earlier-race priors and the entry list.
 
 ### Redis writes and latency fields
 - **One `write_batch` per micro-batch and race:**
-  - all driver hashes: live position, gaps of the latest lap, compound or `UNKNOWN`, tyre age, last lap,
+  - all driver hashes: live position, gaps of the latest lap, compound (real TracingInsights compound in full
+    mode, synthetic in sample mode) or `UNKNOWN`, tyre age, last lap,
     `undercut_flag` (1 when the car is a rule-eligible attacker at its latest evaluated decision lap) and
     `undercut_prob` (its calibrated P);
   - the full order set (unique live rank: laps completed, then crossing time);
@@ -878,8 +894,11 @@ request:  Redis hashes (api/state)  +  lap log (race channel)  +  features/pit_l
   lap in the lap log, and records after C are dropped (tested with x100 scaling).
   - The Redis channel carries no track flags, so the green-lap filter is causal: within 1.07 x the fastest of
     the last 10 non-pit laps.
-  - In full mode, Redis has no compound, so the compound comes from the TracingInsights stint that started by
-    lap C (`start_lap`, `compound`, `tyre_age_at_start`; never `end_lap`; `compound_conflict` gives UNKNOWN).
+  - In full mode the compound comes from the TracingInsights stint that started by lap C (`start_lap`,
+    `compound`, `tyre_age_at_start`; never `end_lap`; `compound_conflict` gives UNKNOWN). It is read before the
+    race channel and Redis. The producer now puts the same stint's compound on the lap events and the hash, so
+    those fallbacks agree with it and the full-mode what-if is unchanged. The backtest
+    (`sim/backtest.py`) builds its states from `laps_enriched` and the TI stint starts, not from the producer.
   - The race distance comes from the API catalog.
 - **Lap log** (`api/lap_log.py`): per race, the last 30 laps of every car from the race channel. It has two
   feeds:

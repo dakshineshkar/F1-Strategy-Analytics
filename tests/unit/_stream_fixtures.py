@@ -134,3 +134,49 @@ def scenario_doc_dir(path: Path, *, g: float = 3.5, features: list[str] | None =
     }
     (lr / "metadata.json").write_text(json.dumps(meta), encoding="utf-8")
     return path
+
+
+def full_mode_frames(spark: Any, clean: Mapping[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
+    """``(v1_only, with_ti)`` producer frames shaped like the full lake: the v1 stints become
+    Jolpica-inferred (compound null, not synthetic) and ``with_ti`` adds a
+    ``stints_tracinginsights`` table on the same boundaries with compounds SOFT (stint 1) /
+    MEDIUM (later), driver ``d``'s second stint conflicting (no compound), and a starting tyre
+    age of 5, which must never reach ``tyre_age``."""
+    from pyspark.sql import functions as F
+
+    from f1sa.lake.schemas_tracinginsights import CLEAN_SCHEMAS_TI
+
+    stints = (
+        clean["stints"]
+        .withColumn("compound", F.lit(None).cast("string"))
+        .withColumn("is_synthetic", F.lit(False))
+        .withColumn("source", F.lit("jolpica_inferred"))
+    )
+    v1_only = {**clean, "stints": stints}
+    ti_rows = []
+    for s in clean["stints"].collect():
+        conflict = s["driver_id"] == "d" and s["stint"] == 2
+        compound = None if conflict else ("SOFT" if s["stint"] == 1 else "MEDIUM")
+        ti_rows.append(
+            {
+                "season": s["season"],
+                "round": s["round"],
+                "driver_id": s["driver_id"],
+                "driver_code": s["driver_id"][:3].upper(),
+                "stint": s["stint"],
+                "start_lap": s["start_lap"],
+                "end_lap": s["end_lap"],
+                "laps": s["laps"],
+                "compound": compound,
+                "compound_missing": compound is None,
+                "n_laps_compound_null": 0,
+                "compound_conflict": conflict,
+                "tyre_age_at_start": 5,
+                "fresh_tyre": False,
+                "is_synthetic": False,
+                "source": "tracinginsights",
+            }
+        )
+    schema = CLEAN_SCHEMAS_TI["stints_tracinginsights"]
+    ti = spark.createDataFrame([tuple(r[f.name] for f in schema.fields) for r in ti_rows], schema)
+    return v1_only, {**v1_only, "stints_tracinginsights": ti}

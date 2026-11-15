@@ -165,7 +165,7 @@ def scenario_tables(spark: SparkSession) -> dict[str, Any]:
         t: priors_from_frames(tables["pit_loss"], tables["outlap_features"], clean["results"], *t)
         for t in sorted(targets)
     }
-    return {"tables": tables, "inputs": inputs, "priors": priors}
+    return {"tables": tables, "inputs": inputs, "priors": priors, "clean": clean}
 
 
 @pytest.mark.parametrize("variant", VARIANTS, ids=lambda v: f"b{v[0]}-lag{v[1]}-df{v[2]}")
@@ -187,6 +187,98 @@ def test_scenarios_match_batch(
     # success and fail are labelled; the lapped car makes round 6 ineligible at L-1 = 5
     assert by_race[(2023, 1)].labelled == 1 and by_race[(2023, 2)].labelled == 1
     assert sum(r.batch_pairs for r in reports) > 0
+
+
+# ------------------------------------------------------------------ the compound is display only
+def _replay_all(
+    scorer: LRScorer,
+    priors: Mapping[tuple[int, int], LF.RacePriors],
+    events: Mapping[tuple[int, int], list[Any]],
+) -> tuple[StreamProcessor, Any]:
+    redis = fakeredis.FakeRedis(decode_responses=True)
+    proc = StreamProcessor(
+        scorer=scorer,
+        params=PARAMS,
+        sink=RedisSink(RaceStore(redis)),
+        priors_loader=lambda s, r: priors[(s, r)],
+        n_partitions=N_PARTITIONS,
+        keep_decisions=True,
+    )
+    batch_id = 0
+    for race in sorted(events):
+        batches = PT.kafka_batches(events[race], N_PARTITIONS, 7, lag_partition=1)
+        batch_id += PT.replay_into(proc, batches, first_batch_id=batch_id)
+    return proc, redis
+
+
+def _event_view(out: Any, *, keep_compound: bool) -> tuple[Any, ...]:
+    d = out.event.to_dict()
+    d.pop("event_id")
+    if not keep_compound:
+        d.pop("compound")
+    return (out.partition, tuple(sorted(d.items())))
+
+
+def test_tracinginsights_compound_changes_no_model_input(
+    spark: SparkSession, model: dict[str, Any], scenario_tables: dict[str, Any]
+) -> None:
+    """Full-mode-shaped races (v1 compound null) with and without ``stints_tracinginsights``:
+    the events differ only in ``compound``; the decisions (21 inputs, P), the alerts and every
+    Redis field except ``tyre_compound`` / ``updated_at`` are identical."""
+    from _stream_fixtures import full_mode_frames
+
+    from f1sa.serving import keys as K
+    from f1sa.streaming.producer import COMPOUND_SOURCES
+
+    v1_only, with_ti = full_mode_frames(spark, scenario_tables["clean"])
+    races = sorted(scenario_tables["inputs"])
+    base_inputs = {r: race_inputs(v1_only, *r) for r in races}
+    ti_inputs = {r: race_inputs(with_ti, *r) for r in races}
+    base_ev = {r: build_events(base_inputs[r], N_PARTITIONS) for r in races}
+    ti_ev = {r: build_events(ti_inputs[r], N_PARTITIONS) for r in races}
+    changed = 0
+    for r in races:
+        assert [_event_view(o, keep_compound=False) for o in base_ev[r]] == [
+            _event_view(o, keep_compound=False) for o in ti_ev[r]
+        ]
+        changed += sum(
+            a.event.compound != b.event.compound for a, b in zip(base_ev[r], ti_ev[r], strict=True)
+        )
+        assert {x.compound_source for x in ti_inputs[r].laps} <= set(COMPOUND_SOURCES)
+    # every lap with a TI compound changed (v1 has none), the rest stayed unknown
+    n_ti = sum(x.compound_source == "tracinginsights" for r in races for x in ti_inputs[r].laps)
+    assert changed == n_ti and n_ti > 0
+
+    priors = scenario_tables["priors"]
+    base_proc, base_redis = _replay_all(model["scorer"], priors, base_ev)
+    ti_proc, ti_redis = _replay_all(model["scorer"], priors, ti_ev)
+    assert base_proc.decisions and base_proc.decisions == ti_proc.decisions
+    assert [a.to_dict() for a in base_proc.alerts] == [a.to_dict() for a in ti_proc.alerts]
+    assert base_proc.alerts
+
+    def hashes(redis: Any) -> dict[str, dict[str, str]]:
+        out = {}
+        for race in races:
+            for d in {x.driver_id for x in base_inputs[race].laps}:
+                key = K.driver_key(*race, d)
+                out[key] = redis.hgetall(key)
+        return out
+
+    base_h, ti_h = hashes(base_redis), hashes(ti_redis)
+    assert base_h.keys() == ti_h.keys() and all(base_h.values())
+    for key in base_h:
+        b = {f: v for f, v in base_h[key].items() if f not in ("tyre_compound", "updated_at")}
+        t = {f: v for f, v in ti_h[key].items() if f not in ("tyre_compound", "updated_at")}
+        assert b == t, key
+        assert base_h[key]["tyre_compound"] == "UNKNOWN"
+        assert ti_h[key]["tyre_compound"] in ("SOFT", "MEDIUM", "UNKNOWN")
+    assert {h["tyre_compound"] for h in ti_h.values()} >= {"MEDIUM"}
+
+
+def test_sample_lake_events_keep_the_synthetic_compounds(sample_tables: dict[str, Any]) -> None:
+    for race, inputs in sample_tables["inputs"].items():
+        assert {r.compound_source for r in inputs.laps} == {"v1_stints"}, race
+        assert {r.compound for r in inputs.laps} <= {"SOFT", "MEDIUM", "HARD"}
 
 
 # ------------------------------------------------------------------ the real sample races

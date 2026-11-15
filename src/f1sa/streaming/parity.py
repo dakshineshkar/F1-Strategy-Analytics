@@ -391,10 +391,11 @@ def main(argv: Iterable[str] | None = None) -> int:
     from f1sa.etl.clean import spark_uri
     from f1sa.etl.spark import build_spark
     from f1sa.lake import schemas as S
+    from f1sa.lake.schemas_tracinginsights import CLEAN_SCHEMAS_TI
     from f1sa.model.calibrate import Calibrator
     from f1sa.model.dataset import read_feature_seasons, read_seasons, with_derived_inputs
     from f1sa.streaming.priors import priors_from_frames
-    from f1sa.streaming.producer import build_events, race_inputs
+    from f1sa.streaming.producer import TI_STINTS_TABLE, build_events, race_inputs
     from f1sa.streaming.redis_sink import RedisSink
     from f1sa.streaming.stream_job import load_model
 
@@ -426,6 +427,11 @@ def main(argv: Iterable[str] | None = None) -> int:
         t: read_seasons(spark, clean_root, t, S.CLEAN_SCHEMAS[t], args.seasons).cache()
         for t in ("laps", "pitstops", "stints", "results")
     }
+    # the lap events' compound source (display only), so parity replays the producer's full path;
+    # empty when the lake has no such table (the sample lake)
+    clean[TI_STINTS_TABLE] = read_seasons(
+        spark, clean_root, TI_STINTS_TABLE, CLEAN_SCHEMAS_TI[TI_STINTS_TABLE], args.seasons
+    ).cache()
     attempts = with_derived_inputs(
         ft["undercut_attempts"], ft["stints"], ft["telemetry_lap_features"]
     ).cache()

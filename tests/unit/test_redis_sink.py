@@ -101,6 +101,24 @@ def test_one_write_batch_with_states_order_events_and_alerts() -> None:
     assert store.client.ttl(K.driver_key(S, R, "a")) > 0
 
 
+@pytest.mark.parametrize("compound", ["SOFT", "MEDIUM", "HARD", "INTERMEDIATE", "WET", None])
+def test_lap_event_compound_reaches_the_hash_and_the_channel(compound: str | None) -> None:
+    """The producer's compound (TracingInsights or v1, already normalised) is written as is;
+    null becomes ``UNKNOWN`` in the hash and stays null on the race channel."""
+    store = CountingStore()
+    sink = RS.RedisSink(store, clock_ms=lambda: 5_000)
+    evs = [lap_ev("a", 1, 1, 90.0, compound=compound, tyre_age=4)]
+    pubsub = store.client.pubsub()
+    pubsub.subscribe(K.events_channel(S, R))
+    pubsub.get_message(timeout=0.1)
+    sink.write(race(*evs), evs, [], received_ms=4_000)
+    h = store.client.hgetall(K.driver_key(S, R, "a"))
+    assert tuple(h) == DRIVER_FIELDS
+    assert h["tyre_compound"] == (compound or "UNKNOWN") and h["tyre_age_laps"] == "4"
+    msg = pubsub.get_message(timeout=0.1)
+    assert msg is not None and json.loads(msg["data"])["payload"]["compound"] == compound
+
+
 def test_nothing_to_write_returns_none() -> None:
     store = CountingStore()
     assert RS.RedisSink(store).write(race(), [], [], received_ms=0) is None

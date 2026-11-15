@@ -1199,10 +1199,61 @@
       `test_features_build.py`.
     - Updated for the intended changes: `test_makefile_api.py` and `test_makefile_web.py` (image tag, mkdir line).
     - Full unit suite: 1688 passed. `make web-test`: 152 passed.
+- Step 17 follow-up (2026-11-15): real tyre compound in the full-mode live replay. **Done.**
+  - **Problem.** In full mode every car showed `Unknown`. The producer took `compound` from
+    `df_jobs.tyre_age` over the v1 clean `stints`, which are `jolpica_inferred` (compound null).
+  - **Investigation.**
+    - The shared rule only carries `tyre_compound` / `tyre_age_laps`. The 21 live inputs, the scorer and the
+      alerts never read the compound. `tyre_age` is used (the x-axis of the three degradation slopes), so it is
+      unchanged.
+    - The live what-if reads the TracingInsights stint starts first in full mode. Redis and the race channel are
+      fallbacks only, so its compound is unchanged.
+    - The what-if backtest (`sim/backtest.py`) builds its states from `laps_enriched` and the TI stint starts,
+      not from the producer. The stream parity run calls `producer.race_inputs` directly.
+  - **Change** (`streaming/producer.py`, `streaming/parity.py`; nothing in `sim/`, `features/` or `model/`).
+    - `resolve_compound`, in order:
+      1. the `stints_tracinginsights` stint in progress, i.e. the largest `start_lap <= lap`, using
+         `sim.whatif.stint_starts` (never `end_lap`, conflict gives no compound);
+      2. the v1 stint's compound;
+      3. null, which Redis writes as `UNKNOWN`.
+    - `normalise_compound` maps names to the five that the dashboard renders.
+    - Synthetic v1 stints ignore TI, so sample mode stays synthetic. A missing TI table gives a warning and the
+      v1 stints.
+    - The producer prints the share per source. `LapRecord.compound_source` is new.
+    - The parity runner passes `stints_tracinginsights`, so it replays this path.
+    - The Redis contract is unchanged.
+  - **Evidence.**
+    - Sample 2024 R5 with the deployed model: 113 new_candidate, 19 probability_crossed and 9 attempt
+      alerts (141 in total), as before the change. The dump of every alert, all 409 decisions and all 1113
+      events (without `event_id`) is byte-identical to the pre-change run.
+    - Stream parity 2021-2024 (the `stream-parity-full` command with `--out data/demo/parity_check/...`): 90
+      races, 157 labelled attempts, 34,608 eligible pairs and 0 mismatching races. The CSV is byte-identical to
+      `results/stream_parity_full.csv` (sha256 aad8df67…).
+    - `make experiments-sample`: OK 7, OK (metadata differs) 1, DIFF 0. The sample what-if CSV and PNG are
+      byte-identical to the 2026-11-14 runs.
+    - Full mode, 2024 R1: the compound is known on 1129 of 1129 laps (100%, all TracingInsights). In
+      `make stream-demo FULL=1 SEASON=2024 ROUND=1 SPEED=60`, all 20 hashes held real compounds after the
+      leader's lap 30. At the session end there were 14 HARD and 6 SOFT.
+  - **Tests.**
+    - `test_producer.py` covers normalisation, the pit boundary (the in-lap keeps the old compound, the out-lap
+      gets the new one), that no later stint is used, the unknown cases, the source precedence, coverage, TI in
+      `race_inputs` and the synthetic guard.
+    - `test_stream_parity.py::test_tracinginsights_compound_changes_no_model_input` checks that events differ
+      only in `compound`, and that decisions, alerts and Redis fields (except `tyre_compound`) are identical.
+    - `test_redis_sink.py` checks the compound in the hash and on the channel.
+    - Full unit suite: 1704 passed.
+  - There was no "Unknown in full mode" entry under Known issues to remove; the gap was not recorded before.
+  - Rebuilt `f1sa-app:dev` (`docker compose build app`, user approved). Recreated only the five containers
+    using it (api, app, spark-master, spark-worker-1, spark-worker-2) with `up -d --no-deps --no-build`. The
+    baked `/opt/venv` copy now has the change, and all 11 services are healthy. No volume was touched.
 ## Next
 - S18: report, docs and demo rehearsal (#44): `docs/report/`, `docs/demo_script.md`.
 - Push and watch the first CI run of the `e2e` job on GitHub (runner build time and disk are unmeasured).
 ## Known issues
+- Step 17 follow-up: the replay's compound is the TracingInsights stint label. It is built from all of the stint's
+  per-lap labels, so a later conflicting label nulls the whole stint. It is display only and not the strict
+  laps <= L-1 rule of the model's `*_compound_ti` inputs. `tyre_age` on the events stays the v1 value, which is
+  assumed new in full mode, so the hash can show a real compound with a Jolpica-inferred age.
 - Step 17: `make stream-demo RECORD=1` (the Step 12 files) and `make experiments-spark RECORD=1` overwrite their
   `results/` files without refusing (documented in `docs/reproduce.md`; not changed in this step).
 - Step 17: the sample deployment model is degenerate by design: 4 training attempts, 1 validation attempt, identity

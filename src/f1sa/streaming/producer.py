@@ -4,10 +4,16 @@
 
 * Reads only the race's ``season=S/round=R`` partitions of the clean tables under
   ``Settings.data_lake_uri`` (``file://`` for the sample, ``hdfs://`` inside the app container).
-* Tyre compound and age come from ``etl.df_jobs.tyre_age`` and the race distance from
-  ``df_jobs.race_distance``, the same definitions the batch features use; the per-lap track flags
-  are the batch's ``track_neutral`` (SC / VSC / red flag / neutralised) and ``track_red_flag``.
-  These three context values are replayed on each lap event (see ``streaming/events.py``).
+* Tyre age comes from ``etl.df_jobs.tyre_age`` over the v1 clean ``stints`` and the race distance
+  from ``df_jobs.race_distance``, the same definitions the batch features use; the per-lap track
+  flags are the batch's ``track_neutral`` (SC / VSC / red flag / neutralised) and
+  ``track_red_flag``. These three context values are replayed on each lap event (see
+  ``streaming/events.py``).
+* The tyre compound is display context only (no rule, feature or model input reads it). Per lap,
+  ``resolve_compound`` takes the real compound of the additive ``clean/stints_tracinginsights``
+  stint in progress (the driver's latest stint with ``start_lap <= lap``; ``end_lap`` is never
+  read, the convention of ``sim.whatif.stint_starts``), then the v1 stint's compound, else null
+  (``UNKNOWN`` in Redis). A race whose v1 stints are synthetic (sample mode) keeps them.
 * Events, ordered by race time: ``pit_in`` (in-lap L) just before ``lap`` L at the line crossing,
   ``pit_out`` (lap L+1) at the crossing plus the stop time (never after the next crossing), then
   one ``session_end`` per topic partition.
@@ -32,6 +38,7 @@ from dataclasses import dataclass
 from typing import Any, Protocol
 
 from f1sa.config import get_settings
+from f1sa.sim.whatif import STINT_START_COLUMNS, StintStart, stint_starts
 from f1sa.streaming.events import (
     COMPOUNDS,
     SESSION_END_KEY,
@@ -45,6 +52,9 @@ from f1sa.streaming.redis_sink import now_ms
 log = logging.getLogger(__name__)
 
 CLEAN_TABLES = ("laps", "pitstops", "stints", "results")
+TI_STINTS_TABLE = "stints_tracinginsights"
+"""The optional, additive source of the lap events' compound (never of ``tyre_age``)."""
+COMPOUND_SOURCES: tuple[str, ...] = ("tracinginsights", "v1_stints", "none")
 _KIND_ORDER = {"pit_in": 0, "lap": 1, "pit_out": 2}
 
 
@@ -67,6 +77,8 @@ class LapRecord:
     tyre_age: int | None
     track_neutral: bool
     track_red_flag: bool
+    compound_source: str = "none"
+    """Where ``compound`` came from: one of ``COMPOUND_SOURCES``."""
 
 
 @dataclass(frozen=True)
@@ -92,16 +104,52 @@ def check_season(season: int, allow_test_season: bool) -> None:
         )
 
 
-def _compound(value: Any) -> str | None:
+def normalise_compound(value: Any) -> str | None:
+    """A compound name as the dashboard and the Redis contract spell it (``SOFT``, ``MEDIUM``,
+    ``HARD``, ``INTERMEDIATE``, ``WET``; case and surrounding spaces ignored), or None for
+    anything else (``UNKNOWN``, ``TEST_UNKNOWN``, empty, null)."""
     if value is None:
         return None
-    text = str(value).upper()
+    text = str(value).strip().upper()
     return text if text in COMPOUNDS else None
+
+
+def ti_compound_at(stints: Sequence[StintStart], driver_id: str, lap: int) -> str | None:
+    """The compound of ``driver_id``'s TracingInsights stint in progress at the end of ``lap``:
+    the stint with the largest ``start_lap <= lap``. Stints that start later are ignored and a
+    stint's end is never used, so an in-lap keeps the old compound and the out-lap gets the new
+    one. None if no stint has started or the stint has no (or a conflicting) compound."""
+    started = [s for s in stints if s.driver_id == driver_id and s.start_lap <= lap]
+    if not started:
+        return None
+    return normalise_compound(max(started, key=lambda s: s.start_lap).compound)
+
+
+def resolve_compound(
+    ti_stints: Sequence[StintStart] | None, driver_id: str, lap: int, v1_compound: Any
+) -> tuple[str | None, str]:
+    """``(compound, source)`` of one lap event: the TracingInsights stint in progress, then the
+    v1 stint's compound, else ``(None, "none")``. ``ti_stints`` None means no TI source."""
+    if ti_stints is not None:
+        ti = ti_compound_at(ti_stints, driver_id, lap)
+        if ti is not None:
+            return ti, "tracinginsights"
+    v1 = normalise_compound(v1_compound)
+    return (v1, "v1_stints") if v1 is not None else (None, "none")
+
+
+def compound_coverage(laps: Sequence[LapRecord]) -> dict[str, int]:
+    """Number of lap records per compound source (every ``COMPOUND_SOURCES`` key present)."""
+    out = dict.fromkeys(COMPOUND_SOURCES, 0)
+    for r in laps:
+        out[r.compound_source] += 1
+    return out
 
 
 def race_inputs(frames: Mapping[str, Any], season: int, round_: int) -> RaceInputs:
     """Collect one race from clean-zone DataFrames (``laps``, ``pitstops``, ``stints``,
-    ``results``; other races are filtered out). Spark is imported here only."""
+    ``results``, and optionally ``stints_tracinginsights`` for the compound; other races are
+    filtered out). Spark is imported here only."""
     from pyspark.sql import functions as F
 
     from f1sa.etl.df_jobs import race_distance, tyre_age
@@ -110,6 +158,13 @@ def race_inputs(frames: Mapping[str, Any], season: int, round_: int) -> RaceInpu
         return df.where((F.col("season") == season) & (F.col("round") == round_))
 
     laps, stints = race(frames["laps"]), race(frames["stints"])
+    ti_stints: tuple[StintStart, ...] | None = None
+    if frames.get(TI_STINTS_TABLE) is not None:
+        if stints.where(F.coalesce(F.col("is_synthetic"), F.lit(False))).limit(1).count():
+            log.info("%s R%s: synthetic v1 stints; %s ignored", season, round_, TI_STINTS_TABLE)
+        else:
+            ti_rows = race(frames[TI_STINTS_TABLE]).select(*STINT_START_COLUMNS).collect()
+            ti_stints = stint_starts(r.asDict() for r in ti_rows)
     results, stops = race(frames["results"]), race(frames["pitstops"])
     neutral = F.lit(False)
     for c in ("is_neutralised_lap", "is_sc_lap", "is_vsc_lap", "is_red_flag_lap"):
@@ -130,19 +185,22 @@ def race_inputs(frames: Mapping[str, Any], season: int, round_: int) -> RaceInpu
     )
     if not rows:
         raise ProducerError(f"{season} R{round_}: no laps in the clean zone")
-    lap_records = tuple(
-        LapRecord(
+
+    def record(r: Any) -> LapRecord:
+        compound, source = resolve_compound(ti_stints, r["driver_id"], int(r["lap"]), r["compound"])
+        return LapRecord(
             driver_id=r["driver_id"],
             lap=int(r["lap"]),
             position=r["position"],
             lap_time_s=r["lap_time_s"],
-            compound=_compound(r["compound"]),
+            compound=compound,
             tyre_age=r["tyre_age_laps"],
             track_neutral=bool(r["track_neutral"]),
             track_red_flag=bool(r["track_red_flag"]),
+            compound_source=source,
         )
-        for r in rows
-    )
+
+    lap_records = tuple(record(r) for r in rows)
     keys = [(r.driver_id, r.lap) for r in lap_records]
     if len(keys) != len(set(keys)):
         raise ProducerError(
@@ -173,19 +231,28 @@ def race_inputs(frames: Mapping[str, Any], season: int, round_: int) -> RaceInpu
 
 
 def load_race_inputs(spark: Any, lake_uri: str, season: int, round_: int) -> RaceInputs:
-    """``race_inputs`` from the race's clean partitions under ``lake_uri``."""
+    """``race_inputs`` from the race's clean partitions under ``lake_uri`` (read only). The
+    ``stints_tracinginsights`` table is optional: without it (the sample lake) the compound comes
+    from the v1 stints."""
     from f1sa.etl.clean import spark_uri
     from f1sa.lake import schemas as S
+    from f1sa.lake.schemas_tracinginsights import CLEAN_SCHEMAS_TI
     from f1sa.streaming.priors import PriorsError, read_race_partition
 
     clean = f"{spark_uri(lake_uri)}/clean"
     try:
-        frames = {
+        frames: dict[str, Any] = {
             t: read_race_partition(spark, clean, t, S.CLEAN_SCHEMAS[t], season, round_)
             for t in CLEAN_TABLES
         }
     except PriorsError as exc:
         raise ProducerError(str(exc)) from exc
+    try:
+        frames[TI_STINTS_TABLE] = read_race_partition(
+            spark, clean, TI_STINTS_TABLE, CLEAN_SCHEMAS_TI[TI_STINTS_TABLE], season, round_
+        )
+    except PriorsError as exc:
+        log.warning("%s; lap compounds come from the v1 stints only", exc)
     return race_inputs(frames, season, round_)
 
 
@@ -449,6 +516,12 @@ def main(
         f"{args.season} R{args.round}: {len(events)} events, {len(inputs.laps)} laps, "
         f"{len(inputs.stops)} stops, {span:.0f} race-s -> {span / args.speed:.0f} s "
         f"at x{args.speed:g}"
+    )
+    cov, n_laps = compound_coverage(inputs.laps), len(inputs.laps)
+    known = n_laps - cov["none"]
+    print(
+        f"compound: {cov['tracinginsights']} tracinginsights, {cov['v1_stints']} v1_stints, "
+        f"{cov['none']} unknown of {n_laps} laps ({100.0 * known / n_laps:.1f}% known)"
     )
     if args.dry_run:
         return 0

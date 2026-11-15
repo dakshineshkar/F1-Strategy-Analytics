@@ -705,6 +705,26 @@ converted to nulls explicitly and counted per field in each raw partition's `_ma
   laps whose only defect was an ordinary 1.0–1.3 s feed dropout. Those laps keep usable aggregates, so the
   threshold was raised to 2.0 s, which still catches real holes in the data.
 
+### Live replay compound (`streaming/producer.py`, display only)
+`stints_tracinginsights` is the source of the replay's lap-event `compound` and therefore of the Redis
+`tyre_compound` field. The Redis contract is unchanged: the same 9 fields, with values
+SOFT/MEDIUM/HARD/INTERMEDIATE/WET/UNKNOWN.
+
+| Step | Rule | `compound_source` |
+|---|---|---|
+| 1 | The driver's TI stint with the largest `start_lap` ≤ the event's lap. Only `driver_id`, `start_lap`, `compound`, `tyre_age_at_start` and `compound_conflict` are read (`sim.whatif.STINT_START_COLUMNS`), never `end_lap`. A conflict gives no compound | `tracinginsights` |
+| 2 | Else the v1 clean stint's compound (synthetic in sample mode, null in full mode) | `v1_stints` |
+| 3 | Else null, written as `UNKNOWN` | `none` |
+
+- Names are upper-cased and trimmed. Anything outside the five compounds is null.
+- If the race's v1 stints are synthetic, TracingInsights is ignored, so sample mode stays fully synthetic.
+- `tyre_age` on the events is **not** taken from TracingInsights. It stays `df_jobs.tyre_age` over the v1
+  stints, because the live degradation-slope inputs use it.
+- The stint's `compound` is built from all of the stint's per-lap labels, including laps after the event: a
+  later conflicting label nulls it. A stint is one tyre set, which is visible from the out-lap, so this is fine
+  for display. It is not the strict laps ≤ L−1 rule of the model's `*_compound_ti` inputs
+  (`dataset.lap_compounds`).
+
 ### Lap reconciliation (`make reconcile-ti-full`, `etl/reconcile_ti.py`, read-only)
 Key: (season, round, driver_id, lap). Jolpica = v1 clean `laps`; TI = `telemetry_lap_real`. The table shows counts
 only, and 2025 is included as counts only. `telemetry_lap_real` has exactly as many rows as the raw TI laps and the

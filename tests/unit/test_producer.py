@@ -2,14 +2,17 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import Any
 
 import pytest
+from _stream_fixtures import full_mode_frames
 from _undercut_fixtures import Scenario, clean_tables, standard_cars
 from pyspark.sql import SparkSession
 
 from f1sa.features import undercut as U
 from f1sa.features.build import compute_features
+from f1sa.sim.whatif import STINT_START_COLUMNS, StintStart, stint_starts
 from f1sa.streaming import producer as PR
 from f1sa.streaming.events import SESSION_END_KEY, RaceEvent, from_json
 
@@ -142,8 +145,125 @@ def test_race_inputs_fail_without_laps(scenario: dict[str, Any]) -> None:
 
 
 def test_compound_normalisation() -> None:
-    assert PR._compound("soft") == "SOFT" and PR._compound(None) is None
-    assert PR._compound("UNKNOWN") is None
+    for name in ("SOFT", "MEDIUM", "HARD", "INTERMEDIATE", "WET"):
+        assert PR.normalise_compound(name) == name
+        assert PR.normalise_compound(f"  {name.lower()} ") == name
+    assert PR.normalise_compound("Intermediate") == "INTERMEDIATE"
+    for bad in (None, "", "  ", "UNKNOWN", "TEST_UNKNOWN", "None", "nan", "SUPERSOFT", 3):
+        assert PR.normalise_compound(bad) is None
+
+
+# ------------------------------------------------------------------ compound lookup (display only)
+def ti(driver: str, start: int, compound: str | None) -> StintStart:
+    return StintStart(driver_id=driver, start_lap=start, compound=compound, tyre_age_at_start=0)
+
+
+TI = (ti("a", 1, "MEDIUM"), ti("a", 7, "HARD"), ti("b", 1, "SOFT"), ti("b", 20, "WET"))
+"""``a`` pits at the end of lap 6 (in-lap 6, out-lap 7); ``b`` changes on lap 20."""
+
+
+def test_ti_compound_at_pit_boundary() -> None:
+    assert [PR.ti_compound_at(TI, "a", n) for n in (1, 5, 6, 7, 8)] == [
+        "MEDIUM",
+        "MEDIUM",
+        "MEDIUM",  # the in-lap keeps the old tyre
+        "HARD",  # the out-lap has the new one
+        "HARD",
+    ]
+    assert PR.ti_compound_at(TI, "b", 19) == "SOFT" and PR.ti_compound_at(TI, "b", 20) == "WET"
+
+
+def test_ti_compound_at_never_uses_later_stints() -> None:
+    later = (*TI, ti("a", 9, "SOFT"), ti("a", 30, "WET"))
+    for n in range(1, 9):
+        assert PR.ti_compound_at(later, "a", n) == PR.ti_compound_at(TI, "a", n)
+    # relabelling every stint that starts after lap n never changes lap n
+    for n in range(1, 25):
+        future = tuple(
+            replace(s, compound="WET") if s.start_lap > n else s for s in (*TI, ti("a", 15, None))
+        )
+        assert PR.ti_compound_at(future, "a", n) == PR.ti_compound_at(
+            (*TI, ti("a", 15, None)), "a", n
+        )
+
+
+def test_ti_compound_at_unknowns() -> None:
+    assert PR.ti_compound_at(TI, "zzz", 5) is None  # driver without TI stints
+    assert PR.ti_compound_at((ti("a", 3, "SOFT"),), "a", 2) is None  # no stint started yet
+    assert PR.ti_compound_at((ti("a", 1, None),), "a", 2) is None  # conflict / missing label
+    assert PR.ti_compound_at((ti("a", 1, "UNKNOWN"),), "a", 2) is None
+    assert PR.ti_compound_at((ti("a", 1, " soft"),), "a", 2) == "SOFT"
+    assert PR.ti_compound_at((), "a", 2) is None
+
+
+def test_stint_starts_drop_conflicting_compounds_and_never_read_the_end() -> None:
+    rows = [
+        {"driver_id": "a", "start_lap": 1, "compound": "SOFT", "tyre_age_at_start": 0,
+         "compound_conflict": False},
+        {"driver_id": "a", "start_lap": 9, "compound": "HARD", "tyre_age_at_start": 0,
+         "compound_conflict": True},
+    ]  # fmt: skip
+    st = stint_starts(rows)
+    assert PR.ti_compound_at(st, "a", 8) == "SOFT" and PR.ti_compound_at(st, "a", 9) is None
+    assert "end_lap" not in STINT_START_COLUMNS and "laps" not in STINT_START_COLUMNS
+
+
+def test_resolve_compound_precedence() -> None:
+    assert PR.resolve_compound(TI, "a", 7, "SOFT") == ("HARD", "tracinginsights")
+    assert PR.resolve_compound(TI, "a", 7, None) == ("HARD", "tracinginsights")
+    # TI has no compound for the lap: the v1 stint's, else unknown
+    assert PR.resolve_compound(TI, "zzz", 7, "medium") == ("MEDIUM", "v1_stints")
+    assert PR.resolve_compound((ti("a", 1, None),), "a", 7, "HARD") == ("HARD", "v1_stints")
+    assert PR.resolve_compound((ti("a", 1, None),), "a", 7, None) == (None, "none")
+    assert PR.resolve_compound(TI, "zzz", 7, "UNKNOWN") == (None, "none")
+    # no TI source at all (sample lake)
+    assert PR.resolve_compound(None, "a", 7, "SOFT") == ("SOFT", "v1_stints")
+    assert PR.resolve_compound(None, "a", 7, None) == (None, "none")
+
+
+def test_compound_coverage_counts_every_source() -> None:
+    laps = [
+        replace(lap("a", 1, 1, 90.0), compound_source="tracinginsights"),
+        replace(lap("a", 2, 1, 90.0), compound_source="tracinginsights"),
+        replace(lap("b", 1, 2, 91.0), compound_source="v1_stints"),
+    ]
+    assert PR.compound_coverage(laps) == {"tracinginsights": 2, "v1_stints": 1, "none": 0}
+    assert PR.compound_coverage([]) == dict.fromkeys(PR.COMPOUND_SOURCES, 0)
+
+
+def test_race_inputs_take_the_compound_from_tracinginsights(
+    spark: SparkSession, scenario: dict[str, Any]
+) -> None:
+    v1_only, with_ti = full_mode_frames(spark, scenario["clean"])
+    base = PR.race_inputs(v1_only, SC.season, SC.round)
+    got = PR.race_inputs(with_ti, SC.season, SC.round)
+    assert {r.compound for r in base.laps} == {None}
+    assert {r.compound_source for r in base.laps} == {"none"}
+    stops = {(s.driver_id, s.lap) for s in got.stops}
+    for b, r in zip(base.laps, got.laps, strict=True):
+        # tyre age and every other field come from the v1 path, unchanged (TI age 5 is never used)
+        assert replace(r, compound=None, compound_source="none") == b
+        pitted = any(d == r.driver_id and p < r.lap for d, p in stops)
+        if r.driver_id == "d" and pitted:  # conflicting TI stint, v1 has no compound
+            assert (r.compound, r.compound_source) == (None, "none")
+        else:
+            assert r.compound == ("MEDIUM" if pitted else "SOFT")
+            assert r.compound_source == "tracinginsights"
+    # the in-lap keeps the old tyre, the out-lap gets the new one (a pits at the end of lap 6)
+    by_key = {(r.driver_id, r.lap): r.compound for r in got.laps}
+    assert (by_key[("a", 6)], by_key[("a", 7)]) == ("SOFT", "MEDIUM")
+    assert (got.stops, got.race_laps) == (base.stops, base.race_laps)
+
+
+def test_race_inputs_ignore_tracinginsights_for_synthetic_stints(
+    spark: SparkSession, scenario: dict[str, Any]
+) -> None:
+    _v1_only, with_ti = full_mode_frames(spark, scenario["clean"])
+    synthetic = {**with_ti, "stints": scenario["clean"]["stints"]}  # sample-mode v1 stints
+    got = PR.race_inputs(synthetic, SC.season, SC.round)
+    assert got == scenario["inputs"]
+    assert {r.compound_source for r in got.laps} == {"v1_stints"}
+    assert {r.compound for r in got.laps} == {"MEDIUM", "HARD"}
 
 
 def test_check_season_refuses_the_test_season() -> None:
@@ -267,7 +387,10 @@ def test_main_missing_race_exits_3(
 
 
 def test_main_replays_the_sample_race(
-    spark: SparkSession, sample_clean_lake: Any, monkeypatch: pytest.MonkeyPatch
+    spark: SparkSession,
+    sample_clean_lake: Any,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     monkeypatch.setenv("DATA_LAKE_URI", sample_clean_lake.settings().data_lake_uri)
     fakes: list[FakeProducer] = []
@@ -284,4 +407,11 @@ def test_main_replays_the_sample_race(
     assert isinstance(sent[0], RaceEvent) and sent[0].produced_at_ms is not None
     assert [e.type for e in sent[-3:]] == ["session_end"] * 3
     assert sum(e.type == "lap" for e in sent) > 1000
+    # the sample lake has no stints_tracinginsights: the synthetic v1 compounds stay
+    laps = [e for e in sent if e.type == "lap"]
+    assert {e.compound for e in laps} <= {"SOFT", "MEDIUM", "HARD"}
+    assert all(e.compound is not None for e in laps)
+    out = capsys.readouterr().out
+    assert f"compound: 0 tracinginsights, {len(laps)} v1_stints, 0 unknown" in out
+    assert "(100.0% known)" in out
     assert PR.main([*args, "--dry-run"], spark_factory=lambda: spark) == 0

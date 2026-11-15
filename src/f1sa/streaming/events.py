@@ -12,7 +12,8 @@ lap                ``lap``: the lap completed; ``pit_in``: the in-lap (Jolpica p
                    ``pit_out``: the out-lap (in-lap + 1); ``session_end``: the last lap or null
 lap_time_s         ``lap`` only, null when Jolpica has no time
 position           ``lap`` only: the Jolpica timing-line position at the end of the lap
-compound           ``lap`` only: SOFT | MEDIUM | HARD | INTERMEDIATE | WET, or null
+compound           ``lap`` only: SOFT | MEDIUM | HARD | INTERMEDIATE | WET, or null (display only;
+                   the TracingInsights stint in progress, else the v1 stint, see producer.py)
 tyre_age           ``lap`` only: tyre age in laps at the end of the lap, or null
 produced_at_ms     wall clock (epoch ms) when the producer sent the event
 race_time_s        race clock (s since lights out): the lap's line crossing, the stop for a pit
