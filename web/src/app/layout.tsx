@@ -42,6 +42,9 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         <main id="main" tabIndex={-1}>
           {children}
         </main>
+        <footer className="site-footer">
+          <p>Unofficial project; not associated with the Formula 1 companies.</p>
+        </footer>
       </body>
     </html>
   );

@@ -5,7 +5,9 @@ import { useEffect, useState } from "react";
 
 import { api, type Race } from "@/lib/api";
 import { useLatencyReporter } from "@/lib/debugLatency";
+import { indexEntrants } from "@/lib/entrants";
 import { alertGroups, lapsDown, towerRows } from "@/lib/reducer";
+import { useEntrants } from "@/lib/useEntrants";
 import { useRaceStream } from "@/lib/useRaceStream";
 import { useReplays } from "@/lib/useReplays";
 
@@ -21,6 +23,7 @@ import { WhatIfPanel } from "./WhatIfPanel";
 export function RaceDashboard({ season, round }: { season: number; round: number }) {
   const { state, snapshotError } = useRaceStream(season, round);
   const replays = useReplays(season, round);
+  const { entrants } = useEntrants(season, round);
   const [race, setRace] = useState<Race | null>(null);
   useLatencyReporter(state.seen);
 
@@ -45,6 +48,9 @@ export function RaceDashboard({ season, round }: { season: number; round: number
         <nav aria-label="Breadcrumb" className="crumbs">
           <Link href="/">All races</Link>
         </nav>
+        <nav aria-label="Race views" className="race-views">
+          <Link href={`/race/${season}/${round}/drivers`}>Drivers</Link>
+        </nav>
         <h1>
           <span className="race-season">{season}</span>{" "}
           {race?.name ?? `Round ${round}`}
@@ -64,7 +70,7 @@ export function RaceDashboard({ season, round }: { season: number; round: number
       <div className="dash">
         <div className="dash-main">
           <Legend />
-          <TimingTower rows={rows} lapsDown={(id) => lapsDown(state, id)} />
+          <TimingTower rows={rows} lapsDown={(id) => lapsDown(state, id)} entrants={indexEntrants(entrants ?? [])} />
           <GapChart state={state} />
           <WhatIfPanel season={season} round={round} order={state.order} />
         </div>

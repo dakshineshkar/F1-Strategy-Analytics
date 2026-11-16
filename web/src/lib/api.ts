@@ -2,6 +2,7 @@
  * ``ApiError`` instead of a crash. Types mirror ``src/f1sa/api/models.py``. */
 
 import { API_URL } from "./config";
+import { toEntrants } from "./entrants";
 import { isBool, isDriverId, isFiniteNumber, isInt, isObj, isStr, nullable } from "./guard";
 
 export const COMPOUNDS = ["SOFT", "MEDIUM", "HARD", "INTERMEDIATE", "WET", "UNKNOWN"] as const;
@@ -255,6 +256,9 @@ export const api = {
     request("/api/health", toHealth, { okStatuses: [200, 503], ...(signal ? { signal } : {}) }),
   state: (season: number, round: number, signal?: AbortSignal) =>
     request(`${racePath(season, round)}/state`, toSnapshot, signal ? { signal } : {}),
+  /** Display-only entrants (team names, colours, car numbers); 404 when the lake has none. */
+  entrants: (season: number, round: number, signal?: AbortSignal) =>
+    request(`${racePath(season, round)}/entrants`, toEntrants, signal ? { signal } : {}),
   replays: (signal?: AbortSignal) => request("/api/replays", toReplayStatus, signal ? { signal } : {}),
   startReplay: (season: number, round: number, speed: 1 | 10 | 60) =>
     request(`${racePath(season, round)}/replay`, toReplay, {

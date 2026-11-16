@@ -61,6 +61,15 @@ export const GLOSSARY = [
     text: "Time behind the leader, measured at the timing line.",
   },
   {
+    id: "team",
+    group: "tower",
+    term: "Team badge (FER, MCL, …)",
+    label: "the team badge",
+    text:
+      "The team's short code on a swatch in its colour; hover for the team name and teammate, whose row is " +
+      "outlined too. Colours come from the race timing data or a project palette; these are not official logos.",
+  },
+  {
     id: "lapsDown",
     group: "tower",
     term: "+1 L, IN PIT",

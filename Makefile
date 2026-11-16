@@ -2,7 +2,7 @@
 SHELL := /bin/bash
 UV ?= uv
 
-.PHONY: help setup lint typecheck test test-int sample-data etl-sample features-sample model-eval-sample model-eval-rehearsal
+.PHONY: help setup lint typecheck test test-int sample-data etl-sample entrants-sample features-sample model-eval-sample model-eval-rehearsal
 
 help: ## List available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2}'
@@ -25,6 +25,9 @@ sample-data: ## Validate data/sample offline, or build it if missing (REBUILD=1 
 
 etl-sample: ## Clean zone from data/sample into data/lake/clean (file mode, Spark local)
 	DATA_LAKE_URI=file://$(CURDIR)/data/lake $(UV) run python -m f1sa.etl.clean --source sample
+
+entrants-sample: ## Display-only per-race entrants (clean/entrants) in data/lake (run etl-sample first)
+	DATA_LAKE_URI=file://$(CURDIR)/data/lake $(UV) run python -m f1sa.etl.entrants
 
 features-sample: ## Feature tables from data/lake/clean into data/lake/features (run etl-sample first)
 	DATA_LAKE_URI=file://$(CURDIR)/data/lake $(UV) run python -m f1sa.features.build --source sample
@@ -53,11 +56,13 @@ FULL_SERVICES := $(CORE_SERVICES) namenode datanode httpfs spark-master spark-wo
 
 .PHONY: up up-full down ps logs nuke
 
-up: api-dirs ## Start core infra (kafka, redis, app, api, web) and wait until healthy
+up: api-dirs ## Start core infra (kafka, redis, app, api, web) and wait until healthy; refused while a replay runs unless FORCE=1
+	$(REPLAY_GUARD)
 	$(COMPOSE) --profile core up -d --build
 	scripts/wait_for.sh -t 240 $(CORE_SERVICES)
 
-up-full: api-dirs ## Start core + hdfs + spark and wait until healthy
+up-full: api-dirs ## Start core + hdfs + spark and wait until healthy; refused while a replay runs unless FORCE=1
+	$(REPLAY_GUARD)
 	$(COMPOSE) --profile full up -d --build
 	scripts/wait_for.sh -t 300 $(FULL_SERVICES)
 
@@ -97,12 +102,15 @@ pipeline-full: etl-full features-full report-full ## etl-full, features-full, th
 # ingest-ti-full runs on the HOST: files go through HttpFS (HDFS_HTTPFS_URL) as in Step 4A, and the
 # per-lap telemetry aggregates are computed with a local Spark session before upload. Resumable
 # (data/manifest_tracinginsights.json); SKIP_RAW_TELEMETRY=1 keeps no raw samples (default: 2024).
-.PHONY: ingest-ti-full etl-ti-full reconcile-ti-full test-ti
+.PHONY: ingest-ti-full etl-ti-full entrants-full reconcile-ti-full test-ti
 ingest-ti-full: ## TracingInsights tables + telemetry aggregates for 2021-2025 into /f1/raw (host -> HttpFS)
 	DATA_LAKE_URI=$(HDFS_LAKE) uv run f1sa-ingest-ti --seasons 2021-2025 --sink hdfs$(if $(SKIP_RAW_TELEMETRY), --skip-raw-telemetry,)
 
 etl-ti-full: hdfs-dirs ## Additive TracingInsights clean tables in /f1/clean + results/tracinginsights_coverage_full.csv
 	$(APP_EXEC) python -m f1sa.etl.clean_tracinginsights
+
+entrants-full: hdfs-dirs ## Display-only per-race entrants: /f1/clean/entrants (reads clean + raw TI drivers.json; never writes /f1/raw)
+	$(APP_EXEC) python -m f1sa.etl.entrants
 
 reconcile-ti-full: ## Read-only TracingInsights vs Jolpica lap reconciliation (counts only, writes nothing)
 	$(APP_EXEC) python -m f1sa.etl.reconcile_ti
@@ -328,6 +336,15 @@ API_PORT ?= 8001
 API_HDFS_LAKE := hdfs://namenode:8020/f1
 API_FILE_LAKE := file:///workspace/data/lake
 API_DEFAULT_MODEL_DIR := models/undercut/deploy_real_G3.5_k2
+# The running api that `make api-up` asks for running replays before it recreates the container
+# (src/f1sa/replay_guard.py). make never reads .env: export API_HOST_PORT if you changed it there.
+API_GUARD_URL ?= http://127.0.0.1:$(or $(API_HOST_PORT),8000)
+# First step of every target that can recreate the api container (up, up-full, api-up): refuses
+# while GET /api/replays lists a running replay (a recreate cuts it off), unless FORCE=1; passes when
+# the api is unreachable (nothing to cut off).
+# Stdlib only, run with the system python3 (no uv, no project environment: works on a fresh clone).
+PYTHON3 ?= python3
+REPLAY_GUARD = $(PYTHON3) -I src/f1sa/replay_guard.py --url $(API_GUARD_URL)$(if $(filter 1,$(FORCE)), --force,)
 flag01 = $(if $(filter 1,$(1)),1,0)
 
 .PHONY: api api-up api-dirs demo-clean test-api
@@ -339,7 +356,8 @@ api: ## FastAPI on the host at 127.0.0.1:$(API_PORT) (default 8001; docs /api/do
 # it to data/results_backup/<UTC stamp>/ first.
 API_UI_CSV = $(or $(UI_LATENCY_CSV),data/demo/ui_latency/ui_latency.csv)
 API_UI_GUARD = $(if $(and $(filter 1,$(call flag01,$(DEBUG))),$(filter results/%,$(API_UI_CSV))),yes,)
-api-up: api-dirs ## Recreate only the api container: FULL=1 (HDFS lake; needs make up-full) REPLAY=1 DEBUG=1 TEST_SEASON=1 [UI_LATENCY_CSV=data/demo/...] [MODEL_DIR=models/undercut/...]
+api-up: api-dirs ## Recreate only the api container: FULL=1 (HDFS lake; needs make up-full) REPLAY=1 DEBUG=1 TEST_SEASON=1 [UI_LATENCY_CSV=data/demo/...] [MODEL_DIR=models/undercut/...]; refused while a replay runs unless FORCE=1
+	$(REPLAY_GUARD)
 ifneq ($(API_UI_GUARD),)
 	$(UV) run python -m f1sa.recording $(if $(filter 1,$(OVERWRITE)),backup,check) $(API_UI_CSV)
 endif
@@ -416,6 +434,7 @@ demo-pipeline: api-dirs ## Sample ETL, features, sample deployment model and tyr
 	@test -d data/sample/raw || { echo "Missing data/sample: run 'make sample-data' first." >&2; exit 1; }
 	@mkdir -p data/demo/$(DEMO_RUN)
 	$(DEMO_EXEC) python -m f1sa.etl.clean --source sample
+	$(DEMO_EXEC) python -m f1sa.etl.entrants
 	$(DEMO_EXEC) python -m f1sa.features.build --source sample --results-dir data/demo/$(DEMO_RUN)
 	$(DEMO_EXEC) python experiments/model_save.py --source sample --force
 	$(DEMO_EXEC) python -m f1sa.sim.tyre_model --source sample

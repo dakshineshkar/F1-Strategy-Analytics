@@ -82,7 +82,7 @@ host. The dashboard always shows a **SYNTHETIC DEMO DATA** banner.
 | | Windows 11 + WSL 2 | Linux / macOS |
 |---|---|---|
 | Docker | Docker Desktop with WSL integration for your distro | Docker Engine or Docker Desktop, Compose v2 (`docker compose`) |
-| Tools in the shell | `git`, GNU `make`, [`uv`](https://docs.astral.sh/uv/) (installs Python 3.12 itself) | the same (macOS: `make` from the Xcode command line tools) |
+| Tools in the shell | `git`, GNU `make`, `python3` 3.8 or newer (only the standard library, for `make up`'s replay check), [`uv`](https://docs.astral.sh/uv/) (installs Python 3.12 itself, for `make sample-data`) | the same (macOS: `make` from the Xcode command line tools) |
 | Memory for Docker | `memory=12GB` or more in `%UserProfile%\.wslconfig`, then `wsl --shutdown` | 12 GB or more available to Docker |
 | Disk | about 15 GB free (images: app 7.2 GB, web 0.4 GB, kafka 0.7 GB, redis 0.2 GB) | the same |
 | Free ports | 3000 (web), 8000 (api), 9092 (kafka), 6379 (redis) on 127.0.0.1 | the same |

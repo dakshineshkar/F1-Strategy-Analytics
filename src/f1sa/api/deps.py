@@ -11,7 +11,16 @@ import requests
 from fastapi import Depends, HTTPException, Path, Request
 from fastapi.exceptions import RequestValidationError
 
-from f1sa.api.catalog import LakeReader, RaceCatalog, SimReaders, reader_for, sim_readers
+from f1sa.api.catalog import (
+    LakeReader,
+    RaceCatalog,
+    SimReaders,
+    reader_for,
+    sim_readers,
+    zone_reader,
+)
+from f1sa.api.entrants import TABLES as ENTRANTS_TABLES
+from f1sa.api.entrants import EntrantsService, lake_fingerprint
 from f1sa.api.health import KafkaCheck, ModelStatus, kafka_check_for
 from f1sa.api.lap_log import LapLogManager
 from f1sa.api.latency import LatencyRecorder
@@ -34,6 +43,7 @@ class ApiDeps:
     kafka_check: KafkaCheck
     whatif: WhatIfService
     lap_logs: LapLogManager
+    entrants: EntrantsService
 
     @classmethod
     def from_settings(
@@ -47,6 +57,7 @@ class ApiDeps:
         http_session: requests.Session | None = None,
         model: ModelStatus | None = None,
         sim_reader_factory: Callable[[], SimReaders] | None = None,
+        entrants_reader_factory: Callable[[], LakeReader] | None = None,
     ) -> ApiDeps:
         client = redis or aioredis.Redis.from_url(settings.redis_url, decode_responses=True)
         sim_factory = sim_reader_factory or (lambda: sim_readers(settings, session=http_session))
@@ -78,6 +89,14 @@ class ApiDeps:
             kafka_check=kafka_check or kafka_check_for(settings),
             whatif=WhatIfService(readers=readers, sim_dir=settings.api_sim_dir),
             lap_logs=LapLogManager(client),
+            entrants=EntrantsService(
+                entrants_reader_factory
+                or (lambda: zone_reader(settings, "clean", ENTRANTS_TABLES, session=http_session)),
+                client,
+                ttl_s=settings.api_entrants_cache_s,
+                allow_test_season=settings.allow_test_season,
+                lake_id=lake_fingerprint(settings.data_lake_uri),
+            ),
         )
 
 

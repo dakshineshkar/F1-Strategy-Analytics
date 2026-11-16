@@ -100,3 +100,21 @@ def test_tyre_key_validates_the_driver_id(driver_id: object) -> None:
 def test_tyre_key_validates_the_race(season: object, round_: object) -> None:
     with pytest.raises(K.InvalidKeyError):
         K.tyre_key(season, round_, "a")  # type: ignore[arg-type]
+
+
+# ------------------------------------------------------ additive entrants cache (display only)
+def test_entrants_meta_key_is_outside_the_race_namespace() -> None:
+    key = K.entrants_meta_key(2024, 5)
+    assert key == "meta:entrants:2024:5"
+    # never a race key: /state, the SSE snapshots and expire_race (SCAN race:{s}:{r}:*) skip it
+    assert not fnmatchcase(key, K.race_pattern(2024, 5))
+    assert not key.startswith("race:")
+    assert K.entrants_meta_key(2024, 1) != K.entrants_meta_key(2024, 15)
+
+
+@pytest.mark.parametrize(
+    ("season", "round_"), [(1949, 5), (2024, 0), (2024, 31), (True, 5), ("2024", 5)]
+)
+def test_entrants_meta_key_validates_the_race(season: object, round_: object) -> None:
+    with pytest.raises(K.InvalidKeyError):
+        K.entrants_meta_key(season, round_)  # type: ignore[arg-type]

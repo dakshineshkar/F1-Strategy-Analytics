@@ -111,4 +111,27 @@ test("sample race: a 60× replay fills the tower and updates laps", async ({ pag
   await page.setViewportSize({ width: 375, height: 812 });
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
   expect(overflow).toBeLessThanOrEqual(0);
+  // Entrants (display only): team badges in the tower, the footer note, the Drivers view.
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await expect(page.locator("footer.site-footer")).toHaveText(
+    "Unofficial project; not associated with the Formula 1 companies.",
+  );
+  await expect.poll(async () => page.locator("table.tower tbody .team-badge").count(), { timeout: 15_000 }).toBeGreaterThanOrEqual(20);
+  const firstRow = page.locator("table.tower tbody tr").first();
+  await firstRow.hover();
+  await expect(page.locator("table.tower tbody tr.is-team-hover")).toHaveCount(1);
+  await expect(page.locator("table.tower tbody tr.is-teammate")).toHaveCount(1);
+  await page.getByRole("navigation", { name: "Race views" }).getByRole("link", { name: "Drivers" }).click();
+  await expect(page).toHaveURL(/\/race\/2024\/5\/drivers$/);
+  const drivers = page.getByRole("table", { name: /Drivers/ });
+  await expect(drivers.locator("tbody tr")).toHaveCount(20);
+  await expect(drivers.locator("tbody .team-badge")).toHaveCount(20);
+  await expect(drivers.locator("tbody tr").first().locator(".c-grid")).toHaveText("1");
+  // 2024 season display names (Jolpica's "RB F1 Team" and "Sauber" are mapped per season).
+  await expect(drivers.locator("td.c-team", { hasText: /^RB$/ })).toHaveCount(2);
+  await expect(drivers.locator("td.c-team", { hasText: /^Kick Sauber$/ })).toHaveCount(2);
+  await expect(drivers.locator("img, svg")).toHaveCount(0);
+  await page.setViewportSize({ width: 375, height: 812 });
+  const overflow2 = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+  expect(overflow2).toBeLessThanOrEqual(0);
 });

@@ -516,6 +516,16 @@ The key contract in CLAUDE.md is the only key layout. `keys.py` builds the names
   the batch. The key matches `race:{s}:{r}:*`, so it gets the same safety TTL and the same `session_end`
   EXPIRE. Nothing model-related reads it (the stream job never reads Redis, and the what-if uses the driver
   hashes only).
+- **Entrants cache (additive, display only; Feature 1)** `meta:entrants:{s}:{r}`.
+  - It is a STRING holding `{"lake": <fingerprint>, "entrants": <response>}`. The fingerprint is the first 16 hex
+    digits of sha256(`DATA_LAKE_URI`); the URI itself is never stored.
+  - An entry written for another lake (the api switched between the sample and the full lake) is a miss and is
+    overwritten.
+  - It is written by `api/entrants.py` with `SET … EX API_ENTRANTS_CACHE_S` (default 3600 s).
+  - It is deliberately **outside** `race:*`. `race_pattern` never matches it, so `/state`, the SSE snapshots and
+    `expire_race` never see it.
+  - The 9-field driver hash is never touched. Redis is only a cache: a Redis error is logged and the lake is read
+    directly. Negative results (404) are not cached.
 - **Order** `race:{s}:{r}:order`: ZADD, member = driverId, score = position (unique ints ≥ 1). Drivers stay in
   the set for the whole session (a DNF keeps its classified position), so the upsert is the complete update.
 - **Events** on the channel `race:{s}:{r}:events`: JSON with `type` (lap, pit_in, pit_out, undercut_alert,
@@ -689,6 +699,7 @@ browser (http://localhost:3000) --CORS--> FastAPI (uvicorn, 127.0.0.1:8000)
   GET  /api/health                         redis PING | Kafka topic describe | deployed model
   GET  /api/races                          clean zone (file:// pyarrow | hdfs:// HttpFS LISTSTATUS+OPEN)
   GET  /api/races/{s}/{r}/state            AsyncRaceStore: SCAN race:{s}:{r}:* + HGETALL pipeline + ZRANGE
+  GET  /api/races/{s}/{r}/entrants         meta:entrants:{s}:{r} (SET EX) | clean/entrants partition (display only)
   GET  /api/races/{s}/{r}/events           SUBSCRIBE race:{s}:{r}:events -> text/event-stream
   POST /api/races/{s}/{r}/replay           subprocesses: stream_job, then producer (ENABLE_REPLAY=1)
   GET  /api/replays                        running replays + the last 20 with state / error
@@ -698,7 +709,17 @@ browser (http://localhost:3000) --CORS--> FastAPI (uvicorn, 127.0.0.1:8000)
 Run modes (README "API"):
 - `make up`: the compose `api` service (core profile, app image) in sample mode on 127.0.0.1:8000.
 - `make api-up [FULL=1] [REPLAY=1] [DEBUG=1] [TEST_SEASON=1]`: recreates **only** the `api` container
-  (`up -d --no-deps --no-build --force-recreate api`). `FULL=1` sets `API_DATA_LAKE_URI=hdfs://namenode:8020/f1`
+  (`up -d --no-deps --no-build --force-recreate api`). Its first step is the replay guard, `python3 -I src/f1sa/replay_guard.py`
+  (stdlib only, run with the system `python3` ≥ 3.8, so it needs neither uv nor the project environment)
+  (`GET /api/replays` on `API_GUARD_URL`, default `http://127.0.0.1:${API_HOST_PORT:-8000}`).
+  - It **refuses** (exit 2) while a replay is running and lists it, because a replay runs inside the api
+    container and a recreate would cut it off mid-race.
+  - It also refuses (exit 3) when the answer cannot be read.
+  - `FORCE=1` overrides both, still naming what it cuts off.
+  - An api that is not reachable (refused or reset connection) has nothing to cut off and passes.
+  - `make demo` / `demo-replay` go through the same target.
+  - `make up` and `make up-full` run the same check (`REPLAY_GUARD`) before `docker compose up -d --build`,
+    which recreates the api whenever its image or configuration changed. `FULL=1` sets `API_DATA_LAKE_URI=hdfs://namenode:8020/f1`
   (read over `http://httpfs:14000`) and refuses unless namenode, datanode and httpfs are healthy. Only `1`
   enables a flag. `make up` returns the container to sample mode.
 - `make api`: uvicorn on the host, file lake, `API_PORT` 8001 by default (the container holds 8000). If the
@@ -712,6 +733,7 @@ Docs: `/api/docs`, `/api/openapi.json`.
 | `GET /api/health` | 200 all checks pass; 503 with `checks.{redis,kafka,model}.ok/error` naming the failure; `lake: {scheme, mode: sample\|full\|null, synthetic}` is informational |
 | `GET /api/races` | 200 `[{season, round, name, laps, synthetic}]`; 503 clean zone unavailable |
 | `GET …/state` | 200; 404 the race has no keys; 422 bad season/round; 500 a hash breaks the contract; 503 Redis down |
+| `GET …/entrants` | 200 `{season, round, entrants: [...]}` sorted by grid; 404 no entrants partition (or 2025 sealed); 422; 500 a stored row is malformed; 503 clean zone unavailable |
 | `GET …/events` | 200 `text/event-stream`; 422 bad season/round |
 | `POST …/replay` `{speed: 1\|10\|60}` | 202 (with `run_id`, `state`); 403 disabled or 2025; 404 not in the clean zone; 409 running / limit; 422; 500 launch failed; 503 |
 | `GET /api/replays` | 200 `{enabled, max_running, running, recent}` (state `starting/running/finished/failed`, error, exit codes) |
@@ -906,6 +928,21 @@ browser ── GET /api/races, /api/health ────────────�
     updates never shift the layout.
   - Down to 375 px there is no horizontal page scroll; the tower scrolls inside its region (checked by the
     Playwright test).
+- **Entrants (display only; Feature 1):**
+  - `lib/entrants.ts` holds the guard and helpers; `lib/useEntrants.ts` loads them once per race.
+  - In the timing tower, `components/TeamBadge.tsx` shows a team badge: a rounded swatch in the team colour, with
+    the short code (FER, MCL, RBR) as text.
+    - The badge text colour comes from the API (≥ 4.5:1), and the outline uses the `--border` token (≥ 3:1 on
+      every background).
+    - Its tooltip holds the team name and the teammate. The teammate is also in the row's screen-reader text.
+    - Hovering a row outlines it solidly and its teammate's row dashed (`teamHighlight`).
+  - The real code and surname replace the codes guessed from the driverId; without entrants the tower falls back to
+    those guesses.
+  - `/race/{s}/{r}/drivers` (`components/DriversView.tsx`) is a table sorted by grid. Columns: grid, driver (badge,
+    code, name), nationality code, team name, car number, plus a text note on each colour source.
+  - There are no logo files and no logo-like artwork (no `<img>`, no `<svg>`), and colour never carries meaning on its
+    own.
+  - The layout footer says "Unofficial project; not associated with the Formula 1 companies."
 - **Synthetic data:** the banner strip shows **SYNTHETIC DEMO DATA** whenever `/api/health` reports
   `lake.mode = "sample"`, and the picker tags each synthetic race.
 - **UI latency** (`lib/debugLatency.ts`, `NEXT_PUBLIC_DEBUG_LATENCY=1`):

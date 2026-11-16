@@ -71,6 +71,8 @@ def test_cors_origins_from_env_are_comma_separated(monkeypatch: pytest.MonkeyPat
         ("api_sse_heartbeat_s", 0),
         ("api_kafka_timeout_s", 0),
         ("api_races_cache_s", -1),
+        ("api_entrants_cache_s", 0),
+        ("api_entrants_cache_s", 86_401),
         ("api_host", "bad host"),
         ("api_replay_ready_timeout_s", 0),
         ("api_replay_end_timeout_s", 0),

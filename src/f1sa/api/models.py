@@ -258,3 +258,38 @@ class WhatIfOut(_Out):
     model: WhatIfModelOut
     inputs: WhatIfInputsOut
     runtime_ms: float
+
+
+TEAM_COLOUR_PATTERN = r"^#[0-9A-F]{6}$"
+COLOUR_SOURCE_PATTERN = r"^(ti_race|ti_neighbour_round_[1-9][0-9]?|project_palette)$"
+
+
+class EntrantOut(_Out):
+    """One row of the display-only ``clean/entrants`` dimension (``etl.entrants``)."""
+
+    driver_id: str
+    code: str | None
+    given_name: str | None
+    family_name: str | None
+    car_number: int | None = Field(default=None, ge=0, description="the number raced in this race")
+    grid: int | None = Field(default=None, ge=0, description="starting slot; 0 = pit lane")
+    constructor_id: str
+    team_name: str = Field(description="display name for that season")
+    team_code: str = Field(pattern=r"^[A-Z]{2,3}$", description="short badge code")
+    team_lineage_id: str
+    team_colour_hex: str = Field(pattern=TEAM_COLOUR_PATTERN)
+    team_text_hex: Literal["#000000", "#FFFFFF"] = Field(
+        description="badge text colour: black or white, whichever contrasts more (>= 4.5:1)"
+    )
+    colour_source: str = Field(pattern=COLOUR_SOURCE_PATTERN)
+    nationality: str | None
+    nationality_code: str | None = Field(default=None, pattern=r"^[A-Z]{3}$")
+
+
+class EntrantsOut(_Out):
+    """``GET /api/races/{s}/{r}/entrants``: the race's entrants sorted by grid (pit-lane starts
+    and unknown grid slots last, then car number). Display only."""
+
+    season: int
+    round: int
+    entrants: list[EntrantOut]

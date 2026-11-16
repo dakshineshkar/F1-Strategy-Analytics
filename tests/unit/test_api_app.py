@@ -19,6 +19,7 @@ ROUTES = {
     "/api/health": {"get"},
     "/api/races": {"get"},
     "/api/races/{season}/{round}/state": {"get"},
+    "/api/races/{season}/{round}/entrants": {"get"},
     "/api/races/{season}/{round}/events": {"get"},
     "/api/races/{season}/{round}/replay": {"post"},
     "/api/replays": {"get"},
@@ -43,6 +44,8 @@ async def test_docs_and_exact_routes(tmp_path: Path) -> None:
     assert {"200", "404", "409", "422", "503"} <= set(whatif["responses"])
     state = spec["paths"]["/api/races/{season}/{round}/state"]["get"]
     assert {"200", "404", "422", "500", "503"} <= set(state["responses"])
+    entrants = spec["paths"]["/api/races/{season}/{round}/entrants"]["get"]
+    assert {"200", "404", "422", "500", "503"} <= set(entrants["responses"])
     replay = spec["paths"]["/api/races/{season}/{round}/replay"]["post"]
     assert {"202", "403", "404", "409", "422", "500"} <= set(replay["responses"])
 

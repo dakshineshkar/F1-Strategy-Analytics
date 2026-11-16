@@ -1,8 +1,14 @@
+"use client";
+
+import { useState } from "react";
+
+import { type EntrantIndex, teamHighlight, teammates, teamTitle } from "@/lib/entrants";
 import { driverCode, driverName, gap, lapTime, probability } from "@/lib/format";
 import { glossary, tipId } from "@/lib/legend";
 import type { DriverRow } from "@/lib/reducer";
 
 import { InfoTip } from "./InfoTip";
+import { TeamBadge } from "./TeamBadge";
 import { TyreAge } from "./TyreAge";
 import { COMPOUND_LABEL, TyreGlyph } from "./TyreGlyph";
 
@@ -12,8 +18,22 @@ export const TOWER_ROWS = 22;
  * ``TOWER_ROWS`` rows, so live updates never shift the page. Every column header that needs it has
  * a focusable "?" tooltip (``InfoTip``); the per-row markers keep their visible text and a
  * screen-reader sentence and point to that header text with ``aria-describedby``, so the meaning is
- * reachable by keyboard without 20 extra tab stops per column. */
-export function TimingTower({ rows, lapsDown }: { rows: DriverRow[]; lapsDown: (driverId: string) => number }) {
+ * reachable by keyboard without 20 extra tab stops per column.
+ *
+ * With ``entrants`` (display only, ``GET …/entrants``) each driver gets a team badge, the real code and
+ * surname; the badge tooltip names the team and the teammate, and hovering a row outlines both
+ * teammates' rows. The teammate is also in the row's screen-reader text, so nothing depends on
+ * hover or colour. Without entrants the tower falls back to codes guessed from the driverId. */
+export function TimingTower({
+  rows,
+  lapsDown,
+  entrants = {},
+}: {
+  rows: DriverRow[];
+  lapsDown: (driverId: string) => number;
+  entrants?: EntrantIndex;
+}) {
+  const [hovered, setHovered] = useState<string | null>(null);
   return (
     <div className="tower-wrap" role="region" aria-labelledby="tower-title" tabIndex={0}>
       <table className="tower">
@@ -26,7 +46,7 @@ export function TimingTower({ rows, lapsDown }: { rows: DriverRow[]; lapsDown: (
               <abbr title="Position">Pos</abbr> <InfoTip id="flag" />
             </th>
             <th scope="col" className="c-drv">
-              Driver <InfoTip id="lapsDown" />
+              Driver <InfoTip id="team" /> <InfoTip id="lapsDown" />
             </th>
             <th scope="col" className="c-num">
               Int <InfoTip id="int" align="end" />
@@ -47,12 +67,30 @@ export function TimingTower({ rows, lapsDown }: { rows: DriverRow[]; lapsDown: (
         <tbody>
           {rows.map((r) => {
             const down = lapsDown(r.driverId);
+            const e = entrants[r.driverId];
+            const mates = e === undefined ? [] : teammates(entrants, r.driverId);
+            const cls = [r.undercutFlag ? "is-flagged" : null, teamHighlight(entrants, hovered, r.driverId)]
+              .filter(Boolean)
+              .join(" ");
             return (
-              <tr key={r.driverId} data-driver={r.driverId} className={r.undercutFlag ? "is-flagged" : undefined}>
+              <tr
+                key={r.driverId}
+                data-driver={r.driverId}
+                data-team={e?.constructor_id}
+                className={cls || undefined}
+                onMouseEnter={() => setHovered(r.driverId)}
+                onMouseLeave={() => setHovered((h) => (h === r.driverId ? null : h))}
+              >
                 <th scope="row" className="c-pos">{r.position ?? "—"}</th>
                 <td className="c-drv">
-                  <span className="code">{driverCode(r.driverId)}</span>{" "}
-                  <span className="name">{driverName(r.driverId)}</span>
+                  {e !== undefined ? (
+                    <TeamBadge entrant={e} title={teamTitle(entrants, r.driverId) ?? e.team_name} describedBy={tipId("team")} />
+                  ) : null}
+                  <span className="code">{e?.code ?? driverCode(r.driverId)}</span>{" "}
+                  <span className="name">{e?.family_name ?? driverName(r.driverId)}</span>
+                  {mates.length > 0 ? (
+                    <span className="visually-hidden">{`, teammate of ${mates.map((m) => m.family_name ?? m.driver_id).join(" and ")}`}</span>
+                  ) : null}
                   {r.inPit ? (
                     <span className="tag tag-pit" title="In the pit lane now" aria-describedby={tipId("lapsDown")}>
                       IN PIT

@@ -299,3 +299,35 @@ input[type="search"], select {
 .legend-item dt { font: 700 0.8rem/1.3 var(--font-num); color: var(--text); }
 .legend-item dd { margin: 0.1rem 0 0; font-size: 0.78rem; line-height: 1.4; color: var(--muted); }
 .legend-bar { display: inline-block; width: 4px; height: 0.9em; margin-right: 0.4rem; vertical-align: -0.1em; background: var(--accent); }
+
+/* ---------------------------------------------------------------- entrants (display only) */
+/* Team badge: an original swatch with a text code (never a logo). The outline uses the border
+   token (>= 3:1 on every background), so white or grey team colours stay visible. */
+.team-badge {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 2.5rem; height: 1.3rem; padding: 0 0.3rem; margin-right: 0.4rem;
+  border-radius: 0.35rem; background: var(--team); color: var(--team-ink);
+  outline: 1px solid var(--border); outline-offset: 0;
+  font: 800 0.66rem/1 var(--font-num); letter-spacing: 0.06em; vertical-align: middle;
+}
+.tower .c-drv { width: 14.5rem; }
+.tower { min-width: 54rem; }
+/* Teammates on hover: a solid outline on the hovered row and a dashed one on the teammate's row
+   (a shape, not only a colour; the teammate is also named in each row's screen-reader text). */
+.tower tbody tr.is-team-hover { outline: 2px solid var(--focus); outline-offset: -2px; }
+.tower tbody tr.is-teammate { outline: 2px dashed var(--focus); outline-offset: -2px; }
+.race-views { grid-area: crumbs; justify-self: end; font-size: 0.85rem; }
+.drivers-table { min-width: 36rem; }
+.drivers-table .c-grid { width: 5.5rem; text-align: right; font-family: var(--font-num); }
+.drivers-table .c-drv { width: auto; }
+.drivers-table .c-nat, .drivers-table .c-car { width: 6rem; font-family: var(--font-num); }
+.drivers-table .c-car { text-align: right; }
+.drivers-table .c-team { width: 12rem; }
+.drivers-note { margin: 0.5rem 0.75rem 0.75rem; font-size: 0.78rem; }
+.site-footer { margin: 2rem auto 1rem; padding: 0 1rem; max-width: 90rem; font-size: 0.75rem; color: var(--muted); }
+@media (max-width: 640px) {
+  .tower .c-drv { width: 10rem; }
+  .tower { min-width: 42rem; }
+  .drivers-table { min-width: 30rem; }
+  .drivers-table .c-team { width: 8.5rem; }
+}

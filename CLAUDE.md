@@ -31,6 +31,9 @@ Hadoop 3.4.3, FastF1 3.9.2, Next.js + TypeScript strict.
   HASH race:{season}:{round}:tyre:{driverId} fields: tyre_life_laps, tyre_life_at_start_laps, lap, updated_at
   (real TracingInsights tyre life; same TTL rules; written in the batch's one pipeline; never read by
   the model, the rule, the live features or the what-if). Tested in test_keys.py / test_redis_store.py.
+- ADDITIVE API cache, display only (Feature 1, 2026-11-15): STRING meta:entrants:{season}:{round} = JSON of
+  GET /api/races/{s}/{r}/entrants tagged with a lake fingerprint, SET EX API_ENTRANTS_CACHE_S; outside race:* (never SCANned by /state or
+  expire_race), never touches the driver hash. Tested in test_keys.py / test_api_entrants.py.
 
 ## Data rules
 - Undercut label = docs/label_definition.md. Features must use info available at end of lap L-1 only.

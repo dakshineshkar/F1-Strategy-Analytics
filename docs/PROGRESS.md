@@ -1505,10 +1505,128 @@
     - It has no `session_end`, and a new replay of 2024 R3 starts over.
   - The backup can be removed once you no longer need it. It restores with `cp -a` back to
     `models/undercut/deploy_real_G3.5_k2/`.
+- Feature 1 (2026-11-15): per-race entrants, team names and team colours (display only). **Done.**
+  - **Investigation** (read-only; HDFS only through HttpFS GET):
+    - The clean `drivers`, `results` and `constructors` tables are per race: 114 races, 2,278 entrants, 0 nulls,
+      0 duplicate keys. `drivers.constructor_id` and `car_number` equal `results` on every row.
+    - `drivers.permanent_number` is today's season-table number (Verstappen 3, Norris 1 in every season), so it is
+      not used. The per-race `car_number` is.
+    - Jolpica keeps one constructor name per id across seasons ("RB F1 Team" in 2024 and 2025), so the season
+      display names come from a committed table.
+    - TracingInsights `drivers.json` (raw, as received) has the team colour `tc` for 102 of 114 races.
+      `drivers.parquet` drops it.
+    - Every TI code maps to the race's `drivers.code`, and teammates always share one colour and one name.
+    - Licence: TI/FOM data is never committed, so the committed fallback is a project-chosen palette (your
+      choice).
+  - **Change**:
+    - `etl/entrants.py` writes `clean/entrants` and `clean/_quality/entrants.json` (`make entrants-sample`,
+      `make entrants-full`; `make demo` runs it after the clean job).
+    - `etl/entrants_reference.py` holds `TEAM_NAMES`, `PROJECT_PALETTE`, `NATIONALITY_CODES` and the badge text
+      contrast rule. The schema is `lake/schemas_entrants.py` (outside `CLEAN_SCHEMAS`).
+    - `colour_source` is `ti_race`, `ti_neighbour_round_<n>` or `project_palette`. The 12 neighbour-filled races
+      are listed in `docs/data_dictionary.md`.
+    - The job fails on:
+      - an unmapped constructor, a Jolpica name mismatch or a missing constructors row;
+      - an unmapped demonym, a malformed `tc` or teammates with different colours;
+      - a team without any colour, or a duplicate key.
+    - API: `GET /api/races/{s}/{r}/entrants` (`api/entrants.py`, `api/routes/entrants.py`).
+      - It is read-only and limited to `clean/entrants`.
+      - It returns 404 for an unknown race or a sealed 2025, 422 for bad parameters, 500 for a malformed row and
+        503 when the lake is down.
+      - The cache is Redis `meta:entrants:{s}:{r}` with `SET EX API_ENTRANTS_CACHE_S` (3600), outside
+        `race:*`, so the driver hash is never touched. A Redis error falls back to the lake.
+      - The API still imports no pyspark (tested).
+    - Dashboard:
+      - the tower has team badges (a text code on a swatch; the API picks the text colour, ≥ 4.5:1; outlined by
+        the border token);
+      - the real code and surname are shown;
+      - the badge tooltip holds the team name and the teammate, and the teammate is also in screen-reader text;
+      - a hovered row is outlined solidly and its teammate's row dashed;
+      - a new Drivers view at `/race/{s}/{r}/drivers` (a table sorted by grid);
+      - a "Team badge" glossary entry and tooltip;
+      - the footer "Unofficial project; not associated with the Formula 1 companies.";
+      - no logo files, `<img>` or `<svg>`.
+  - **Cache fix found during the checks.**
+    - The first version keyed the cache by race only.
+    - After the api was switched from sample to full mode, it served the sample's palette colours for 2024 R5
+      (confirmed live).
+    - Entries now carry a lake fingerprint (16 hex digits of sha256 of the lake URI; the URI is never stored). An
+      entry of another lake is a miss. Tested.
+    - The running api still has the old code (see Known issues).
+  - **Evidence.**
+    - `make entrants-full`: 2,278 rows, 114 races. Of the team races, 1,020 are `ti_race` and 120 are
+      neighbour-filled (exactly the 12 races of the data dictionary). TI rows unmapped: 0; team-name
+      mismatches: 0.
+    - `tests/integration/test_entrants_full.py`: 8 passed. It covers Bearman 2024 R2 / R17 / R21, Colapinto,
+      Lawson, the Tsunoda/Lawson swap at 2025 R3, Colapinto at Alpine from 2025 R7, Hamilton at Ferrari in
+      24/24, car numbers and the colour source of every race.
+    - Stream parity 2021-2024 (`--out data/demo/parity_check4/`): 90 races, 157 labelled attempts, 34,608
+      eligible pairs, 0 mismatching races. The CSV is byte-identical to `results/stream_parity_full.csv`
+      (sha256 aad8df67…).
+    - Sample 2024 R5 alert check: 113 / 19 / 9 (141 alerts, 409 eligible pairs). The dump is byte-identical
+      to the Fix E dump (sha256 7eee6557…).
+    - `make experiments-sample`: OK 7, OK (metadata differs) 1, DIFF 0, MISSING 0. The sample what-if CSV and
+      PNG are byte-identical to the previous run.
+    - Python: the full unit suite gave 1822 passed and 1 failed: the exact-route list in `test_api_app.py`,
+      which needed the new route and was updated. After the cache fix, `make test-api` gave 215 passed, and the
+      entrants, keys and docs tests 111 passed. ruff and mypy are clean.
+    - Web: lint and typecheck are clean; Vitest 198 passed.
+    - `make web-e2e`: the smoke test passed. It covers the badges in the tower, the teammate outline on hover,
+      the footer and the Drivers view (20 rows, RB and Kick Sauber, no img/svg, no horizontal scroll at
+      375 px).
+    - `results/` is unchanged (sha256 of every file before and after, and `git status results/` clean).
+  - **Services** (user approved):
+    - the api was recreated in sample mode for Playwright;
+    - web was stopped for `make web-e2e`, then rebuilt and started;
+    - the api was returned to `make api-up FULL=1 REPLAY=1`.
+  - **Incident.**
+    - The last api recreate stopped the smoke test's own 60x replay of sample 2024 R5 (started 16:44:46),
+      which was still running after the test passed. The pre-check printed it, but my command chain did not
+      stop on it.
+    - Its partial outputs stay in `data/demo/2024_5_20261115T164446.116Z/`.
+    - Its 41 Redis `race:2024:5:*` keys have no `session_end` and expire with the 6 h safety TTL.
+    - No orphan process is left.
+- Feature 1 follow-up (2026-11-15): `make api-up` refuses to cut off a running replay. **Done.**
+  - The api was recreated (`make api-up FULL=1 REPLAY=1`, user approved) after a check that exits non-zero on
+    a running replay; none was running. The entrants cache fix is live: 2024 R5 now gives `ti_race`, and the
+    sample-mode entry was replaced by a lake-tagged one.
+  - New `src/f1sa/replay_guard.py` (stdlib only), the first line of `api-up`. It refuses with exit 2 while
+    `GET /api/replays` lists a running replay (naming each one), and with exit 3 when the answer cannot be
+    read. `FORCE=1` overrides both. An unreachable api passes.
+  - `make demo` / `demo-replay` use the same target.
+  - `make up` and `make up-full` run the same guard before `compose up -d --build`, which recreates the api
+    when its image or configuration changed. FORCE=1 overrides it. An unreachable api (a stack that is down)
+    passes. The Makefile has one `REPLAY_GUARD` variable for all three targets.
+  - The tests cover all three targets: a real `make up` / `up-full` / `api-up` against a fake api with a running
+    replay stops at the guard (compose never runs), plus a dry-run order and FORCE check per target, and the CLI
+    passing for an unreachable api.
+  - Tests: `tests/unit/test_replay_guard.py`:
+    - the decision;
+    - real local HTTP servers (answering, closed port, HTTP 500, timeout);
+    - the Makefile order (the guard runs before the UI-latency backup and the recreate);
+    - FORCE only with 1;
+    - a real `make api-up` against a fake api with a running replay: it stops at the guard, and the
+      recreate never runs (`COMPOSE` replaced, so nothing real could be touched).
+  - **Dependency-free** (follow-up): the Makefile runs the guard as `python3 -I src/f1sa/replay_guard.py` with
+    the system `python3`, so `make up` on a fresh clone needs no uv.
+    - The module imports only the standard library and nothing from `f1sa`. It is 3.8-safe: tuple
+      `isinstance` checks, and `collections.abc` only under `TYPE_CHECKING`.
+    - Behaviour, exit codes (0 / 2 / 3), `FORCE=1` and `python -m f1sa.replay_guard` are unchanged.
+    - Checked live with Python 3.14.4 (system) and 3.12.16 under `env -i PATH=/usr/bin:/bin` (no uv).
+    - New tests:
+      - the imports are stdlib-only (AST against `sys.stdlib_module_names`), and no sibling module shadows
+        one;
+      - the script runs with the system `python3` and no uv on PATH (exit 0 / 0 / 2 / 0 forced / 3);
+      - every recreating target's guard line is `python3 -I …`, never `uv`;
+      - the real `make up` / `up-full` / `api-up` refusal runs with a system-only PATH and `UV=false`.
+    - README prerequisites: `python3` (3.8 or newer) is listed for `make up`. `uv` stays, because
+      `make sample-data` runs `uv run` on the host.
 ## Next
 - S18: report, docs and demo rehearsal (#44): `docs/report/`, `docs/demo_script.md`.
 - Push and watch the first CI run of the `e2e` job on GitHub (runner build time and disk are unmeasured).
 ## Known issues
+- Feature 1: `drivers.permanent_number` in the clean zone is today's season-table number and wrong for history.
+  The entrants dimension uses `car_number`. The clean table itself is unchanged.
 - Step 17 follow-up: the replay's compound is the TracingInsights stint label. It is built from all of the stint's
   per-lap labels, so a later conflicting label nulls the whole stint. It is display only and not the strict
   laps <= L-1 rule of the model's `*_compound_ti` inputs. (The assumed-new tyre age next to it is resolved:

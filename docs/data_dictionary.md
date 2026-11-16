@@ -799,3 +799,99 @@ other status).
   rows only with `lap_time_s` and the coverage flag in mind.
 - **Races below 95% compound coverage:** 2021 R12 Belgian GP 0.0, 2022 R11 Austrian GP 0.7742, 2025 R6 Miami GP
   0.5562, 2025 R13 Belgian GP 0.9352.
+
+## Entrants dimension (`clean/entrants`, Feature 1, display only)
+Built by `python -m f1sa.etl.entrants` (`make entrants-sample` / `make entrants-full`; `make demo` runs it after the
+clean job). Schema: `f1sa.lake.schemas_entrants` (kept out of `lake/schemas.CLEAN_SCHEMAS`, so no v1 table changes).
+It is read only by `GET /api/races/{s}/{r}/entrants`. No feature, model input, rule, alert, stream or what-if reads
+it.
+
+**Grain:** one row per (season, round, driver_id). It is keyed **per race, never per season**, so mid-season seat
+changes resolve per race. Checked on the full data (`tests/integration/test_entrants_full.py`):
+
+| Season | Driver | Per race |
+|---|---|---|
+| 2024 | Bearman | ferrari R2 (#38); haas R17, R21 (#50) |
+| 2024 | Colapinto / Sargeant | williams from R16 (#43); Sargeant R1–R2, R4–R15 |
+| 2024 | Lawson / Ricciardo | rb from R19 (#30); Ricciardo R1–R18 |
+| 2025 | Tsunoda / Lawson | rb then red_bull from R3 / red_bull then rb from R3 |
+| 2025 | Colapinto / Doohan | alpine from R7 / alpine R1–R6 |
+| 2025 | Hamilton | ferrari in all 24 races |
+
+| Column | Type | Meaning |
+|---|---|---|
+| season, round, driver_id | int, int, string | key (Jolpica driverId) |
+| code, given_name, family_name | string | clean `drivers` |
+| car_number | int | the number **raced in this race** (clean `drivers.car_number`) |
+| grid | int | `results.grid` (0 = pit lane); the API sorts by it, with pit-lane and unknown slots last |
+| constructor_id | string | the team of this race entry |
+| team_name, team_code | string | the season's display name and a short badge code (`etl/entrants_reference.TEAM_NAMES`) |
+| team_lineage_id | string | `features.lineage.history_key` (alphatauri → rb, alfa → sauber) |
+| team_colour_hex | string | `#RRGGBB`, upper case |
+| colour_source | string | `ti_race`, `ti_neighbour_round_<n>` or `project_palette` (below) |
+| nationality, nationality_code | string | the Jolpica demonym, and its F1-style 3-letter code |
+
+**`permanent_number` is not used.** The clean `drivers.permanent_number` comes from today's season driver table, so it
+is wrong for history: Verstappen shows 3 and Norris 1 in every season. The per-race `car_number` is right (Verstappen
+33 in 2021, then 1; Bearman 38 at Ferrari, then 50 at Haas).
+
+**Team names** (`TEAM_NAMES`, committed). Jolpica keeps one name per id across seasons (for example "RB F1 Team" in
+both 2024 and 2025), so the display name comes from the committed table.
+- The job **fails** on a (season, constructor_id) that is not in the table, and on a Jolpica name that differs from
+  the expected one. Both were verified against the full 2021-2025 clean zone.
+- The TracingInsights team names of every race are compared with the display names. Mismatches go to
+  `clean/_quality/entrants.json`.
+
+| constructor_id | Jolpica name | Display name | Code |
+|---|---|---|---|
+| alfa | Alfa Romeo | Alfa Romeo Racing (2021), Alfa Romeo (2022–2023) | ALF |
+| alphatauri | AlphaTauri | AlphaTauri (2021–2023) | APT |
+| alpine | Alpine F1 Team | Alpine | ALP |
+| aston_martin | Aston Martin | Aston Martin | AMR |
+| ferrari | Ferrari | Ferrari | FER |
+| haas | Haas F1 Team | Haas F1 Team | HAA |
+| mclaren | McLaren | McLaren | MCL |
+| mercedes | Mercedes | Mercedes | MER |
+| red_bull | Red Bull | Red Bull Racing | RBR |
+| rb | RB F1 Team | RB (2024), Racing Bulls (2025) | RB / RCB |
+| sauber | Sauber | Kick Sauber (2024–2025) | SAU |
+| williams | Williams | Williams | WIL |
+
+**Team colour** (per race and constructor, `colour_source`):
+1. **`ti_race`**: the `tc` field of the race's TracingInsights `drivers.json`, as received in the raw zone. It is
+   read-only; `drivers.parquet` drops `tc`.
+   - TI codes are mapped to the race's `drivers.code`, then to the car number.
+   - Teammates always agree; if they don't, the job fails.
+   - An entrant missing from TI (6 DNS-like cases, e.g. tsunoda 2022 R2) takes the teammate's colour.
+2. **`ti_neighbour_round_<n>`**: the race's `drivers.json` has no `tc`. The colour comes from round *n*, the nearest
+   round of the same season that has one (a tie goes to the earlier round). It is computed at build time and nothing
+   is committed. These are the **12 races** that use it:
+
+   | Season | Round ← colour from round |
+   |---|---|
+   | 2023 | R2 ← R1, R5 ← R4, R6 ← R4, R7 ← R8 |
+   | 2024 | R6 ← R5, R13 ← R12, R14 ← R12, R15 ← R16, R18 ← R17, R19 ← R17, R20 ← R22, R21 ← R22 |
+3. **`project_palette`**: there is no TracingInsights colour for the team in that season (sample mode and CI). The
+   colour comes from `entrants_reference.PROJECT_PALETTE`.
+   - These are **project-chosen approximations**, not copied from TracingInsights or FOM data. `DATA_LICENSES.md`
+     says that data is never committed.
+   - The sample races (2023 R5 and 2024 R5) therefore show palette colours.
+
+Colours change within a season, so they are per race and never per season. For example, 2024 Alpine and Ferrari
+have different TI colours in R1–R2, and 2025 has a new palette from R8.
+
+**Nationality codes** (`NATIONALITY_CODES`): American USA, Argentine ARG, Australian AUS, Brazilian BRA, British GBR,
+Canadian CAN, Chinese CHN, Danish DEN, Dutch NED, Finnish FIN, French FRA, German GER, Italian ITA, Japanese JPN,
+Mexican MEX, Monegasque MON, New Zealander NZL, Polish POL, Russian RUS, Spanish ESP, Thai THA. These are the 21
+demonyms of the 2021-2025 entrants. The job fails on any other demonym.
+
+**Badge text colour** (API field `team_text_hex`): black or white, whichever contrasts more with the team colour.
+It is always ≥ 4.58:1 (`entrants_reference.badge_text_colour`, tested for every palette entry and for a colour
+sweep).
+
+**Quality report** (`clean/_quality/entrants.json`, counts only):
+- rows, races and checksum;
+- team races per colour source;
+- the neighbour-filled races with the source round of each team;
+- the races that use the palette;
+- TI rows that could not be mapped, and TI team-name mismatches.

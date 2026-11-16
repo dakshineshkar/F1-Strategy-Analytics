@@ -10,6 +10,13 @@ Additive, display-only extension (approved 2026-11-15; the three items above are
   tyre life for the dashboard). Nothing model-related reads it. It matches ``race_pattern``, so it
   gets the same safety TTL on every write and the same EXPIRE at ``session_end``.
 
+Additive, display-only API cache (Feature 1; the race keys above are unchanged):
+
+* STRING  ``meta:entrants:{season}:{round}``: the JSON of ``GET /api/races/{s}/{r}/entrants``,
+  written with ``SET … EX API_ENTRANTS_CACHE_S``. It is deliberately **outside** ``race:*``, so
+  ``race_pattern`` never matches it: ``/state``, the SSE snapshots and ``expire_race`` never see
+  it, and nothing in streaming, serving or the model writes or reads it.
+
 Every function is pure and validates its inputs (season 1950-2100, round 1-30, driverId
 ``[a-z0-9_]+``, the Jolpica ``driverId`` form). Invalid input raises ``InvalidKeyError``, so a
 malformed key never reaches Redis.
@@ -103,3 +110,8 @@ def race_pattern(season: int, round_: int) -> str:
     """``race:{season}:{round}:*``: the SCAN MATCH pattern for every key of one race. The trailing
     colon keeps round 5 from matching round 50; validated ints contain no glob characters."""
     return f"{race_prefix(season, round_)}:*"
+
+
+def entrants_meta_key(season: int, round_: int) -> str:
+    """``meta:entrants:{season}:{round}`` (additive API cache, outside ``race:*``), validated."""
+    return f"meta:entrants:{validate_season(season)}:{validate_round(round_)}"

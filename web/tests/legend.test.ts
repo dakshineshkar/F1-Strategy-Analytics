@@ -127,9 +127,10 @@ describe("Legend: How to read this", () => {
 describe("timing tower", () => {
   const m = html(createElement(TimingTower, { rows: ROWS, lapsDown: (id: string) => (id === "sargeant" ? 1 : 0) }));
 
-  it("has a tooltip on the Pos, Driver, Int, Gap, Age and Undercut headers", () => {
+  it("has a tooltip on the Pos, Driver (team badge and tags), Int, Gap, Age and Undercut headers", () => {
     expect(tipButtons(m).map((b) => b.label)).toEqual([
       "About the undercut flag",
+      "About the team badge",
       "About the driver tags",
       "About Int",
       "About Gap",
@@ -137,7 +138,7 @@ describe("timing tower", () => {
       "About Undercut",
     ]);
     const thead = m.slice(m.indexOf("<thead>"), m.indexOf("</thead>"));
-    for (const id of ["flag", "lapsDown", "int", "gap", "age", "undercut"] as const) {
+    for (const id of ["flag", "team", "lapsDown", "int", "gap", "age", "undercut"] as const) {
       expect(thead).toContain(`role="tooltip" id="${tipId(id)}"`);
     }
   });
