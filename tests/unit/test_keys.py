@@ -118,3 +118,24 @@ def test_entrants_meta_key_is_outside_the_race_namespace() -> None:
 def test_entrants_meta_key_validates_the_race(season: object, round_: object) -> None:
     with pytest.raises(K.InvalidKeyError):
         K.entrants_meta_key(season, round_)  # type: ignore[arg-type]
+
+
+# ------------------------------------------------------ additive analysis cache (display only)
+@pytest.mark.parametrize("view", ["laps", "stints", "pitstops", "race_control", "positions"])
+def test_analysis_meta_key_is_outside_the_race_namespace(view: str) -> None:
+    key = K.analysis_meta_key(2024, 5, view)
+    assert key == f"meta:analysis:2024:5:{view}"
+    assert not fnmatchcase(key, K.race_pattern(2024, 5))
+    assert not key.startswith("race:")
+    assert key != K.entrants_meta_key(2024, 5)
+
+
+@pytest.mark.parametrize(
+    ("season", "round_", "view"),
+    [(1949, 5, "laps"), (2024, 31, "laps"), (2024, 5, "compare"), (2024, 5, ""), (2024, 5, None)],
+)
+def test_analysis_meta_key_validates_race_and_view(
+    season: object, round_: object, view: object
+) -> None:
+    with pytest.raises(K.InvalidKeyError):
+        K.analysis_meta_key(season, round_, view)  # type: ignore[arg-type]

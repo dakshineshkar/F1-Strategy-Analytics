@@ -293,3 +293,215 @@ class EntrantsOut(_Out):
     season: int
     round: int
     entrants: list[EntrantOut]
+
+
+# ------------------------------------------------------------------ race analysis (Feature 2)
+KnownCompound = Literal["SOFT", "MEDIUM", "HARD", "INTERMEDIATE", "WET"]
+DRIVER_CODE_PATTERN = r"^[A-Z]{3}$"
+
+
+class AnalysisCoverageOut(_Out):
+    """What the lake holds for this race (``clean/analysis_race``): which views have real data."""
+
+    n_drivers: int = Field(ge=0)
+    n_laps: int = Field(ge=0, description="the highest lap number")
+    n_lap_rows: int = Field(ge=0)
+    tyre_source: Literal["tracinginsights", "synthetic", "none"]
+    is_synthetic: bool = Field(description="compounds and tyre ages are SYNTHETIC (sample mode)")
+    has_sectors: bool
+    has_speed_traps: bool
+    deleted_known: bool = Field(description="false: deleted laps are unknown in this lake")
+    neutralised_source: Literal["track_status", "heuristic", "mixed"]
+    n_race_control: int = Field(ge=0)
+    n_pitstops: int = Field(ge=0)
+    n_quick_laps: int = Field(ge=0)
+    n_ti_only_laps_dropped: int = Field(ge=0)
+
+
+class AnalysisLapOut(_Out):
+    """One Jolpica lap with the TracingInsights detail (``clean/analysis_laps``)."""
+
+    driver_id: str
+    driver_code: str | None
+    lap: int = Field(ge=1)
+    position: int | None = Field(default=None, ge=1)
+    lap_time_s: float | None
+    cumulative_time_s: float | None
+    gap_to_leader_s: float | None
+    sector1_s: float | None
+    sector2_s: float | None
+    sector3_s: float | None
+    speed_i1_kph: float | None
+    speed_i2_kph: float | None
+    speed_fl_kph: float | None
+    speed_st_kph: float | None
+    stint: int | None = Field(default=None, ge=1)
+    compound: KnownCompound | None
+    tyre_life_laps: int | None = Field(default=None, ge=0)
+    compound_source: Literal["tracinginsights", "synthetic", "none"]
+    is_synthetic: bool
+    is_pit_in_lap: bool | None
+    is_pit_out_lap: bool | None
+    is_deleted: bool | None = Field(description="null: unknown in this lake")
+    deleted_reason: str | None
+    track_status: str | None = Field(description="race-control track-status codes over the lap")
+    is_sc_lap: bool | None
+    is_vsc_lap: bool | None
+    is_red_flag_lap: bool | None
+    is_neutralised_lap: bool | None
+    neutralised_source: Literal["track_status", "heuristic"]
+    is_quick_lap: bool
+    quick_lap_exclusion: (
+        Literal["no_time", "lap_1", "pit_in", "pit_out", "neutralised", "deleted", "slow_107"]
+        | None
+    )
+
+
+class AnalysisStintOut(_Out):
+    """One stint with its lap-time-vs-tyre-life fit over quick laps (a proxy, not tyre wear)."""
+
+    driver_id: str
+    driver_code: str | None
+    stint: int = Field(ge=1)
+    compound: KnownCompound | None
+    start_lap: int = Field(ge=1)
+    end_lap: int = Field(ge=1)
+    laps: int = Field(ge=1)
+    tyre_life_start: int | None
+    tyre_life_end: int | None
+    used_set: bool | None
+    ends_in_pit: bool
+    n_quick_laps: int = Field(ge=0)
+    deg_slope_s_per_lap: float | None
+    deg_intercept_s: float | None
+    median_quick_lap_s: float | None
+    fit_status: Literal["ok", "too_few_laps", "no_tyre_life"]
+    compound_source: Literal["tracinginsights", "synthetic", "none"]
+    is_synthetic: bool
+
+
+class AnalysisPitStopOut(_Out):
+    """One Jolpica pit stop (``duration_s`` = pit-lane time) with the laps around it."""
+
+    driver_id: str
+    driver_code: str | None
+    stop: int = Field(ge=1)
+    lap: int = Field(ge=1)
+    time_of_day: str | None
+    duration_s: float | None
+    is_long_stop: bool | None
+    under_neutralisation: bool | None
+    compound_before: KnownCompound | None
+    compound_after: KnownCompound | None
+    tyre_life_before: int | None
+    position_before: int | None
+    position_after: int | None
+
+
+class AnalysisRaceControlOut(_Out):
+    """One race-control message with its ``kind`` (SC, VSC, red flag and penalties are key)."""
+
+    seq: int = Field(ge=0)
+    lap: int | None
+    time_utc: str | None
+    category: str | None
+    message: str | None
+    status: str | None
+    flag: str | None
+    scope: str | None
+    driver_id: str | None
+    driver_code: str | None
+    kind: Literal[
+        "sc_deployed",
+        "sc_ending",
+        "vsc_deployed",
+        "vsc_ending",
+        "red_flag",
+        "penalty",
+        "investigation",
+        "track_limits",
+        "chequered",
+        "other",
+    ]
+    is_key: bool
+
+
+class _AnalysisOut(_Out):
+    season: int
+    round: int
+    coverage: AnalysisCoverageOut
+
+
+class AnalysisLapsOut(_AnalysisOut):
+    """``GET …/analysis/laps``: every lap of every driver (driver, then lap)."""
+
+    rows: list[AnalysisLapOut]
+
+
+class AnalysisStintsOut(_AnalysisOut):
+    """``GET …/analysis/stints``."""
+
+    rows: list[AnalysisStintOut]
+
+
+class AnalysisPitStopsOut(_AnalysisOut):
+    """``GET …/analysis/pitstops`` (by lap)."""
+
+    rows: list[AnalysisPitStopOut]
+
+
+class AnalysisRaceControlsOut(_AnalysisOut):
+    """``GET …/analysis/race-control`` (message order); empty when the lake has none."""
+
+    rows: list[AnalysisRaceControlOut]
+
+
+class PositionPointOut(_Out):
+    lap: int = Field(ge=1)
+    position: int = Field(ge=1)
+
+
+class PositionSeriesOut(_Out):
+    driver_id: str
+    driver_code: str | None
+    grid: int | None = Field(default=None, ge=0, description="starting slot; 0 = pit lane")
+    positions: list[PositionPointOut]
+
+
+class PositionsOut(_AnalysisOut):
+    """``GET …/analysis/positions``: one series per driver, in finishing order."""
+
+    rows: list[PositionSeriesOut]
+
+
+class CompareDriverOut(_Out):
+    driver_id: str
+    driver_code: str = Field(pattern=DRIVER_CODE_PATTERN)
+
+
+class CompareLapOut(_Out):
+    """One lap of ``a`` vs ``b``: deltas are ``a - b`` (negative = ``a`` faster)."""
+
+    lap: int = Field(ge=1)
+    a_lap_time_s: float | None
+    b_lap_time_s: float | None
+    delta_s: float | None
+    gap_s: float | None = Field(description="cumulative time a - b at this lap (+ = a behind)")
+    sector1_delta_s: float | None
+    sector2_delta_s: float | None
+    sector3_delta_s: float | None
+    a_position: int | None
+    b_position: int | None
+    a_compound: KnownCompound | None
+    b_compound: KnownCompound | None
+    a_pit: bool
+    b_pit: bool
+    neutralised: bool
+
+
+class CompareOut(_AnalysisOut):
+    """``GET …/analysis/compare?a=CODE&b=CODE``."""
+
+    a: CompareDriverOut
+    b: CompareDriverOut
+    rows: list[CompareLapOut]

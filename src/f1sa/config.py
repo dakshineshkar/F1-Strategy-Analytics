@@ -91,6 +91,8 @@ class Settings(BaseSettings):
     api_races_cache_s: float = Field(default=300.0, ge=0)
     api_entrants_cache_s: int = Field(default=3600, ge=1, le=86_400)
     """TTL (s) of the display-only entrants cache key ``meta:entrants:{s}:{r}`` in Redis."""
+    api_analysis_cache_s: int = Field(default=3600, ge=1, le=86_400)
+    """TTL (s) of the display-only race-analysis cache keys ``meta:analysis:{s}:{r}:{view}``."""
     api_kafka_timeout_s: float = Field(default=2.0, gt=0, le=60)
     api_model_dir: Path = Path("models/undercut/deploy_real_G3.5_k2")
     """The deployed model reported by ``/api/health`` (the stream job's default model)."""

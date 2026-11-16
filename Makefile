@@ -2,7 +2,7 @@
 SHELL := /bin/bash
 UV ?= uv
 
-.PHONY: help setup lint typecheck test test-int sample-data etl-sample entrants-sample features-sample model-eval-sample model-eval-rehearsal
+.PHONY: help setup lint typecheck test test-int sample-data etl-sample entrants-sample analysis-sample features-sample model-eval-sample model-eval-rehearsal
 
 help: ## List available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2}'
@@ -28,6 +28,9 @@ etl-sample: ## Clean zone from data/sample into data/lake/clean (file mode, Spar
 
 entrants-sample: ## Display-only per-race entrants (clean/entrants) in data/lake (run etl-sample first)
 	DATA_LAKE_URI=file://$(CURDIR)/data/lake $(UV) run python -m f1sa.etl.entrants
+
+analysis-sample: ## Display-only race-analysis tables (clean/analysis_*) in data/lake (run etl-sample first)
+	DATA_LAKE_URI=file://$(CURDIR)/data/lake $(UV) run python -m f1sa.etl.analysis --source sample
 
 features-sample: ## Feature tables from data/lake/clean into data/lake/features (run etl-sample first)
 	DATA_LAKE_URI=file://$(CURDIR)/data/lake $(UV) run python -m f1sa.features.build --source sample
@@ -102,7 +105,7 @@ pipeline-full: etl-full features-full report-full ## etl-full, features-full, th
 # ingest-ti-full runs on the HOST: files go through HttpFS (HDFS_HTTPFS_URL) as in Step 4A, and the
 # per-lap telemetry aggregates are computed with a local Spark session before upload. Resumable
 # (data/manifest_tracinginsights.json); SKIP_RAW_TELEMETRY=1 keeps no raw samples (default: 2024).
-.PHONY: ingest-ti-full etl-ti-full entrants-full reconcile-ti-full test-ti
+.PHONY: ingest-ti-full etl-ti-full entrants-full analysis-full reconcile-ti-full test-ti
 ingest-ti-full: ## TracingInsights tables + telemetry aggregates for 2021-2025 into /f1/raw (host -> HttpFS)
 	DATA_LAKE_URI=$(HDFS_LAKE) uv run f1sa-ingest-ti --seasons 2021-2025 --sink hdfs$(if $(SKIP_RAW_TELEMETRY), --skip-raw-telemetry,)
 
@@ -111,6 +114,9 @@ etl-ti-full: hdfs-dirs ## Additive TracingInsights clean tables in /f1/clean + r
 
 entrants-full: hdfs-dirs ## Display-only per-race entrants: /f1/clean/entrants (reads clean + raw TI drivers.json; never writes /f1/raw)
 	$(APP_EXEC) python -m f1sa.etl.entrants
+
+analysis-full: hdfs-dirs ## Display-only race-analysis tables: /f1/clean/analysis_* (reads clean + raw TI laps.parquet; never writes /f1/raw)
+	$(APP_EXEC) python -m f1sa.etl.analysis --source lake
 
 reconcile-ti-full: ## Read-only TracingInsights vs Jolpica lap reconciliation (counts only, writes nothing)
 	$(APP_EXEC) python -m f1sa.etl.reconcile_ti
@@ -435,6 +441,7 @@ demo-pipeline: api-dirs ## Sample ETL, features, sample deployment model and tyr
 	@mkdir -p data/demo/$(DEMO_RUN)
 	$(DEMO_EXEC) python -m f1sa.etl.clean --source sample
 	$(DEMO_EXEC) python -m f1sa.etl.entrants
+	$(DEMO_EXEC) python -m f1sa.etl.analysis --source sample
 	$(DEMO_EXEC) python -m f1sa.features.build --source sample --results-dir data/demo/$(DEMO_RUN)
 	$(DEMO_EXEC) python experiments/model_save.py --source sample --force
 	$(DEMO_EXEC) python -m f1sa.sim.tyre_model --source sample

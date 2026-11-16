@@ -19,6 +19,8 @@ TARGETS = (
     "model-dev-tyre-full",
     "model-dev-permutation-ti-full",
     "model-save-full",
+    "entrants-full",
+    "analysis-full",
 )
 
 
@@ -47,6 +49,8 @@ def test_target_never_rebuilds_deletes_or_touches_raw(target: str) -> None:
         ("etl-full", "f1sa.etl.clean --source lake"),
         ("features-full", "f1sa.features.build --source lake --full-counts"),
         ("report-full", "f1sa.etl.full_report"),
+        ("entrants-full", "f1sa.etl.entrants"),
+        ("analysis-full", "f1sa.etl.analysis --source lake"),
     ],
 )
 def test_target_runs_in_app_against_hdfs(target: str, module: str) -> None:

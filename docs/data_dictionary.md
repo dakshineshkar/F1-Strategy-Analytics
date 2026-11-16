@@ -895,3 +895,79 @@ sweep).
 - the neighbour-filled races with the source round of each team;
 - the races that use the palette;
 - TI rows that could not be mapped, and TI team-name mismatches.
+
+## Race-analysis tables (`clean/analysis_*`, Feature 2, display only)
+Built by `python -m f1sa.etl.analysis --source sample|lake` (`make analysis-sample` / `make analysis-full`;
+`make demo` runs it after the entrants step). Schemas: `f1sa.lake.schemas_analysis` (kept out of
+`lake/schemas.CLEAN_SCHEMAS` and `CLEAN_SCHEMAS_TI`, so no v1 or TracingInsights clean table changes). The job reads
+the v1 clean `laps`, `pitstops`, `drivers`, `stints`, the TI clean `stints_tracinginsights`, `race_control`,
+`race_control_track_status` (cross-check only) and the as-received TI `raw/tracinginsights/laps/.../laps.parquet`
+(17 of its 42 columns, read-only). It writes only the five tables below and `clean/_quality/analysis.json`. Only the
+API's `/api/races/{s}/{r}/analysis/*` reads them: no feature, model input, rule, alert, stream or what-if does.
+`--source sample` needs a `file://` lake and builds the sample races; `--source lake` builds every race of the clean
+`laps` (2025 included, like the entrants; the API seals it unless `ALLOW_TEST_SEASON=1`).
+
+**What the lake holds per lap** (measured 2026-11-16, read-only, before the job existed). The v1 clean `laps` are
+Jolpica only (position, lap time, cumulative time, Jolpica pit flags, the heuristic neutralisation). Sector times,
+speed traps, the per-lap track-status codes, deleted laps and the real per-lap tyre life exist only in the raw TI
+`laps.parquet` (the TI clean job keeps 12 of its 42 columns). Share of TI rows with a value:
+
+| Season | Races | TI rows | Lap time | S1 | S2 | S3 | Speed ST | Speed FL | Position | Compound | Tyre life | Deleted laps | Pit-in / out laps |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| 2021 | 22 | 23,758 | 99.7% | 97.6% | 99.9% | 99.8% | 99.8% | 96.3% | 99.9% | 100% | 100% | 183 | 846 / 825 |
+| 2022 | 22 | 23,577 | 99.8% | 97.8% | 99.8% | 99.7% | 99.8% | 96.3% | 99.8% | 98.6% | 97.8% | 254 | 836 / 834 |
+| 2023 | 22 | 24,422 | 99.9% | 97.8% | 99.8% | 99.6% | 99.7% | 96.0% | 99.9% | 99.9% | 99.9% | 394 | 943 / 930 |
+| 2024 | 24 | 26,606 | 99.9% | 98.0% | 99.9% | 99.8% | 99.9% | 96.7% | 99.9% | 100% | 100% | 326 | 849 / 840 |
+| 2025 | 24 | 26,692 | 99.9% | 98.1% | 99.8% | 99.8% | 99.9% | 96.7% | 99.9% | 98.1% | 98.0% | 299 | 841 / 863 |
+
+- S1 is lowest because lap 1 has no sector 1. The compound share counts 60 `UNKNOWN` labels, which the job
+  treats as null. Deleted reasons are "TRACK LIMITS AT TURN n", some with "(NEXT LAP)".
+- Race control (`race_control`): 2,035 / 1,998 / 1,849 / 2,131 / 2,178 messages per season, lap known on
+  99.98%. SC deployed 15 / 20 / 16 / 13 / 17; VSC deployed 12 / 23 / 10 / 9 / 13; red-flag messages 8 / 4 / 7 / 3 / 1
+  (in 6 / 3 / 4 / 3 / 1 races); penalties 27 / 44 / 54 / 50 / 74.
+- Jolpica pit stops (pit-lane time): 798 / 805 / 912 / 825 / 821.
+- **Sample bundle (2023 R5, 2024 R5):** real Jolpica laps, positions and pit stops; the **synthetic** v1 stints
+  (compound, tyre age); no TracingInsights, so no sector times, speed traps, deleted laps or race control, and
+  neutralisation only from the Jolpica heuristic (2024 R5 laps 21–31).
+
+**Per-lap rules (`analysis_laps`).**
+- **Rows** are the Jolpica laps. TI rows are left-joined onto them (TI code → the race's `drivers.code`, else the
+  car number, `clean_tracinginsights.driver_map`). A TI lap Jolpica does not have (the 221 uncompleted laps of the
+  lap reconciliation) is dropped and counted; a duplicate TI (driver, lap), which would fan out the laps, fails the
+  job, and the row count must equal the Jolpica count.
+- **Tyres** (`compound_source`): a race with TI stints uses them (`tracinginsights`: the stint covering the lap; a
+  conflicting stint has no compound, as in the replay) and the real per-lap TI `tyre_life` (`tyre_life_laps`;
+  FastF1 TyreLife, the laps on the set including earlier use). Otherwise a race whose v1 stints are synthetic (the
+  sample) uses those (`synthetic`, `is_synthetic = true`; `tyre_life_laps = tyre_age_at_start + lap − start_lap + 1`,
+  the `df_jobs.tyre_age` rule). Otherwise `none`; Jolpica-inferred stints (no compound) are never used.
+- **Neutralised** (`neutralised_source`): the per-lap TI `track_status` codes, i.e. the race-control track-status
+  feed over the lap (`track_status`): contains 4 → `is_sc_lap`, 6 or 7 → `is_vsc_lap`, 5 → `is_red_flag_lap`;
+  `is_neutralised_lap` = SC or VSC, as in v1. A lap without a TI status uses the v1 flags (`heuristic`; SC and VSC
+  stay null there). On 2024 R5 this puts the safety car on laps 22–31: lap 21, which the heuristic flagged, is yellow
+  only (code `12`). The quality JSON compares the leader's flagged laps with the `race_control_track_status` periods
+  (`track_status_crosscheck`).
+- **Deleted:** TI `deleted` / `deleted_reason`; null (unknown) without TI, never false.
+- **Quick laps** (the degradation proxy): `quick_lap_exclusion` holds the first reason that applies, in order
+  `no_time`, `lap_1`, `pit_in`, `pit_out`, `neutralised` (SC, VSC or red flag), `deleted`, `slow_107` (slower than
+  1.07 × the fastest lap of the same driver **and stint** that passed every earlier test: the FastF1
+  `pick_quicklaps` convention, per stint so that a wet stint is not measured against a dry one). `is_quick_lap` =
+  no reason.
+
+| Table | Key | Columns |
+|---|---|---|
+| `analysis_race` | season, round | coverage: n_drivers, n_laps (highest lap), n_lap_rows, `tyre_source`, `is_synthetic`, `has_sectors`, `has_speed_traps`, `deleted_known`, `neutralised_source` (`track_status` / `heuristic` / `mixed`), n_race_control, n_pitstops, n_quick_laps, n_ti_only_laps_dropped |
+| `analysis_laps` | season, round, driver_id, lap | driver_code, position, lap_time_s, cumulative_time_s, gap_to_leader_s, sector1–3_s, speed_i1/i2/fl/st_kph, stint, compound, tyre_life_laps, compound_source, is_synthetic, is_pit_in_lap / is_pit_out_lap (Jolpica), is_deleted, deleted_reason, track_status (raw codes), is_sc_lap, is_vsc_lap, is_red_flag_lap, is_neutralised_lap, neutralised_source, is_quick_lap, quick_lap_exclusion |
+| `analysis_stints` | season, round, driver_id, stint | driver_code, compound, start_lap, end_lap, laps, tyre_life_start / tyre_life_end (`tyre_age_at_start` + 1 / + laps), used_set (`tyre_age_at_start > 0`), ends_in_pit, n_quick_laps, `deg_slope_s_per_lap`, `deg_intercept_s`, median_quick_lap_s, `fit_status` (`ok` / `too_few_laps` (< 5 quick laps with tyre life) / `no_tyre_life`), compound_source, is_synthetic |
+| `analysis_pitstops` | season, round, driver_id, stop | driver_code, lap (the in-lap), time_of_day, duration_s (Jolpica pit-lane time), is_long_stop, under_neutralisation (in-lap SC/VSC/red), compound_before / compound_after (in-lap / out-lap), tyre_life_before, position_before / position_after |
+| `analysis_race_control` | season, round, seq | lap, time_utc (ISO text, UTC), category, message, status, flag, scope, driver_id, driver_code, `kind` (Spark SQL CASE: `sc_deployed`, `sc_ending`, `vsc_deployed`, `vsc_ending`, `red_flag`, `penalty`, `investigation`, `track_limits`, `chequered`, `other`), `is_key` (SC, VSC, red flag, penalty); no rows without TI (the sample) |
+
+- **Degradation fit:** Spark SQL `regr_slope` / `regr_intercept` / `regr_count` of `lap_time_s` on `tyre_life_laps`
+  over the stint's quick laps. It is a **lap-time proxy, not tyre wear**: fuel burn-off (cars get faster) and
+  track evolution are in the slope, and the dashboard says so next to every slope.
+- **APIs:** DataFrame joins and windows for the laps (the 107% window), Spark SQL for the fits and the race-control
+  `kind`, the RDD API (`map` → `reduceByKey`) for the per-season coverage counts.
+- **Fails** (exit 1) on: a duplicate key in any table, a fan-out, a compound outside the five, no clean laps.
+- **Quality report** (`clean/_quality/analysis.json`, counts only): coverage per season (`lap_rows`, lap time,
+  sectors, speed trap, deleted known / deleted, tyre life, compound, quick laps, neutralised by source), quick-lap
+  exclusions by reason, races by tyre and neutralised source, stints by fit status, race control by kind, the
+  track-status cross-check, TI rows unmapped and TI-only laps dropped, rows and checksum per table.

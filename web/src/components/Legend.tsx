@@ -1,15 +1,16 @@
 import { GLOSSARY, GROUP_TITLE, type GlossaryGroup } from "@/lib/legend";
 
-const GROUPS: GlossaryGroup[] = ["tower", "alerts", "whatif"];
+/** The live race page's groups (the analysis tab passes its own). */
+export const LIVE_GROUPS: readonly GlossaryGroup[] = ["tower", "alerts", "whatif"];
 
 /** "How to read this": every marker of the dashboard in one collapsible list (native
  * ``<details>``, keyboard-operable without script). The texts are the tooltips' (``lib/legend``). */
-export function Legend() {
+export function Legend({ groups = LIVE_GROUPS }: { groups?: readonly GlossaryGroup[] }) {
   return (
     <details className="legend panel">
       <summary>How to read this</summary>
       <div className="legend-body">
-        {GROUPS.map((g) => (
+        {groups.map((g) => (
           <section key={g} className="legend-group" aria-label={GROUP_TITLE[g]}>
             <h3>{GROUP_TITLE[g]}</h3>
             <dl>

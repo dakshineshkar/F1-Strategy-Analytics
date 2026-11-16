@@ -134,4 +134,45 @@ test("sample race: a 60× replay fills the tower and updates laps", async ({ pag
   await page.setViewportSize({ width: 375, height: 812 });
   const overflow2 = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
   expect(overflow2).toBeLessThanOrEqual(0);
+
+  // Race analysis (display only, Feature 2): the tab from the race page, keyboard tabs, the sample's
+  // synthetic tyre note, a two-driver comparison, the race-control empty state and lap links.
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto("/race/2024/5");
+  await page.getByRole("navigation", { name: "Race views" }).getByRole("link", { name: "Race analysis" }).click();
+  await expect(page).toHaveURL(/\/race\/2024\/5\/analysis/);
+  const tabs = page.getByRole("tablist", { name: "Race analysis views" }).getByRole("tab");
+  await expect(tabs).toHaveCount(7);
+  const strategy = page.getByRole("tab", { name: "Tyre strategy" });
+  await expect(strategy).toHaveAttribute("aria-selected", "true");
+  const panelA = page.getByRole("tabpanel");
+  await expect(panelA).toContainText("SYNTHETIC: not real tyre data.");
+  await expect(page.locator(".analysis-notes")).toContainText("SYNTHETIC");
+  await panelA.getByText("Show table").click();
+  await expect(page.getByRole("table", { name: "Stints by driver" }).locator("tbody tr")).toHaveCount(20);
+  await strategy.focus();
+  await page.keyboard.press("ArrowRight");
+  await expect(page.getByRole("tab", { name: "Lap times" })).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByRole("tab", { name: "Lap times" })).toBeFocused();
+  await expect(page).toHaveURL(/view=laps/);
+  await expect(panelA.getByRole("group", { name: /Drivers/ }).getByRole("checkbox")).toHaveCount(20);
+  await page.keyboard.press("ArrowRight");
+  await expect(panelA).toContainText("A lap-time proxy, not tyre wear");
+  await expect(panelA).toContainText(/s\/lap|no fit/);
+  await page.keyboard.press("End");
+  await expect(page.getByRole("tab", { name: "Race control" })).toHaveAttribute("aria-selected", "true");
+  await expect(panelA).toContainText("No race-control messages in this lake for this race.");
+  await page.getByRole("tab", { name: "Compare" }).click();
+  await expect(panelA.locator(".compare-summary")).toContainText(/was faster on \d+/, { timeout: 15_000 });
+  await expect(panelA.getByRole("combobox", { name: "Driver a" })).toBeVisible();
+  await expect(panelA).toContainText("No sector times in this lake.");
+  await page.getByRole("tab", { name: "Pit stops" }).click();
+  const firstStop = page.getByRole("table", { name: "Pit stops by lap" }).locator("tbody tr").first().getByRole("link");
+  const stopLap = (await firstStop.textContent())?.trim() ?? "";
+  await firstStop.click();
+  await expect(page).toHaveURL(new RegExp(`view=laps&lap=${stopLap}$`));
+  await expect(page.locator(".lap-mark")).toContainText(`Lap ${stopLap}`);
+  await page.setViewportSize({ width: 375, height: 812 });
+  const overflow3 = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+  expect(overflow3).toBeLessThanOrEqual(0);
 });

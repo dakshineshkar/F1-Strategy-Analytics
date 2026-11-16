@@ -1621,10 +1621,68 @@
       - the real `make up` / `up-full` / `api-up` refusal runs with a system-only PATH and `UV=false`.
     - README prerequisites: `python3` (3.8 or newer) is listed for `make up`. `uv` stays, because
       `make sample-data` runs `uv run` on the host.
+- Feature 2 (2026-11-16): "Race analysis" tab for finished races (display only). **Done.**
+  - **Investigation** (read-only; HDFS only through HttpFS GET, copies in the scratchpad):
+    - The v1 clean `laps` are Jolpica only. Sector times, speed traps, the per-lap track-status codes, deleted
+      laps and the real per-lap tyre life exist only in the raw TI `laps.parquet` (the TI clean job keeps 12 of 42
+      columns). Coverage per season is in `docs/data_dictionary.md` ("Race-analysis tables"): lap time ≥ 99.7%,
+      S2/S3 ≥ 99.6%, S1 ~98% (lap 1 has none), speed trap ST ≥ 99.7%, compound and tyre life ≥ 97.8%.
+    - Race control is in the lake for all 114 races (lap known on 99.98% of messages); no FastF1 data anywhere.
+    - The sample has no TracingInsights: its tyres are the synthetic v1 stints (shown, labelled SYNTHETIC: your
+      choice), and it has no sectors, deleted laps or race control.
+  - **Change**:
+    - `etl/analysis.py` (`--source sample|lake`; `make analysis-sample`, `make analysis-full`; `make demo` runs it
+      after the entrants) writes `clean/analysis_{race,laps,stints,pitstops,race_control}` and
+      `clean/_quality/analysis.json`. Schemas in `lake/schemas_analysis.py` (outside both clean schema lists).
+      - Rows are the Jolpica laps with TI left-joined (no fan-out, checked); neutralised from the per-lap TI
+        track-status codes (heuristic fallback); deleted unknown (null) without TI; quick laps with one stored
+        exclusion reason (lap 1, pit in/out, SC/VSC/red, deleted, > 107% of the stint's fastest: your choice).
+      - Stint fits with Spark SQL `regr_slope`/`regr_intercept`; race-control `kind` with a Spark SQL CASE;
+        per-season coverage counts with RDD `reduceByKey`.
+    - API: `GET /api/races/{s}/{r}/analysis/{laps,stints,pitstops,race-control,positions}` and `…/compare?a=&b=`
+      (`api/analysis.py`, `api/routes/analysis.py`). Read-only reader limited to the analysis tables and
+      `entrants`; 404 no analysis / sealed 2025, 422, 500, 503 as the other routes. Cache `meta:analysis:{s}:{r}:{view}`
+      (`SET EX API_ANALYSIS_CACHE_S`, lake fingerprint, outside `race:*`; compare has no key). CLAUDE.md has the
+      additive line. The API still imports no pyspark.
+    - Dashboard `/race/{s}/{r}/analysis` ("Race analysis" in the race page's nav): WAI-ARIA tabs for tyre
+      strategy, lap times, tyre degradation (labelled "a lap-time proxy, not tyre wear", excluded laps listed),
+      positions (team colours + dashes + code/full-name labels), compare (lap delta, cumulative gap, sector
+      totals), pit stops and race control (key events, lap links). Hand-written SVG (`lib/plot.ts`; `useWidth`
+      shared from `lib/useWidth.ts`), each chart with a title, a description, a text summary and a table behind
+      "Show table". Compound colour tokens in `lib/theme.ts` (≥ 3:1, bar text ≥ 4.5:1), always with a letter,
+      name or glyph. A glossary group `analysis` (shown only on the tab; `Legend` takes `groups`).
+  - **Evidence.**
+    - `make analysis-full`: 114 races; 124,834 laps (= the Jolpica counts per season), 6,421 stints (5,196 fitted,
+      1,200 too few quick laps, 25 without tyre life), 4,161 pit stops, 10,191 race-control messages. Tyre and
+      neutralised source TI / track status in all 114 races. TI rows unmapped 0; TI-only laps dropped 221 (the lap
+      reconciliation count). Track-status cross-check: 463 leader laps flagged by both, 0 by only one source.
+    - `tests/integration/test_analysis_full.py`: 5 passed (every stored row of every race validates against the
+      API models; 2024 R5 SC laps 22–31 from track status with race control VSC 22 → SC 23 → SC in 26 → SC 27 →
+      SC in 31; 2021 R12 one lap, 40 uncompleted laps dropped, no pit stops).
+    - Stream parity 2021-2024 (`--out data/demo/parity_check5`): 90 races, 157 labelled attempts, 34,608 eligible
+      pairs, 0 mismatching races; byte-identical to `results/stream_parity_full.csv` (sha256 aad8df67…).
+    - Sample 2024 R5 alert check: 113 / 19 / 9 (141 alerts, 409 eligible pairs); the dump is byte-identical to the
+      Feature 1 dump (sha256 7eee6557…).
+    - `make experiments-sample`: OK 7, OK (metadata differs) 1, DIFF 0, MISSING 0; the what-if CSV and PNG are
+      byte-identical to the Feature 1 run.
+    - Web: lint and typecheck clean; Vitest 223 passed; `next build` clean; `make web-e2e` passed (opens the tab
+      from the race page, arrow keys/End across tabs, 20 strategy rows and the SYNTHETIC note, compare summary,
+      race-control empty state, a pit-stop lap link marks the lap, no horizontal scroll at 375 px).
+    - Python: the full unit suite gave 1928 passed in 771 s (once, after all changes); targeted: `test_analysis.py`
+      23, `test_api_analysis.py` 36, keys/app/config/entrants 123, Makefile 42. ruff, format and mypy clean.
+    - `results/` is unchanged (sha256 of all 154 files before and after; `git status results/` clean).
+  - **Services** (user approved): api recreated in sample mode (REPLAY=1) for Playwright, web stopped for
+    `make web-e2e` and rebuilt/started with `--no-deps`; after the smoke test's own replay had finished, the api
+    was returned to `make api-up FULL=1 REPLAY=1`.
 ## Next
 - S18: report, docs and demo rehearsal (#44): `docs/report/`, `docs/demo_script.md`.
 - Push and watch the first CI run of the `e2e` job on GitHub (runner build time and disk are unmeasured).
 ## Known issues
+- Feature 2: the live gap chart's SVG `<title>` renders empty under React 19 (it has several children:
+  `Gap to leader, laps {a} to {b}`); found while testing the analysis charts, whose titles are single strings.
+  Not fixed (outside Feature 2); a one-line template-string change in `GapChart.tsx`.
+- Feature 2: the degradation slope is a lap-time proxy (fuel burn-off and track evolution are in it), stated in the
+  UI; the sample's tyre data is synthetic (labelled).
 - Feature 1: `drivers.permanent_number` in the clean zone is today's season-table number and wrong for history.
   The entrants dimension uses `car_number`. The clean table itself is unchanged.
 - Step 17 follow-up: the replay's compound is the TracingInsights stint label. It is built from all of the stint's

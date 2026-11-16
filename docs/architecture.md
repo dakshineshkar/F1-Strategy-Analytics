@@ -526,6 +526,14 @@ The key contract in CLAUDE.md is the only key layout. `keys.py` builds the names
     `expire_race` never see it.
   - The 9-field driver hash is never touched. Redis is only a cache: a Redis error is logged and the lake is read
     directly. Negative results (404) are not cached.
+- **Analysis cache (additive, display only; Feature 2)** `meta:analysis:{s}:{r}:{view}` for the views `laps`,
+  `stints`, `pitstops`, `race_control` and `positions` (`serving/keys.ANALYSIS_VIEWS`).
+  - It is a STRING holding `{"lake": <fingerprint>, "data": <response>}` with the same lake fingerprint as the
+    entrants cache; an entry of another lake is a miss and is overwritten.
+  - It is written by `api/analysis.py` with `SET … EX API_ANALYSIS_CACHE_S` (default 3600 s). `compare` is derived
+    from the cached `laps` document and has no key of its own.
+  - Outside `race:*` for the same reasons as the entrants key; the 9-field driver hash is never touched; a Redis
+    error falls back to the lake; negative results are not cached.
 - **Order** `race:{s}:{r}:order`: ZADD, member = driverId, score = position (unique ints ≥ 1). Drivers stay in
   the set for the whole session (a DNF keeps its classified position), so the upsert is the complete update.
 - **Events** on the channel `race:{s}:{r}:events`: JSON with `type` (lap, pit_in, pit_out, undercut_alert,
@@ -700,6 +708,8 @@ browser (http://localhost:3000) --CORS--> FastAPI (uvicorn, 127.0.0.1:8000)
   GET  /api/races                          clean zone (file:// pyarrow | hdfs:// HttpFS LISTSTATUS+OPEN)
   GET  /api/races/{s}/{r}/state            AsyncRaceStore: SCAN race:{s}:{r}:* + HGETALL pipeline + ZRANGE
   GET  /api/races/{s}/{r}/entrants         meta:entrants:{s}:{r} (SET EX) | clean/entrants partition (display only)
+  GET  /api/races/{s}/{r}/analysis/{view}  meta:analysis:{s}:{r}:{view} (SET EX) | clean/analysis_* (display only)
+       view = laps | stints | pitstops | race-control | positions;  …/analysis/compare?a=CODE&b=CODE
   GET  /api/races/{s}/{r}/events           SUBSCRIBE race:{s}:{r}:events -> text/event-stream
   POST /api/races/{s}/{r}/replay           subprocesses: stream_job, then producer (ENABLE_REPLAY=1)
   GET  /api/replays                        running replays + the last 20 with state / error
@@ -734,6 +744,8 @@ Docs: `/api/docs`, `/api/openapi.json`.
 | `GET /api/races` | 200 `[{season, round, name, laps, synthetic}]`; 503 clean zone unavailable |
 | `GET …/state` | 200; 404 the race has no keys; 422 bad season/round; 500 a hash breaks the contract; 503 Redis down |
 | `GET …/entrants` | 200 `{season, round, entrants: [...]}` sorted by grid; 404 no entrants partition (or 2025 sealed); 422; 500 a stored row is malformed; 503 clean zone unavailable |
+| `GET …/analysis/{laps,stints,pitstops,race-control,positions}` | 200 `{season, round, coverage, rows: [...]}`; 404 no `analysis_race` row (or 2025 sealed); 422; 500 a stored row is malformed; 503 clean zone unavailable |
+| `GET …/analysis/compare?a=&b=` | 200 `{season, round, coverage, a, b, rows: [...]}` (deltas a − b); 404 no analysis or a code without laps; 422 a code not `[A-Z]{3}` or a = b; 500; 503 |
 | `GET …/events` | 200 `text/event-stream`; 422 bad season/round |
 | `POST …/replay` `{speed: 1\|10\|60}` | 202 (with `run_id`, `state`); 403 disabled or 2025; 404 not in the clean zone; 409 running / limit; 422; 500 launch failed; 503 |
 | `GET /api/replays` | 200 `{enabled, max_running, running, recent}` (state `starting/running/finished/failed`, error, exit codes) |
@@ -943,6 +955,24 @@ browser ── GET /api/races, /api/health ────────────�
   - There are no logo files and no logo-like artwork (no `<img>`, no `<svg>`), and colour never carries meaning on its
     own.
   - The layout footer says "Unofficial project; not associated with the Formula 1 companies."
+- **Race analysis (display only; Feature 2):** `/race/{s}/{r}/analysis` (`components/analysis/`), linked from the
+  race page's "Race views" nav, for any race of the clean zone (they are all finished races).
+  - `lib/analysis.ts` holds the guards (one bad row rejects a response) and all the pure data shaping;
+    `lib/useAnalysis.ts` loads the five views in parallel once per race, and the comparison on demand;
+    `lib/plot.ts` holds the generic SVG geometry (linear scales, ticks, paths, label spreading).
+  - Seven views behind WAI-ARIA tabs (arrow keys, Home, End; roving `tabindex`): tyre strategy, lap times, tyre
+    degradation, positions, compare, pit stops, race control. The view, the marked lap, the degradation driver and
+    the compared pair live in the URL (`?view=…&lap=…`), so a lap link in the pit-stop or race-control list is a real
+    link that opens the lap-time chart with that lap marked.
+  - Hand-written SVG, the gap-chart approach (no chart library; `useWidth` is now shared in `lib/useWidth.ts`).
+    Every chart has `role="img"` with a single-string `<title>` and a `<desc>`, a text summary, and its numbers
+    in a real table behind a "Show table" disclosure.
+  - Compound colours are theme tokens (`--compound-*`, ≥ 3:1 on the panel, bar text ≥ 4.5:1 via `inkOn`); the
+    compound is always also a letter (S/M/H/I/W/?), a name or a glyph shape. Position lines use the entrants' team
+    colour over a `--border` halo, dashed for a team's second driver, with an end label (code or full name).
+  - The degradation view says "A lap-time proxy, not tyre wear" and lists the excluded laps by reason; the sample's
+    tyre data is marked SYNTHETIC on the page; what the lake lacks (sectors, deleted laps, race control) is stated
+    as text.
 - **Synthetic data:** the banner strip shows **SYNTHETIC DEMO DATA** whenever `/api/health` reports
   `lake.mode = "sample"`, and the picker tags each synthetic race.
 - **UI latency** (`lib/debugLatency.ts`, `NEXT_PUBLIC_DEBUG_LATENCY=1`):

@@ -43,6 +43,8 @@ def test_demo_runs_the_sample_pipeline_in_the_app_container_then_the_replay() ->
     execs = _exec_lines(out)
     steps = [
         "python -m f1sa.etl.clean --source sample",
+        "python -m f1sa.etl.entrants",
+        "python -m f1sa.etl.analysis --source sample",
         "python -m f1sa.features.build --source sample --results-dir data/demo/demo_",
         "python experiments/model_save.py --source sample --force",
         "python -m f1sa.sim.tyre_model --source sample",
@@ -86,6 +88,13 @@ def test_demo_never_writes_results_and_never_touches_services_or_volumes() -> No
     assert ups == ["docker compose --profile core up -d --no-deps --no-build --force-recreate api"]
     assert "/f1/" not in out and "hdfs" not in out
     assert "deploy_real_G3.5_k2 " not in out.replace("sample_deploy_real_G3.5_k2", "")
+
+
+def test_analysis_sample_writes_only_the_local_lake() -> None:
+    (line,) = [x for x in _make("analysis-sample").splitlines() if "f1sa.etl.analysis" in x]
+    assert line.startswith(f"DATA_LAKE_URI=file://{REPO}/data/lake ")
+    assert line.endswith("run python -m f1sa.etl.analysis --source sample")
+    assert "results" not in line and "hdfs" not in line
 
 
 def test_demo_options() -> None:

@@ -7,6 +7,9 @@ Routes, all under ``/api`` (OpenAPI at ``/api/docs`` and ``/api/openapi.json``):
     GET  /api/races                          replayable races from the clean zone
     GET  /api/races/{season}/{round}/state   driver hashes + order (the Redis contract)
     GET  /api/races/{season}/{round}/entrants  per-race entrants, team names/colours (display)
+    GET  /api/races/{season}/{round}/analysis/{laps,stints,pitstops,race-control,positions}
+                                             post-race analysis views (display, Feature 2)
+    GET  /api/races/{season}/{round}/analysis/compare?a=&b=  two drivers lap by lap
     GET  /api/races/{season}/{round}/events  Server-Sent Events from the race channel
     POST /api/races/{season}/{round}/replay  start the producer (ENABLE_REPLAY=1)
     POST /api/debug/latency                  UI render time per event (ENABLE_DEBUG=1)
@@ -27,7 +30,7 @@ from redis.exceptions import RedisError
 from f1sa import __version__
 from f1sa.api.deps import ApiDeps
 from f1sa.api.log import AccessLogMiddleware
-from f1sa.api.routes import debug, entrants, events, health, races, replay, whatif
+from f1sa.api.routes import analysis, debug, entrants, events, health, races, replay, whatif
 from f1sa.config import Settings, get_settings
 
 log = logging.getLogger(__name__)
@@ -36,6 +39,7 @@ ROUTERS = (
     health.router,
     races.router,
     entrants.router,
+    analysis.router,
     events.router,
     replay.router,
     debug.router,

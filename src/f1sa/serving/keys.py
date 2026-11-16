@@ -17,6 +17,12 @@ Additive, display-only API cache (Feature 1; the race keys above are unchanged):
   ``race_pattern`` never matches it: ``/state``, the SSE snapshots and ``expire_race`` never see
   it, and nothing in streaming, serving or the model writes or reads it.
 
+Additive, display-only API cache (Feature 2; the race keys above are unchanged):
+
+* STRING  ``meta:analysis:{season}:{round}:{view}`` for the views in ``ANALYSIS_VIEWS``: the JSON
+  of ``GET /api/races/{s}/{r}/analysis/{view}``, written with ``SET … EX API_ANALYSIS_CACHE_S``.
+  Outside ``race:*`` for the same reasons as the entrants key.
+
 Every function is pure and validates its inputs (season 1950-2100, round 1-30, driverId
 ``[a-z0-9_]+``, the Jolpica ``driverId`` form). Invalid input raises ``InvalidKeyError``, so a
 malformed key never reaches Redis.
@@ -115,3 +121,14 @@ def race_pattern(season: int, round_: int) -> str:
 def entrants_meta_key(season: int, round_: int) -> str:
     """``meta:entrants:{season}:{round}`` (additive API cache, outside ``race:*``), validated."""
     return f"meta:entrants:{validate_season(season)}:{validate_round(round_)}"
+
+
+ANALYSIS_VIEWS: tuple[str, ...] = ("laps", "stints", "pitstops", "race_control", "positions")
+"""The cached post-race analysis views (``compare`` is derived from ``laps`` and has no key)."""
+
+
+def analysis_meta_key(season: int, round_: int, view: str) -> str:
+    """``meta:analysis:{season}:{round}:{view}`` (additive API cache, outside ``race:*``)."""
+    if not isinstance(view, str) or view not in ANALYSIS_VIEWS:
+        raise InvalidKeyError(f"unknown analysis view: {view!r}")
+    return f"meta:analysis:{validate_season(season)}:{validate_round(round_)}:{view}"

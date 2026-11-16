@@ -1,30 +1,13 @@
 "use client";
 
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { useId, useMemo, useState } from "react";
 
 import { CHART_LAPS, gapSeries, layoutLabels, linePath, scales } from "@/lib/chart";
 import { driverCode, driverName, gap } from "@/lib/format";
 import type { RaceState } from "@/lib/reducer";
+import { useWidth } from "@/lib/useWidth";
 
 const BASE = { width: 720, height: 300, left: 44, right: 56, top: 16, bottom: 28 };
-const MIN_WIDTH = 280;
-
-/** The element's content width, kept up to date (the first render uses ``fallback``). */
-function useWidth<T extends HTMLElement>(fallback: number) {
-  const ref = useRef<T>(null);
-  const [width, setWidth] = useState(fallback);
-  useEffect(() => {
-    const el = ref.current;
-    if (!el || typeof ResizeObserver === "undefined") return;
-    const ro = new ResizeObserver((entries) => {
-      const w = entries[0]?.contentRect.width;
-      if (w && Math.abs(w - width) >= 1) setWidth(Math.max(MIN_WIDTH, Math.round(w)));
-    });
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, [width]);
-  return { ref, width };
-}
 const DASHES = ["", "6 4", "2 3", "10 3 2 3"];
 
 /** Gap to the leader over the last 15 laps (hand-written SVG). Lines differ by colour (10) **and**

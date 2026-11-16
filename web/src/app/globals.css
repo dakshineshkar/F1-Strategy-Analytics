@@ -331,3 +331,62 @@ input[type="search"], select {
   .drivers-table { min-width: 30rem; }
   .drivers-table .c-team { width: 8.5rem; }
 }
+
+/* ---------------------------------------------------------------- race analysis (display only) */
+.race-views a + a { margin-left: 0.9rem; }
+.race-views a[aria-current="page"] { font-weight: 700; text-decoration-thickness: 2px; }
+.analysis-notes { margin: 0 0 0.75rem; padding: 0.5rem 0.75rem 0.5rem 1.75rem; font-size: 0.82rem; color: var(--muted); background: var(--surface-2); border-radius: var(--radius); }
+.analysis-notes li + li { margin-top: 0.15rem; }
+.analysis-notes .is-synthetic, .synthetic-tag { color: var(--warn); font-weight: 700; }
+/* Tabs: a scrollable row on narrow screens; the selected tab has a thick bottom border (a shape,
+   not only a colour) and bold text. */
+.analysis-tabs { display: flex; gap: 0.25rem; overflow-x: auto; border-bottom: 1px solid var(--border); margin-bottom: 0.75rem; }
+.analysis-tabs [role="tab"] {
+  flex: 0 0 auto; min-height: 2.5rem; padding: 0 0.85rem; font: 600 0.85rem/1 var(--font-ui); color: var(--muted);
+  background: transparent; border: 0; border-bottom: 3px solid transparent; cursor: pointer;
+}
+.analysis-tabs [role="tab"][aria-selected="true"] { color: var(--text); font-weight: 800; border-bottom-color: var(--accent-ink); }
+.analysis-tabs [role="tab"]:hover { color: var(--text); }
+.analysis-panel { margin-bottom: 1rem; }
+.analysis-view h2 { margin: 0 0 0.5rem; font-size: 1.05rem; }
+.analysis-view .panel-head h2 { margin: 0; }
+.chart-h { margin: 0.9rem 0 0.3rem; font: 600 0.8rem/1.3 var(--font-ui); color: var(--muted); }
+.chart-scroll { width: 100%; }
+.bar-label { font: 800 10.5px var(--font-num); pointer-events: none; }
+.neutral-band rect { fill: var(--surface-2); }
+.neutral-band text { fill: var(--muted); font: 700 10px var(--font-num); }
+.lap-mark line { stroke: var(--focus); stroke-width: 2; stroke-dasharray: 4 3; }
+.lap-mark text { fill: var(--text); font: 700 10.5px var(--font-num); }
+.driver-picker { display: flex; flex-wrap: wrap; gap: 0.25rem 0.75rem; margin: 0 0 0.5rem; padding: 0.4rem 0.6rem; border: 1px solid var(--border); border-radius: var(--radius); font: 600 0.8rem/1.6 var(--font-num); }
+.driver-picker legend { font: 600 0.78rem/1 var(--font-ui); color: var(--muted); padding: 0 0.25rem; }
+.driver-picker label { display: inline-flex; align-items: center; gap: 0.25rem; min-height: 1.75rem; }
+.compound-tag { display: inline-flex; align-items: center; gap: 0.25rem; white-space: nowrap; }
+.compound-tag .glyph { color: var(--compound-unknown); }
+.compound-soft .glyph { color: var(--compound-soft); }
+.compound-medium .glyph { color: var(--compound-medium); }
+.compound-hard .glyph { color: var(--compound-hard); }
+.compound-inter .glyph { color: var(--compound-inter); }
+.compound-wet .glyph { color: var(--compound-wet); }
+.analysis-list { margin: 0.5rem 0; padding-left: 1.25rem; font-size: 0.85rem; }
+.chart-table { margin-top: 0.6rem; }
+.chart-table summary { cursor: pointer; font: 600 0.8rem/2 var(--font-ui); color: var(--accent-ink); }
+.analysis-table { min-width: 0; table-layout: auto; }
+.analysis-table td.wrap { white-space: normal; }
+.analysis-table th[scope="row"] { text-align: left; font-weight: 600; }
+.analysis-table tr.is-marked { outline: 2px solid var(--focus); outline-offset: -2px; }
+.compare-pick { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; }
+.btn-small { font: 700 0.8rem/1 var(--font-num); min-height: 2.5rem; padding: 0 0.75rem; color: var(--text); background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius); cursor: pointer; }
+.compare-summary { margin: 0.25rem 0 0.5rem; font-size: 0.9rem; }
+.rc-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.2rem; }
+.rc-list li { display: grid; grid-template-columns: 4.5rem 7rem 6.5rem 1fr; gap: 0.5rem; align-items: baseline; padding: 0.3rem 0.4rem; border-bottom: 1px solid var(--surface-2); font-size: 0.85rem; }
+.rc-list li.is-key { border-left: 3px solid var(--accent-ink); }
+.rc-kind { font: 700 0.75rem/1.2 var(--font-num); text-transform: uppercase; letter-spacing: 0.04em; }
+.rc-time { font: 0.78rem/1.2 var(--font-num); color: var(--muted); }
+.rc-red_flag, .rc-penalty { color: var(--danger); }
+.rc-sc_deployed, .rc-vsc_deployed { color: var(--warn); }
+@media (max-width: 640px) {
+  .rc-list li { grid-template-columns: 4rem 1fr; }
+  .rc-time { grid-column: 2; }
+  .rc-msg { grid-column: 1 / -1; }
+  .analysis-table .name { display: none; }
+}

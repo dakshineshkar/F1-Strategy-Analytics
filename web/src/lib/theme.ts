@@ -21,7 +21,13 @@ export interface Theme {
   grid: string;
   bar: string;
   lines: string[];
+  /** Tyre compounds (charts of the race-analysis tab). The compound is also always shown as text or
+   * a glyph shape, never by colour alone. */
+  compounds: Record<CompoundToken, string>;
 }
+
+export const COMPOUND_TOKENS = ["soft", "medium", "hard", "inter", "wet", "unknown"] as const;
+export type CompoundToken = (typeof COMPOUND_TOKENS)[number];
 
 export const dark: Theme = {
   bg: "#0c0f13",
@@ -43,6 +49,7 @@ export const dark: Theme = {
   grid: "#6b7787",
   bar: "#ffc72c",
   lines: ["#ffc72c", "#7cc4ff", "#ff7a70", "#4ade80", "#e0a8ff", "#ffffff", "#ff9d4d", "#5eead4", "#f9a8d4", "#c4b5fd"],
+  compounds: { soft: "#ff5c57", medium: "#ffd84d", hard: "#eef1f5", inter: "#46d17a", wet: "#5aa9ff", unknown: "#a9b3bf" },
 };
 
 export const light: Theme = {
@@ -65,9 +72,10 @@ export const light: Theme = {
   grid: "#8c8578",
   bar: "#7a4f00",
   lines: ["#7a4f00", "#0a58a8", "#b3261e", "#17703a", "#7b3fa0", "#14181d", "#a34700", "#0f6e66", "#a3195b", "#4c3fa8"],
+  compounds: { soft: "#c8102e", medium: "#8a6400", hard: "#4b5561", inter: "#17703a", wet: "#0a58a8", unknown: "#6b6457" },
 };
 
-const VAR: Record<Exclude<keyof Theme, "lines">, string> = {
+const VAR: Record<Exclude<keyof Theme, "lines" | "compounds">, string> = {
   bg: "--bg",
   surface: "--surface",
   surface2: "--surface-2",
@@ -90,7 +98,10 @@ const VAR: Record<Exclude<keyof Theme, "lines">, string> = {
 
 function vars(t: Theme): string {
   const base = (Object.keys(VAR) as (keyof typeof VAR)[]).map((k) => `${VAR[k]}:${t[k]};`).join("");
-  return base + t.lines.map((c, i) => `--line-${i}:${c};`).join("");
+  const compounds = COMPOUND_TOKENS.map(
+    (k) => `--compound-${k}:${t.compounds[k]};--compound-${k}-ink:${inkOn(t.compounds[k])};`,
+  ).join("");
+  return base + t.lines.map((c, i) => `--line-${i}:${c};`).join("") + compounds;
 }
 
 /** ``:root`` variables: light by default, dark under ``prefers-color-scheme: dark``. */
@@ -112,4 +123,9 @@ export function luminance(hex: string): number {
 export function contrastRatio(a: string, b: string): number {
   const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x) as [number, number];
   return (hi + 0.05) / (lo + 0.05);
+}
+
+/** Black or white text on ``hex``, whichever contrasts more (bar labels on compound colours). */
+export function inkOn(hex: string): "#000000" | "#ffffff" {
+  return contrastRatio("#000000", hex) >= contrastRatio("#ffffff", hex) ? "#000000" : "#ffffff";
 }

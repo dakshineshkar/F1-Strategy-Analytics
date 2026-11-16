@@ -49,7 +49,8 @@ export function RaceDashboard({ season, round }: { season: number; round: number
           <Link href="/">All races</Link>
         </nav>
         <nav aria-label="Race views" className="race-views">
-          <Link href={`/race/${season}/${round}/drivers`}>Drivers</Link>
+          <Link href={`/race/${season}/${round}/drivers`}>Drivers</Link>{" "}
+          <Link href={`/race/${season}/${round}/analysis`}>Race analysis</Link>
         </nav>
         <h1>
           <span className="race-season">{season}</span>{" "}

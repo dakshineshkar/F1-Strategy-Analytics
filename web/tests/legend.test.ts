@@ -115,12 +115,27 @@ describe("Legend: How to read this", () => {
     expect(m.startsWith('<details class="legend panel"><summary>How to read this</summary>')).toBe(true);
     expect(m).not.toContain("<details open");
     for (const e of GLOSSARY) {
-      expect(m).toContain(`${esc(e.term)}</dt><dd>${esc(e.text)}</dd>`);
+      const shown = `${esc(e.term)}</dt><dd>${esc(e.text)}</dd>`;
+      // the live page lists the live groups; the analysis tab passes its own group
+      if (e.group === "analysis") expect(m).not.toContain(shown);
+      else expect(m).toContain(shown);
     }
     for (const g of ["Timing tower", "Undercut alerts", "What-if"]) expect(m).toContain(`aria-label="${g}"><h3>${g}</h3>`);
     // the yellow bar is shown next to its text, never alone
     expect(m).toContain('<dt><span class="legend-bar" aria-hidden="true"></span>▲ and yellow left bar</dt>');
     expect(ids(m)).toEqual([]); // no ids: the tooltips own them, so nothing is duplicated
+  });
+
+  it("the analysis tab's legend lists only the analysis entries", () => {
+    const m = html(createElement(Legend, { groups: ["analysis"] }));
+    expect(m).toContain('aria-label="Race analysis"><h3>Race analysis</h3>');
+    for (const e of GLOSSARY) {
+      const shown = `${esc(e.term)}</dt><dd>${esc(e.text)}</dd>`;
+      if (e.group === "analysis") expect(m).toContain(shown);
+      else expect(m).not.toContain(shown);
+    }
+    expect(glossary("degslope").text).toMatch(/not tyre wear/);
+    expect(glossary("quicklap").text).toMatch(/107%/);
   });
 });
 

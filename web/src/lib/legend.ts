@@ -2,7 +2,7 @@
  * tooltips, so the two can never disagree. The wording follows the stream's definitions
  * (``streaming/events.py`` ALERT_TRIGGERS, the shared undercut rule, ``lib/tyre.ts``). */
 
-export type GlossaryGroup = "tower" | "alerts" | "whatif";
+export type GlossaryGroup = "tower" | "alerts" | "whatif" | "analysis";
 
 export interface GlossaryEntry {
   id: string;
@@ -108,6 +108,42 @@ export const GLOSSARY = [
       "The rows compare three pit strategies with a race simulator; the model probability below them is the " +
       "stream's calibrated outcome estimate.",
   },
+  {
+    id: "quicklap",
+    group: "analysis",
+    term: "Quick laps",
+    label: "quick laps",
+    text:
+      "The laps the degradation fit uses: every timed lap except lap 1, pit-in and pit-out laps, SC, VSC and " +
+      "red-flag laps, deleted laps, and laps slower than 107% of the fastest such lap of the same stint.",
+  },
+  {
+    id: "degslope",
+    group: "analysis",
+    term: "s/lap slope",
+    label: "the degradation slope",
+    text:
+      "A lap-time proxy, not tyre wear: the straight-line fit of lap time against tyre life over a stint's quick " +
+      "laps. Fuel burn-off (cars get faster) and track evolution are in it too.",
+  },
+  {
+    id: "cumgap",
+    group: "analysis",
+    term: "Gap (a − b)",
+    label: "the cumulative gap",
+    text:
+      "Driver a's race time minus driver b's at the end of the same lap: positive means a is behind. The lap " +
+      "delta is a's lap time minus b's; negative means a was faster on that lap.",
+  },
+  {
+    id: "neutral",
+    group: "analysis",
+    term: "SC / VSC bands",
+    label: "neutralised laps",
+    text:
+      "Laps the race leader ran under the safety car, the virtual safety car or a red flag, from the race-control " +
+      "track status. Without race-control data they are estimated from lap times and shown as neutralised.",
+  },
 ] as const satisfies readonly GlossaryEntry[];
 
 export type GlossaryId = (typeof GLOSSARY)[number]["id"];
@@ -116,6 +152,7 @@ export const GROUP_TITLE: Record<GlossaryGroup, string> = {
   tower: "Timing tower",
   alerts: "Undercut alerts",
   whatif: "What-if",
+  analysis: "Race analysis",
 };
 
 export function glossary(id: GlossaryId): GlossaryEntry {

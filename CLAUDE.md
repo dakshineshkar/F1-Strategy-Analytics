@@ -34,6 +34,10 @@ Hadoop 3.4.3, FastF1 3.9.2, Next.js + TypeScript strict.
 - ADDITIVE API cache, display only (Feature 1, 2026-11-15): STRING meta:entrants:{season}:{round} = JSON of
   GET /api/races/{s}/{r}/entrants tagged with a lake fingerprint, SET EX API_ENTRANTS_CACHE_S; outside race:* (never SCANned by /state or
   expire_race), never touches the driver hash. Tested in test_keys.py / test_api_entrants.py.
+- ADDITIVE API cache, display only (Feature 2, 2026-11-16): STRING meta:analysis:{season}:{round}:{view}
+  (view = laps|stints|pitstops|race_control|positions) = JSON of GET /api/races/{s}/{r}/analysis/{view} tagged with
+  the lake fingerprint, SET EX API_ANALYSIS_CACHE_S; outside race:*, never touches the driver hash; compare has no key.
+  Tested in test_keys.py / test_api_analysis.py.
 
 ## Data rules
 - Undercut label = docs/label_definition.md. Features must use info available at end of lap L-1 only.

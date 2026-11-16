@@ -1,6 +1,7 @@
 /** Typed client for the Step 13 API. Every response is checked at runtime, so a bad payload is an
  * ``ApiError`` instead of a crash. Types mirror ``src/f1sa/api/models.py``. */
 
+import { toCompare, toLapsDoc, toPitStopsDoc, toPositionsDoc, toRaceControlDoc, toStintsDoc } from "./analysis";
 import { API_URL } from "./config";
 import { toEntrants } from "./entrants";
 import { isBool, isDriverId, isFiniteNumber, isInt, isObj, isStr, nullable } from "./guard";
@@ -259,6 +260,23 @@ export const api = {
   /** Display-only entrants (team names, colours, car numbers); 404 when the lake has none. */
   entrants: (season: number, round: number, signal?: AbortSignal) =>
     request(`${racePath(season, round)}/entrants`, toEntrants, signal ? { signal } : {}),
+  /** Display-only post-race analysis views (Feature 2); 404 when the lake has none for the race. */
+  analysisLaps: (season: number, round: number, signal?: AbortSignal) =>
+    request(`${racePath(season, round)}/analysis/laps`, toLapsDoc, signal ? { signal } : {}),
+  analysisStints: (season: number, round: number, signal?: AbortSignal) =>
+    request(`${racePath(season, round)}/analysis/stints`, toStintsDoc, signal ? { signal } : {}),
+  analysisPitStops: (season: number, round: number, signal?: AbortSignal) =>
+    request(`${racePath(season, round)}/analysis/pitstops`, toPitStopsDoc, signal ? { signal } : {}),
+  analysisRaceControl: (season: number, round: number, signal?: AbortSignal) =>
+    request(`${racePath(season, round)}/analysis/race-control`, toRaceControlDoc, signal ? { signal } : {}),
+  analysisPositions: (season: number, round: number, signal?: AbortSignal) =>
+    request(`${racePath(season, round)}/analysis/positions`, toPositionsDoc, signal ? { signal } : {}),
+  compare: (season: number, round: number, a: string, b: string, signal?: AbortSignal) =>
+    request(
+      `${racePath(season, round)}/analysis/compare?${new URLSearchParams({ a, b }).toString()}`,
+      toCompare,
+      signal ? { signal } : {},
+    ),
   replays: (signal?: AbortSignal) => request("/api/replays", toReplayStatus, signal ? { signal } : {}),
   startReplay: (season: number, round: number, speed: 1 | 10 | 60) =>
     request(`${racePath(season, round)}/replay`, toReplay, {

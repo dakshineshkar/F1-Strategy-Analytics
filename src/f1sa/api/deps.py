@@ -11,6 +11,8 @@ import requests
 from fastapi import Depends, HTTPException, Path, Request
 from fastapi.exceptions import RequestValidationError
 
+from f1sa.api.analysis import TABLES as ANALYSIS_TABLES
+from f1sa.api.analysis import AnalysisService
 from f1sa.api.catalog import (
     LakeReader,
     RaceCatalog,
@@ -44,6 +46,7 @@ class ApiDeps:
     whatif: WhatIfService
     lap_logs: LapLogManager
     entrants: EntrantsService
+    analysis: AnalysisService
 
     @classmethod
     def from_settings(
@@ -58,6 +61,7 @@ class ApiDeps:
         model: ModelStatus | None = None,
         sim_reader_factory: Callable[[], SimReaders] | None = None,
         entrants_reader_factory: Callable[[], LakeReader] | None = None,
+        analysis_reader_factory: Callable[[], LakeReader] | None = None,
     ) -> ApiDeps:
         client = redis or aioredis.Redis.from_url(settings.redis_url, decode_responses=True)
         sim_factory = sim_reader_factory or (lambda: sim_readers(settings, session=http_session))
@@ -94,6 +98,14 @@ class ApiDeps:
                 or (lambda: zone_reader(settings, "clean", ENTRANTS_TABLES, session=http_session)),
                 client,
                 ttl_s=settings.api_entrants_cache_s,
+                allow_test_season=settings.allow_test_season,
+                lake_id=lake_fingerprint(settings.data_lake_uri),
+            ),
+            analysis=AnalysisService(
+                analysis_reader_factory
+                or (lambda: zone_reader(settings, "clean", ANALYSIS_TABLES, session=http_session)),
+                client,
+                ttl_s=settings.api_analysis_cache_s,
                 allow_test_season=settings.allow_test_season,
                 lake_id=lake_fingerprint(settings.data_lake_uri),
             ),
