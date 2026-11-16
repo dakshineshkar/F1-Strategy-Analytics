@@ -53,7 +53,7 @@ export function GapChart({ state }: { state: RaceState }) {
       </div>
       <div className="chart-box" ref={boxRef}>
         <svg viewBox={`0 0 ${FRAME.width} ${FRAME.height}`} role="img" aria-labelledby={`${titleId} ${descId}`} className="chart">
-          <title id={titleId}>Gap to leader, laps {lapRange[0]} to {lapRange[1]}</title>
+          <title id={titleId}>{`Gap to leader, laps ${lapRange[0]} to ${lapRange[1]}`}</title>
           <desc id={descId}>
             {series.length === 0
               ? "No laps received yet."

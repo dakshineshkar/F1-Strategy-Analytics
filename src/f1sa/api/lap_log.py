@@ -18,6 +18,15 @@ and on API shutdown.
 
 Pub/Sub keeps no history: laps published before the subscriber started are not in the log. The
 what-if then works with fewer laps or none (``history: none``) and says so.
+
+Display-only additions for the engineer view (Feature 3; ``records()``, the what-if input, is
+unchanged):
+
+* ``lap_rows()``: the same laps plus the real tyre life of the lap payload (``tyre_life_laps``,
+  ``tyre_life_at_start_laps``);
+* ``probs_at(lap)``: the stream's published ``undercut_flag`` / ``undercut_prob`` of every driver,
+  read (never written) from the driver hashes by the subscriber task when the leader's first lap
+  event of that lap arrives (``read_published_probs``). Only laps seen by the subscriber have it.
 """
 
 from __future__ import annotations
@@ -58,6 +67,27 @@ def _float(v: Any) -> float | None:
     return float(v)
 
 
+@dataclass(frozen=True)
+class LapRow:
+    """One recorded lap with its display-only tyre life (``LapLog.lap_rows``)."""
+
+    driver_id: str
+    lap: int
+    race_time_s: float
+    lap_time_s: float | None
+    position: int | None
+    compound: str | None
+    tyre_age: int | None
+    tyre_life_laps: int | None
+    tyre_life_at_start_laps: int | None
+    pit_in: bool
+    pit_out: bool
+
+
+Probs = dict[str, tuple[bool, float | None]]
+"""driverId -> (undercut_flag, undercut_prob) as published in the driver hash."""
+
+
 @dataclass
 class LapLog:
     """The recorded laps of one race (pure; fed one parsed channel message at a time)."""
@@ -71,6 +101,12 @@ class LapLog:
     _laps: dict[str, dict[int, dict[str, Any]]] = field(default_factory=dict, repr=False)
     _pit_in: dict[str, set[int]] = field(default_factory=dict, repr=False)
     _pit_out: dict[str, set[int]] = field(default_factory=dict, repr=False)
+    _display: dict[str, dict[int, tuple[int | None, int | None]]] = field(
+        default_factory=dict, repr=False
+    )
+    _probs: dict[int, Probs] = field(default_factory=dict, repr=False)
+    _max_lap: int = 0
+    _new_laps: list[int] = field(default_factory=list, repr=False)
 
     def observe(self, msg: Mapping[str, Any]) -> bool:
         """Apply one message (the stored JSON envelope); ``False`` if it was skipped."""
@@ -112,6 +148,13 @@ class LapLog:
                 "compound": compound if isinstance(compound, str) else None,
                 "tyre_age": _int(payload.get("tyre_age")),
             }
+            self._display.setdefault(driver, {})[lap] = (
+                _int(payload.get("tyre_life_laps")),
+                _int(payload.get("tyre_life_at_start_laps")),
+            )
+            if lap > self._max_lap:
+                self._max_lap = lap
+                self._new_laps.append(lap)
         self._prune(driver)
         return True
 
@@ -122,6 +165,8 @@ class LapLog:
         keep = sorted(laps)[-self.max_laps :]
         floor = keep[0]
         self._laps[driver] = {n: laps[n] for n in keep}
+        shown = self._display.get(driver, {})
+        self._display[driver] = {n: shown[n] for n in keep if n in shown}
         for flags in (self._pit_in, self._pit_out):
             if driver in flags:
                 flags[driver] = {n for n in flags[driver] if n >= floor}
@@ -129,6 +174,48 @@ class LapLog:
     def latest_lap(self, driver_id: str) -> int | None:
         laps = self._laps.get(driver_id)
         return max(laps) if laps else None
+
+    @property
+    def max_lap(self) -> int:
+        """The highest lap of any lap event (the leader's lap); 0 before the first."""
+        return self._max_lap
+
+    def take_new_laps(self) -> list[int]:
+        """Leader laps first seen since the last call (the subscriber snapshots their probs)."""
+        out, self._new_laps = self._new_laps, []
+        return out
+
+    def set_probs(self, lap: int, probs: Probs) -> None:
+        """Record the published probabilities for ``lap`` (the oldest beyond ``max_laps`` go)."""
+        self._probs[lap] = dict(probs)
+        for old in sorted(self._probs)[: -self.max_laps]:
+            del self._probs[old]
+
+    def probs_at(self, lap: int) -> Probs | None:
+        """The probabilities published when the leader completed ``lap``; None if not recorded."""
+        p = self._probs.get(lap)
+        return None if p is None else dict(p)
+
+    def lap_rows(self) -> list[LapRow]:
+        """``records()`` plus the display-only tyre life (sorted by driver, lap)."""
+        out: list[LapRow] = []
+        for d in sorted(self._laps):
+            pin, pout = self._pit_in.get(d, set()), self._pit_out.get(d, set())
+            shown = self._display.get(d, {})
+            for lap, v in sorted(self._laps[d].items()):
+                life, life0 = shown.get(lap, (None, None))
+                out.append(
+                    LapRow(
+                        driver_id=d,
+                        lap=lap,
+                        pit_in=lap in pin,
+                        pit_out=lap in pout,
+                        tyre_life_laps=life,
+                        tyre_life_at_start_laps=life0,
+                        **v,
+                    )
+                )
+        return out
 
     def records(self) -> list[LapRecord]:
         """Every recorded lap, with the pit flags merged in (sorted by driver, lap)."""
@@ -140,6 +227,42 @@ class LapLog:
                     LapRecord(driver_id=d, lap=lap, pit_in=lap in pin, pit_out=lap in pout, **v)
                 )
         return out
+
+
+def _flag(v: Any) -> bool:
+    text = v.decode() if isinstance(v, bytes) else v
+    return text == "1"
+
+
+def _prob(v: Any) -> float | None:
+    text = v.decode() if isinstance(v, bytes) else v
+    if not isinstance(text, str) or text == "":
+        return None
+    try:
+        p = float(text)
+    except ValueError:
+        return None
+    return p if math.isfinite(p) and 0.0 <= p <= 1.0 else None
+
+
+async def read_published_probs(client: aioredis.Redis, season: int, round_: int) -> Probs:
+    """``undercut_flag`` / ``undercut_prob`` of every driver in the order zset (read only: ZRANGE
+    plus one HMGET per driver in a pipeline). Unknown or malformed values read as unscored."""
+    members = await client.zrange(K.order_key(season, round_), 0, -1)
+    ids: list[str] = []
+    for m in members:
+        text = m.decode() if isinstance(m, bytes) else m
+        try:
+            ids.append(K.validate_driver_id(text))
+        except K.InvalidKeyError:
+            continue
+    if not ids:
+        return {}
+    pipe = client.pipeline(transaction=False)
+    for d in ids:
+        pipe.hmget(K.driver_key(season, round_, d), "undercut_flag", "undercut_prob")
+    values = await pipe.execute()
+    return {d: (_flag(v[0]), _prob(v[1])) for d, v in zip(ids, values, strict=True)}
 
 
 @dataclass
@@ -246,6 +369,10 @@ class LapLogManager:
                     parsed = None
                 if isinstance(parsed, dict):
                     log_.observe(parsed)
+                    for lap in log_.take_new_laps():
+                        log_.set_probs(
+                            lap, await read_published_probs(self.client, log_.season, log_.round)
+                        )
                 else:
                     log_.skipped += 1
         except (RedisError, OSError) as exc:

@@ -26,6 +26,7 @@ ROUTES = {
     "/api/races/{season}/{round}/analysis/race-control": {"get"},
     "/api/races/{season}/{round}/analysis/positions": {"get"},
     "/api/races/{season}/{round}/analysis/compare": {"get"},
+    "/api/races/{season}/{round}/engineer/{driver_id}": {"get"},
     "/api/races/{season}/{round}/events": {"get"},
     "/api/races/{season}/{round}/replay": {"post"},
     "/api/replays": {"get"},
@@ -55,6 +56,8 @@ async def test_docs_and_exact_routes(tmp_path: Path) -> None:
     for view in ("laps", "stints", "pitstops", "race-control", "positions", "compare"):
         analysis = spec["paths"][f"/api/races/{{season}}/{{round}}/analysis/{view}"]["get"]
         assert {"200", "404", "422", "500", "503"} <= set(analysis["responses"]), view
+    eng = spec["paths"]["/api/races/{season}/{round}/engineer/{driver_id}"]["get"]
+    assert {"200", "404", "409", "422", "503"} <= set(eng["responses"])
     replay = spec["paths"]["/api/races/{season}/{round}/replay"]["post"]
     assert {"202", "403", "404", "409", "422", "500"} <= set(replay["responses"])
 

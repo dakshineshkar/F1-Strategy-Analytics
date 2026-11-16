@@ -505,3 +505,133 @@ class CompareOut(_AnalysisOut):
     a: CompareDriverOut
     b: CompareDriverOut
     rows: list[CompareLapOut]
+
+
+# ------------------------------------------------------------------ engineer view (Feature 3)
+NeutralStatus = Literal["green", "sc", "vsc", "red", "neutralised", "unknown"]
+
+
+class EngineerNeutralOut(_Out):
+    """Track status at lap N: ``track_status`` (the lake's race-control codes), ``estimated`` (a
+    causal lap-time rule; SC and VSC cannot be told apart: ``neutralised``) or ``none``."""
+
+    status: NeutralStatus
+    source: Literal["track_status", "estimated", "none"]
+    message: str | None = Field(description="latest key race-control message with lap <= N")
+    message_lap: int | None
+
+
+class TypicalStintOut(_Out):
+    """Median completed-stint length on the compound in strictly earlier races."""
+
+    compound: KnownCompound | None
+    median_laps: float | None
+    n_stints: int = Field(ge=0)
+    n_races: int = Field(ge=0)
+    source: Literal["circuit", "all_circuits", "none"]
+    is_synthetic: bool
+
+
+class EngineerCarOut(_Out):
+    driver_id: str
+    driver_code: str | None
+    position: int = Field(ge=1, description="order by race time at lap N")
+    lap: int = Field(ge=1, description="the car's latest recorded lap <= N")
+    projected: bool = Field(description="lap N not completed yet: time projected from lap N-1")
+    compound: KnownCompound | None
+    tyre_life_laps: int | None
+    tyre_life_source: Literal["real", "estimated", "none"]
+    tyre_life_delta_laps: int | None = Field(description="this car minus the focus")
+    stint_laps: int | None
+    typical_stint: TypicalStintOut
+    pace_last3_s: float | None
+    pace_delta_s: float | None = Field(description="this car minus the focus (+ = slower)")
+    last_lap_time_s: float | None
+    in_pit: bool
+    undercut_flag: bool | None
+    undercut_prob: float | None = Field(
+        description="the stream's value for this car against the car then directly ahead"
+    )
+    prob_recorded: bool
+
+
+class GapPointOut(_Out):
+    lap: int = Field(ge=1)
+    gap_s: float
+
+
+class EngineerPairOut(_Out):
+    """A front/rear pair: gap = rear - front at lap N; trend < 0 = the rear car is closing."""
+
+    front_id: str
+    rear_id: str
+    gap_s: float
+    projected: bool
+    trend_s_per_lap: float | None
+    trend_laps: int = Field(ge=0)
+    gaps: list[GapPointOut]
+    prob: float | None = Field(description="the rear car's undercut probability (stream)")
+    prob_role: Literal["focus_on_ahead", "threat"]
+    prob_recorded: bool
+    pair_matches: bool | None = Field(
+        description="the front car was directly ahead of the rear car at lap N-1"
+    )
+
+
+class RejoinCarOut(_Out):
+    driver_id: str
+    gap_s: float = Field(description="race time at lap N minus the focus's")
+    projected: bool
+
+
+class EngineerRejoinOut(_Out):
+    """If the focus pits now: lap-N time + pit-loss prior among the field (display estimate)."""
+
+    pit_loss_s: float | None
+    pit_loss_source: Literal["circuit_prior", "global_prior", "none"]
+    pit_loss_text: str
+    position: int | None
+    ahead_id: str | None
+    behind_id: str | None
+    gap_ahead_s: float | None
+    gap_behind_s: float | None
+    in_traffic: bool | None
+    reliable: bool
+    reasons: list[str]
+    field: list[RejoinCarOut]
+    left_out: int = Field(ge=0, description="cars further back (lapped) or retired, not placed")
+
+
+class EngineerCallOut(_Out):
+    id: Literal[
+        "undercut_window",
+        "threat",
+        "closing",
+        "being_caught",
+        "rejoin",
+        "tyre_offset",
+        "long_stint",
+    ]
+    severity: Literal["info", "warn"]
+    text: str
+
+
+class EngineerOut(_Out):
+    """``GET …/engineer/{driverId}?lap=N``: the focus car against the cars directly ahead and
+    behind, from information up to lap N only. Display only."""
+
+    season: int
+    round: int
+    lap: int
+    current_lap: int
+    history_from_lap: int
+    focus_id: str
+    neutralised: EngineerNeutralOut
+    ahead: EngineerCarOut | None
+    focus: EngineerCarOut
+    behind: EngineerCarOut | None
+    pair_ahead: EngineerPairOut | None
+    pair_behind: EngineerPairOut | None
+    rejoin: EngineerRejoinOut
+    calls: list[EngineerCallOut]
+    disclaimer: str

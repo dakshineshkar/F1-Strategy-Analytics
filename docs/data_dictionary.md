@@ -903,7 +903,9 @@ Built by `python -m f1sa.etl.analysis --source sample|lake` (`make analysis-samp
 the v1 clean `laps`, `pitstops`, `drivers`, `stints`, the TI clean `stints_tracinginsights`, `race_control`,
 `race_control_track_status` (cross-check only) and the as-received TI `raw/tracinginsights/laps/.../laps.parquet`
 (17 of its 42 columns, read-only). It writes only the five tables below and `clean/_quality/analysis.json`. Only the
-API's `/api/races/{s}/{r}/analysis/*` reads them: no feature, model input, rule, alert, stream or what-if does.
+API reads them: `/api/races/{s}/{r}/analysis/*`, and the engineer view (Feature 3), which reads `analysis_stints` of
+strictly earlier races (the typical stint) and the race's `analysis_laps` / `analysis_race_control` for lap N / laps
+<= N only (track status). No feature, model input, rule, alert, stream or what-if does.
 `--source sample` needs a `file://` lake and builds the sample races; `--source lake` builds every race of the clean
 `laps` (2025 included, like the entrants; the API seals it unless `ALLOW_TEST_SEASON=1`).
 

@@ -116,8 +116,8 @@ describe("Legend: How to read this", () => {
     expect(m).not.toContain("<details open");
     for (const e of GLOSSARY) {
       const shown = `${esc(e.term)}</dt><dd>${esc(e.text)}</dd>`;
-      // the live page lists the live groups; the analysis tab passes its own group
-      if (e.group === "analysis") expect(m).not.toContain(shown);
+      // the live page lists the live groups; the analysis and engineer tabs pass their own
+      if (e.group === "analysis" || e.group === "engineer") expect(m).not.toContain(shown);
       else expect(m).toContain(shown);
     }
     for (const g of ["Timing tower", "Undercut alerts", "What-if"]) expect(m).toContain(`aria-label="${g}"><h3>${g}</h3>`);
@@ -136,6 +136,18 @@ describe("Legend: How to read this", () => {
     }
     expect(glossary("degslope").text).toMatch(/not tyre wear/);
     expect(glossary("quicklap").text).toMatch(/107%/);
+  });
+
+  it("the engineer tab's legend lists only the engineer entries, with the what-if note", () => {
+    const m = html(createElement(Legend, { groups: ["engineer"] }));
+    expect(m).toContain('aria-label="Engineer"><h3>Engineer</h3>');
+    for (const e of GLOSSARY) {
+      const shown = `${esc(e.term)}</dt><dd>${esc(e.text)}</dd>`;
+      if (e.group === "engineer") expect(m).toContain(shown);
+      else expect(m).not.toContain(shown);
+    }
+    expect(glossary("engcalls").text).toMatch(/not model output/);
+    expect(glossary("rejoin").text).toMatch(/what-if panel additionally adjusts for the driver's expected stop and out-lap/);
   });
 });
 

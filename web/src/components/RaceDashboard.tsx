@@ -1,8 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type KeyboardEvent } from "react";
 
+import { tabKeyTarget } from "@/lib/analysis";
 import { api, type Race } from "@/lib/api";
 import { useLatencyReporter } from "@/lib/debugLatency";
 import { indexEntrants } from "@/lib/entrants";
@@ -13,6 +14,7 @@ import { useReplays } from "@/lib/useReplays";
 
 import { AlertFeed } from "./AlertFeed";
 import { ConnectionIndicator } from "./ConnectionIndicator";
+import { EngineerPanel } from "./EngineerPanel";
 import { GapChart } from "./GapChart";
 import { Legend } from "./Legend";
 import { ReplayControl } from "./ReplayControl";
@@ -20,12 +22,27 @@ import { TimingTower } from "./TimingTower";
 import { TyrePanel } from "./TyrePanel";
 import { WhatIfPanel } from "./WhatIfPanel";
 
+const PAGE_VIEWS = [
+  { id: "race", label: "Race" },
+  { id: "engineer", label: "Engineer" },
+] as const;
+type PageView = (typeof PAGE_VIEWS)[number]["id"];
+
 export function RaceDashboard({ season, round }: { season: number; round: number }) {
   const { state, snapshotError } = useRaceStream(season, round);
   const replays = useReplays(season, round);
   const { entrants } = useEntrants(season, round);
   const [race, setRace] = useState<Race | null>(null);
+  const [view, setView] = useState<PageView>("race");
   useLatencyReporter(state.seen);
+  const onTabKey = (e: KeyboardEvent<HTMLButtonElement>, i: number) => {
+    const target = tabKeyTarget(e.key, i, PAGE_VIEWS.length);
+    if (target === null) return;
+    e.preventDefault();
+    const next = (PAGE_VIEWS[target] as (typeof PAGE_VIEWS)[number]).id;
+    setView(next);
+    document.getElementById(`page-tab-${next}`)?.focus();
+  };
 
   useEffect(() => {
     const ctl = new AbortController();
@@ -68,6 +85,30 @@ export function RaceDashboard({ season, round }: { season: number; round: number
           Could not load the race state: {snapshotError}
         </p>
       ) : null}
+      <div role="tablist" aria-label="Race page views" className="analysis-tabs">
+        {PAGE_VIEWS.map((v, i) => (
+          <button
+            key={v.id}
+            type="button"
+            role="tab"
+            id={`page-tab-${v.id}`}
+            aria-selected={view === v.id}
+            aria-controls={`page-panel-${v.id}`}
+            tabIndex={view === v.id ? 0 : -1}
+            onClick={() => setView(v.id)}
+            onKeyDown={(e) => onTabKey(e, i)}
+          >
+            {v.label}
+          </button>
+        ))}
+      </div>
+      {view === "engineer" ? (
+        <div role="tabpanel" id="page-panel-engineer" aria-labelledby="page-tab-engineer">
+          <EngineerPanel season={season} round={round} order={state.order} maxLap={state.maxLap} entrants={indexEntrants(entrants ?? [])} />
+        </div>
+      ) : null}
+      {/* The race view stays mounted (its local state and the alert live region survive a tab switch). */}
+      <div role="tabpanel" id="page-panel-race" aria-labelledby="page-tab-race" hidden={view !== "race"}>
       <div className="dash">
         <div className="dash-main">
           <Legend />
@@ -87,6 +128,7 @@ export function RaceDashboard({ season, round }: { season: number; round: number
           <AlertFeed groups={groups} announcement={announcement} />
           <TyrePanel rows={rows} />
         </div>
+      </div>
       </div>
       <p className="stream-stats muted">
         {state.seen.length} events applied · {state.malformed} malformed · {state.unknownDrivers} unknown drivers

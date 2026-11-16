@@ -21,6 +21,8 @@ from f1sa.api.catalog import (
     sim_readers,
     zone_reader,
 )
+from f1sa.api.engineer import TABLES as ENGINEER_TABLES
+from f1sa.api.engineer import EngineerService, StintHistory
 from f1sa.api.entrants import TABLES as ENTRANTS_TABLES
 from f1sa.api.entrants import EntrantsService, lake_fingerprint
 from f1sa.api.health import KafkaCheck, ModelStatus, kafka_check_for
@@ -47,6 +49,7 @@ class ApiDeps:
     lap_logs: LapLogManager
     entrants: EntrantsService
     analysis: AnalysisService
+    engineer: EngineerService
 
     @classmethod
     def from_settings(
@@ -62,6 +65,7 @@ class ApiDeps:
         sim_reader_factory: Callable[[], SimReaders] | None = None,
         entrants_reader_factory: Callable[[], LakeReader] | None = None,
         analysis_reader_factory: Callable[[], LakeReader] | None = None,
+        engineer_reader_factory: Callable[[], LakeReader] | None = None,
     ) -> ApiDeps:
         client = redis or aioredis.Redis.from_url(settings.redis_url, decode_responses=True)
         sim_factory = sim_reader_factory or (lambda: sim_readers(settings, session=http_session))
@@ -108,6 +112,17 @@ class ApiDeps:
                 ttl_s=settings.api_analysis_cache_s,
                 allow_test_season=settings.allow_test_season,
                 lake_id=lake_fingerprint(settings.data_lake_uri),
+            ),
+            engineer=EngineerService(
+                readers=readers,
+                history=StintHistory(
+                    engineer_reader_factory
+                    or (
+                        lambda: zone_reader(
+                            settings, "clean", ENGINEER_TABLES, session=http_session
+                        )
+                    )
+                ),
             ),
         )
 

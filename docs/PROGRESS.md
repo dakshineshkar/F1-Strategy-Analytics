@@ -1674,13 +1674,60 @@
   - **Services** (user approved): api recreated in sample mode (REPLAY=1) for Playwright, web stopped for
     `make web-e2e` and rebuilt/started with `--no-deps`; after the smoke test's own replay had finished, the api
     was returned to `make api-up FULL=1 REPLAY=1`.
+- Feature 3 (2026-11-16): "Engineer view" for a live (replayed) race (display only). **Done.**
+  - **Known issue fixed first:** the gap chart's SVG `<title>` is a single template string (React 19 rendered the
+    multi-part one empty); `web/tests/gapchart.test.ts` checks the text.
+  - **Investigation** (read-only): Redis holds only the latest driver/tyre hashes (no lap field) and the order;
+    `undercut_prob` is the attacker's value against the car then directly ahead at its latest decision lap (about one
+    lap behind); per-lap history exists only in the API's lap log (last 30 laps, fed from the race channel); track
+    status reaches the stream but is dropped from the Redis payload; the lake has exact per-lap track-status codes
+    and race-control messages in full mode only (the sample's flags are a hindsight heuristic); the pit-loss prior is
+    `features/pit_loss`; no typical-stint table exists.
+  - **Change** (your choices: lake codes + causal fallback; per-lap probabilities in the lap log; typical stint at
+    this circuit, else all circuits; race pit-loss prior only):
+    - `GET /api/races/{s}/{r}/engineer/{driverId}?lap=N` (`api/engineer.py`, `api/routes/engineer.py`), from laps
+      <= N only: cards for the car ahead, the focus and the car behind (position by race time at lap N, compound,
+      real or estimated tyre life and delta, stint vs the typical stint, last-3-lap pace and delta, the stream's
+      probability), pairs (gap, gap trend after the latest pit lap of either car, sparkline points, the rear car's
+      probability with `pair_matches`), a pit-rejoin estimate (the race pit-loss prior with its source text, e.g.
+      "circuit prior from earlier races"; unreliable under SC/VSC/red flag, without a prior or with projected cars),
+      the track status at lap N, and the strategy calls (7 display rules, listed in `docs/architecture.md`).
+      Read only (no Redis key written; tested); 404 / 409 / 422 / 503 and the 2025 seal as the other routes.
+    - Lap log (additive; `records()` for the what-if unchanged): the real tyre life per lap, and the published
+      probabilities of every driver hash per leader lap (read only).
+    - Dashboard: "Race | Engineer" tabs on the live page (the race view stays mounted); `EngineerPanel` with the
+      focus picker (lock per browser, guarded `localStorage`), three cards with team badges and a teammate tag, gap
+      sparklines, the rejoin bar, the calls labelled "display rules, not model output" with one live region for new
+      calls only, and an `engineer` glossary group. The rejoin glossary entry and `docs/architecture.md` say that the
+      what-if panel additionally adjusts for the driver's expected stop and out-lap, so the two estimates can differ
+      slightly. Styles use only the shared tokens.
+  - **Found live and fixed:** in the sample replay the car behind had just pitted, so its gap trend mixed laps from
+    before and after the stop (+5.07 s/lap), and the threat call fired although the stream's value referred to
+    another car. The trend now starts after the latest pit lap of either car, and the threat rule also needs the
+    pair to match (tests added). The Playwright run before this fix checked the layout only.
+  - **Evidence.**
+    - Full lake (read-only): 2024 Las Vegas uses the 2023 Las Vegas stints (circuit prior 25.7 s); 2024 China and
+      2023 Las Vegas have no earlier race at the circuit, so both stints and pit loss fall back to all circuits. The
+      first call reads every race's circuit in 2.6 s; later calls are cached.
+    - Stream parity 2021-2024 (`--out data/demo/parity_check6`): 90 races, 157 labelled attempts, 0 mismatching
+      races; byte-identical to `results/stream_parity_full.csv` (sha256 aad8df67…).
+    - Sample 2024 R5 alert check: 113 / 19 / 9 (141 alerts, 409 pairs); the dump's sha256 is the recorded
+      7eee6557… (the scratchpad had been cleared, so the script was recreated and compared by hash).
+    - `make experiments-sample`: OK 7, OK (metadata differs) 1, DIFF 0, MISSING 0; the what-if CSV and PNG are
+      byte-identical to the earlier runs.
+    - Python: the full unit suite gave 1960 passed in 792 s (once, after all changes); targeted:
+      `test_engineer.py` 20, `test_api_engineer.py` 8, lap log / app / what-if / analysis / entrants 127. ruff,
+      format and mypy clean; `results/` unchanged (sha256 of all 154 files before and after).
+    - Web: lint and typecheck clean; Vitest 238 passed; `next build` clean; `make web-e2e` passed (the Engineer
+      tab by keyboard during the 60x replay, a focus driver, three cards, calls, the pit loss with its source, a lap
+      update, no overflow at 375 px, the lock kept after a reload).
+  - **Services** (user approved): the api was recreated in sample mode (REPLAY=1) for Playwright, web was stopped
+    for `make web-e2e` and rebuilt with `--no-deps`, and after the smoke test's own replay had finished the api was
+    returned to `make api-up FULL=1 REPLAY=1` (it now runs the fixed code).
 ## Next
 - S18: report, docs and demo rehearsal (#44): `docs/report/`, `docs/demo_script.md`.
 - Push and watch the first CI run of the `e2e` job on GitHub (runner build time and disk are unmeasured).
 ## Known issues
-- Feature 2: the live gap chart's SVG `<title>` renders empty under React 19 (it has several children:
-  `Gap to leader, laps {a} to {b}`); found while testing the analysis charts, whose titles are single strings.
-  Not fixed (outside Feature 2); a one-line template-string change in `GapChart.tsx`.
 - Feature 2: the degradation slope is a lap-time proxy (fuel burn-off and track evolution are in it), stated in the
   UI; the sample's tyre data is synthetic (labelled).
 - Feature 1: `drivers.permanent_number` in the clean zone is today's season-table number and wrong for history.

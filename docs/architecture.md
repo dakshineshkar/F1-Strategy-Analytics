@@ -710,6 +710,7 @@ browser (http://localhost:3000) --CORS--> FastAPI (uvicorn, 127.0.0.1:8000)
   GET  /api/races/{s}/{r}/entrants         meta:entrants:{s}:{r} (SET EX) | clean/entrants partition (display only)
   GET  /api/races/{s}/{r}/analysis/{view}  meta:analysis:{s}:{r}:{view} (SET EX) | clean/analysis_* (display only)
        view = laps | stints | pitstops | race-control | positions;  …/analysis/compare?a=CODE&b=CODE
+  GET  /api/races/{s}/{r}/engineer/{id}?lap=N  lap log (laps <= N) + driver hashes (read only) + earlier-race priors
   GET  /api/races/{s}/{r}/events           SUBSCRIBE race:{s}:{r}:events -> text/event-stream
   POST /api/races/{s}/{r}/replay           subprocesses: stream_job, then producer (ENABLE_REPLAY=1)
   GET  /api/replays                        running replays + the last 20 with state / error
@@ -746,6 +747,7 @@ Docs: `/api/docs`, `/api/openapi.json`.
 | `GET …/entrants` | 200 `{season, round, entrants: [...]}` sorted by grid; 404 no entrants partition (or 2025 sealed); 422; 500 a stored row is malformed; 503 clean zone unavailable |
 | `GET …/analysis/{laps,stints,pitstops,race-control,positions}` | 200 `{season, round, coverage, rows: [...]}`; 404 no `analysis_race` row (or 2025 sealed); 422; 500 a stored row is malformed; 503 clean zone unavailable |
 | `GET …/analysis/compare?a=&b=` | 200 `{season, round, coverage, a, b, rows: [...]}` (deltas a − b); 404 no analysis or a code without laps; 422 a code not `[A-Z]{3}` or a = b; 500; 503 |
+| `GET …/engineer/{driverId}?lap=N` | 200 `EngineerOut` (cards ahead/focus/behind, pairs, rejoin, calls; laps <= N only); 404 race not in the lake (or 2025 sealed), no live state or no laps for the driver; 409 no laps recorded yet, or lap N outside the recorded laps; 422 bad driverId or lap; 503 Redis or lake unavailable. Never writes Redis; not cached |
 | `GET …/events` | 200 `text/event-stream`; 422 bad season/round |
 | `POST …/replay` `{speed: 1\|10\|60}` | 202 (with `run_id`, `state`); 403 disabled or 2025; 404 not in the clean zone; 409 running / limit; 422; 500 launch failed; 503 |
 | `GET /api/replays` | 200 `{enabled, max_running, running, recent}` (state `starting/running/finished/failed`, error, exit codes) |
@@ -973,6 +975,51 @@ browser ── GET /api/races, /api/health ────────────�
   - The degradation view says "A lap-time proxy, not tyre wear" and lists the excluded laps by reason; the sample's
     tyre data is marked SYNTHETIC on the page; what the lake lacks (sectors, deleted laps, race control) is stated
     as text.
+- **Engineer view (display only; Feature 3):** an in-page "Race | Engineer" tab pair on the live page (WAI-ARIA
+  tabs; the race view stays mounted, so the stream, its history and the alert live region keep running).
+  - `GET /api/races/{s}/{r}/engineer/{driverId}?lap=N` (`api/engineer.py`, `api/routes/engineer.py`): the focus car
+    against the car directly ahead and behind, from **laps <= N only** (N defaults to the focus's latest lap).
+    - Inputs, all read only:
+      - the lap log (race time, lap time, position, compound, tyre age, real tyre life, pit flags), and the
+        stream's published `undercut_flag` / `undercut_prob` per leader lap;
+      - the driver hashes at the current lap;
+      - `features/pit_loss` (`pit_loss_prior_s`);
+      - `clean/races` and `clean/analysis_stints` of strictly earlier races (the typical stint);
+      - `analysis_laps` / `analysis_race_control` of the race, lap N / laps <= N only (track status, via the cached
+        analysis service).
+    - Order at lap N = race time at lap N. A car that has not completed lap N is projected from lap N−1 with its
+      last lap time (marked); a car further back is left out and counted.
+    - Gap trend = least-squares slope of the pair's gap over laps N−4..N, after the latest pit lap of either car
+      (≥ 3 laps). Pace = mean of the last 3 laps
+      without lap 1, pit laps and neutralised laps.
+    - Neutralised: the lake's track-status codes where it has race control; otherwise the v1 lap-time rule made
+      causal (field median > 1.10 × the median of earlier green laps, or half the field slower than 1.07 ×; red
+      flag above 3.0 ×), labelled "estimated".
+    - Pit-rejoin estimate: lap-N time + the race's pit-loss prior (shown with its source, e.g. "circuit prior from
+      earlier races") among the other cars' lap-N times; in traffic when < 2.0 s behind the car ahead; unreliable
+      under SC/VSC/red flag, without a prior, or with projected cars near the rejoin point. **The what-if panel
+      additionally adjusts for the driver's expected stop and out-lap, so the two estimates can differ slightly.**
+    - Typical stint: the median length of completed stints (ending in a stop) on the compound in strictly earlier
+      races at the circuit, else at every earlier circuit (labelled), else none.
+  - **Strategy calls** (`engineer.strategy_calls`): display rules, not model output; fixed order, stable ids.
+    1. `undercut_window`: the focus's probability ≥ 0.5 (the model's decision threshold), unless the stream
+       evaluated it against another car.
+    2. `threat`: the behind car's probability ≥ 0.5, unless the stream evaluated it against another car.
+    3. `closing`: gap trend to the car ahead ≤ −0.2 s/lap over ≥ 3 laps and gap ≤ 3.0 s.
+    4. `being_caught`: the behind car's trend ≤ −0.2 s/lap over ≥ 3 laps.
+    5. `rejoin`: whenever an estimate exists (in traffic or clear, plus "estimate unreliable: …").
+    6. `tyre_offset`: tyre-life difference to the car ahead ≥ 8 laps.
+    7. `long_stint`: the focus's stint ≥ the typical stint.
+  - `components/EngineerPanel.tsx` / `lib/engineer.ts`:
+    - a focus picker over the live order; the lock is kept per browser (`localStorage`, guarded, read after
+      hydration) and falls back to P1;
+    - it re-fetches on each new leader lap;
+    - three cards (Ahead | Focus | Behind) with team badges, a "teammate" tag, and every value as text;
+    - gap sparklines with their values as text;
+    - a rejoin bar, with ticks for the cars, a ▼ shape for the slot, and a sentence;
+    - the calls, with one polite live region that carries only calls new since the last lap;
+    - an `engineer` glossary group.
+    Styles use only the shared tokens.
 - **Synthetic data:** the banner strip shows **SYNTHETIC DEMO DATA** whenever `/api/health` reports
   `lake.mode = "sample"`, and the picker tags each synthetic race.
 - **UI latency** (`lib/debugLatency.ts`, `NEXT_PUBLIC_DEBUG_LATENCY=1`):
@@ -1030,6 +1077,10 @@ request:  Redis hashes (api/state)  +  lap log (race channel)  +  features/pit_l
 
   Pub/Sub keeps no history. Without laps, the what-if still answers from the Redis hash alone
   (`history: none`, a warning).
+  Display-only additions for the engineer view (Feature 3): `lap_rows()` adds the real tyre life of the lap payload,
+  and the subscriber records the published `undercut_flag` / `undercut_prob` of every driver hash (ZRANGE + HMGET,
+  read only) when the leader's first lap-N event arrives (`probs_at(N)`). `records()`, the what-if input, is
+  unchanged.
 - **Lake access.** The readers gained a zone and table parameter. The what-if reads `clean/{races, laps, stints,
   stints_tracinginsights}` and `features/{pit_loss, outlap_features}`; the race catalog keeps its four clean
   tables. Still LISTSTATUS/OPEN only, `raw` is never readable, and 2025 needs `ALLOW_TEST_SEASON=1`. The tyre

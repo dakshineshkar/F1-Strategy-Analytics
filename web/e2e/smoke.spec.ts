@@ -107,6 +107,36 @@ test("sample race: a 60× replay fills the tower and updates laps", async ({ pag
   await expect(panel).toContainText("Model (calibrated LR, from the stream):");
   await expect(panel.getByRole("alert")).toHaveText("");
 
+  // Engineer view (display only, Feature 3), during the replay: keyboard tab, a focus driver,
+  // three cards, calls labelled as display rules, a lap update, and the lock kept after a reload.
+  const raceTab = page.getByRole("tab", { name: "Race", exact: true });
+  await raceTab.focus();
+  await page.keyboard.press("ArrowRight");
+  const engTab = page.getByRole("tab", { name: "Engineer" });
+  await expect(engTab).toHaveAttribute("aria-selected", "true");
+  const eng = page.getByRole("region", { name: "Engineer view" });
+  const focusPick = eng.getByLabel("Focus driver (kept in this browser)");
+  await focusPick.focus();
+  await page.keyboard.press("ArrowDown"); // P2: a car ahead and a car behind
+  const focusId = await focusPick.inputValue();
+  expect(focusId).not.toBe("");
+  await expect(eng.locator(".eng-card")).toHaveCount(3, { timeout: 20_000 });
+  await expect(eng.locator(".eng-card.is-focus")).toContainText(/Focus: P\d+/);
+  await expect(eng.getByRole("region", { name: "Strategy calls" })).toContainText("not model output.");
+  await expect(eng.getByRole("region", { name: "Pit-rejoin estimate" })).toContainText(/Pit loss [\d.]+ s: /);
+  const engLap = eng.locator(".eng-status");
+  const lapBefore = (await engLap.textContent()) ?? "";
+  await expect.poll(async () => (await engLap.textContent()) ?? "", { timeout: 60_000 }).not.toBe(lapBefore);
+  await page.setViewportSize({ width: 375, height: 812 });
+  const engOverflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+  expect(engOverflow).toBeLessThanOrEqual(0);
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.reload();
+  await page.getByRole("tab", { name: "Engineer" }).click();
+  await expect(page.getByRole("region", { name: "Engineer view" }).getByLabel("Focus driver (kept in this browser)")).toHaveValue(focusId);
+  await page.getByRole("tab", { name: "Race", exact: true }).click();
+  await expect.poll(async () => page.locator("table.tower tbody tr").count(), { timeout: 30_000 }).toBeGreaterThanOrEqual(20);
+
   // 375 px: no horizontal page scroll (the tower scrolls inside its own region).
   await page.setViewportSize({ width: 375, height: 812 });
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);

@@ -8,9 +8,9 @@ from typing import Any
 import fakeredis
 import pytest
 
-from f1sa.api.lap_log import LapLog, LapLogManager
+from f1sa.api.lap_log import LapLog, LapLogManager, read_published_probs
 from f1sa.serving import keys as K
-from f1sa.serving.redis_store import AsyncRaceStore, Batch, Event
+from f1sa.serving.redis_store import AsyncRaceStore, Batch, DriverState, Event
 
 pytestmark = pytest.mark.anyio
 
@@ -146,4 +146,65 @@ async def test_lru_eviction_and_idle_expiry() -> None:
     now[0] += 1000
     mgr.attach(2024, 4)
     assert mgr.get(2024, 2) is None and mgr.get(2024, 3) is None
+    await mgr.aclose()
+
+
+# ------------------------------------------------------------------ engineer view additions
+def test_lap_rows_carry_the_tyre_life_and_records_stay_unchanged() -> None:
+    log = LapLog(2024, 5)
+    log.observe(_lap("a", 1, 95.0, tyre_life_laps=4, tyre_life_at_start_laps=3))
+    log.observe(_msg("pit_out", driver_id="a", lap=2, race_time_s=190.0))
+    log.observe(_lap("a", 2, 190.0))
+    rows = log.lap_rows()
+    assert [(r.lap, r.tyre_life_laps, r.tyre_life_at_start_laps, r.pit_out) for r in rows] == [
+        (1, 4, 3, False),
+        (2, None, None, True),
+    ]
+    recs = log.records()  # the what-if's input: no new fields
+    assert set(recs[0].__dataclass_fields__) == {
+        "driver_id", "lap", "race_time_s", "lap_time_s", "position", "compound", "tyre_age",
+        "pit_in", "pit_out",
+    }  # fmt: skip
+
+
+def test_new_leader_laps_and_recorded_probs() -> None:
+    log = LapLog(2024, 5, max_laps=2)
+    log.observe(_lap("a", 1, 95.0))
+    log.observe(_lap("b", 1, 96.0))
+    log.observe(_lap("a", 2, 190.0))
+    assert log.max_lap == 2 and log.take_new_laps() == [1, 2] and log.take_new_laps() == []
+    for n in (1, 2, 3):
+        log.set_probs(n, {"a": (True, 0.1 * n)})
+    assert log.probs_at(1) is None  # beyond max_laps
+    assert log.probs_at(3) == {"a": (True, 0.30000000000000004)}
+    assert log.probs_at(9) is None
+
+
+async def test_read_published_probs_is_read_only() -> None:
+    redis = fakeredis.FakeAsyncRedis(decode_responses=True)
+    store = AsyncRaceStore(redis)
+    states = {
+        "a": DriverState(1, None, None, "SOFT", 3, 90.0, False, None),
+        "b": DriverState(2, 1.0, 1.0, "SOFT", 3, 90.0, True, 0.64),
+    }
+    await store.write_batch(2024, 5, Batch(states=states, order={"a": 1, "b": 2}))
+    before = {k: await redis.hgetall(k) for k in await redis.keys("race:*:driver:*")}
+    probs = await read_published_probs(redis, 2024, 5)
+    assert probs == {"a": (False, None), "b": (True, 0.64)}
+    assert {k: await redis.hgetall(k) for k in await redis.keys("race:*:driver:*")} == before
+    assert await read_published_probs(redis, 2024, 6) == {}
+
+
+async def test_the_subscriber_snapshots_probs_when_the_leader_completes_a_lap() -> None:
+    redis = fakeredis.FakeAsyncRedis(decode_responses=True)
+    store = AsyncRaceStore(redis)
+    mgr = LapLogManager(redis)
+    log = await mgr.ensure(2024, 5)
+    s = {"a": DriverState(1, None, None, "SOFT", 3, 90.0, True, 0.55)}
+    await store.write_batch(2024, 5, Batch(states=s, order={"a": 1}))
+    await _publish(
+        store, Event("lap", {"driver_id": "a", "lap": 1, "race_time_s": 95.0, "lap_time_s": 95.0})
+    )
+    await _until(lambda: log.probs_at(1) is not None)
+    assert log.probs_at(1) == {"a": (True, 0.55)}
     await mgr.aclose()
