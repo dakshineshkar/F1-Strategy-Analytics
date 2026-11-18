@@ -1,0 +1,360 @@
+{
+ "_source": "Cut from a 10x replay of 2024 R5 recorded on 2026-11-18 (F37 investigation): SSE frames and the Redis zset after each batch. Only the fields the reducer's ordering needs are kept; every kept lap time, race time, position, gap and last lap time equals the committed sample Jolpica 2024 R5 laps (data/sample, CC BY-NC-SA 4.0). Compound, tyre, sector, speed-trap and undercut fields are dropped or neutralised; pit and alert frames are dropped (they never reorder known cars).",
+ "windows": [
+  {
+   "name": "f37_open_mid_lap_10",
+   "note": "opens at the Redis state of t=1795022373611 (the API's connect snapshot), then the frames up to the F37 tower",
+   "frames": [
+    {
+     "raw": "{\"type\":\"snapshot\",\"season\":2024,\"round\":5,\"lap\":0,\"drivers\":{\"albon\":{\"position\":12,\"gap_ahead_s\":0.968,\"gap_leader_s\":25.615,\"tyre_compound\":\"UNKNOWN\",\"tyre_age_laps\":null,\"last_lap_time_s\":103.991,\"undercut_flag\":false,\"undercut_prob\":null,\"updated_at\":\"2024-04-21T07:00:00.000Z\"},\"alonso\":{\"position\":4,\"gap_ahead_s\":3.388,\"gap_leader_s\":14.039,\"tyre_compound\":\"UNKNOWN\",\"tyre_age_laps\":null,\"last_lap_time_s\":102.946,\"undercut_flag\":false,\"undercut_prob\":null,\"updated_at\":\"2024-04-21T07:00:00.000Z\"},\"bottas\":{\"position\":10,\"gap_ahead_s\":2.015,\"gap_leader_s\":22.53,\"tyre_compound\":\"UNKNOWN\",\"tyre_age_laps\":null,\"last_lap_time_s\":103.45,\"undercut_flag\":false,\"undercut_prob\":null,\"updated_at\":\"2024-04-21T07:00:00.000Z\"},\"gasly\":{\"position\":13,\"gap_ahead_s\":0.607,\"gap_leader_s\":26.222,\"tyre_compound\":\"UNKNOWN\",\"tyre_age_laps\":null,\"last_lap_time_s\":103.871,\"undercut_flag\":false,\"undercut_prob\":null,\"updated_at\":\"2024-04-21T07:00:00.000Z\"},\"hamilton\":{\"position\":16,\"gap_ahead_s\":0.608,\"gap_leader_s\":29.355,\"tyre_compound\":\"UNKNOWN\",\"tyre_age_laps\":null,\"last_lap_time_s\":103.769,\"undercut_flag\":false,\"undercut_prob\":null,\"updated_at\":\"2024-04-21T07:00:00.000Z\"},\"hulkenberg\":{\"position\":15,\"gap_ahead_s\":1.262,\"gap_leader_s\":28.747,\"tyre_compound\":\"UNKNOWN\",\"tyre_age_laps\":null,\"last_lap_time_s\":109.064,\"undercut_flag\":false,\"undercut_prob\":null,\"updated_at\":\"2024-04-21T07:00:00.000Z\"},\"kevin_magnussen\":{\"position\":17,\"gap_ahead_s\":1.806,\"gap_leader_s\":31.161,\"tyre_compound\":\"UNKNOWN\",\"tyre_age_laps\":null,\"last_lap_time_s\":104.239,\"undercut_flag\":false,\"undercut_prob\":null,\"updated_at\":\"2024-04-21T07:00:00.000Z\"},\"leclerc\":{\"position\":6,\"gap_ahead_s\":1.059,\"gap_leader_s\":16.455,\"tyre_compound\":\"UNKNOWN\",\"tyre_age_laps\":null,\"last_lap_time_s\":102.189,\"undercut_flag\":false,\"undercut_prob\":null,\"updated_at\":\"2024-04-21T07:00:00.000Z\"},\"max_verstappen\":{\"position\":1,\"gap_ahead_s\":null,\"gap_leader_s\":0.0,\"tyre_compound\":\"UNKNOWN\",\"tyre_age_laps\":null,\"last_lap_time_s\":101.155,\"undercut_flag\":false,\"undercut_prob\":null,\"updated_at\":\"2024-04-21T07:00:00.000Z\"},\"norris\":{\"position\":3,\"gap_ahead_s\":3.025,\"gap_leader_s\":10.651,\"tyre_compound\":\"UNKNOWN\",\"tyre_age_laps\":null,\"last_lap_time_s\":101.688,\"undercut_flag\":false,\"undercut_prob\":null,\"updated_at\":\"2024-04-21T07:00:00.000Z\"},\"ocon\":{\"position\":11,\"gap_ahead_s\":2.117,\"gap_leader_s\":24.647,\"tyre_compound\":\"UNKNOWN\",\"tyre_age_laps\":null,\"last_lap_time_s\":104.045,\"undercut_flag\":false,\"undercut_prob\":null,\"updated_at\":\"2024-04-21T07:00:00.000Z\"},\"perez\":{\"position\":2,\"gap_ahead_s\":7.626,\"gap_leader_s\":7.626,\"tyre_compound\":\"UNKNOWN\",\"tyre_age_laps\":null,\"last_lap_time_s\":101.768,\"undercut_flag\":false,\"undercut_prob\":null,\"updated_at\":\"2024-04-21T07:00:00.000Z\"},\"piastri\":{\"position\":5,\"gap_ahead_s\":1.357,\"gap_leader_s\":15.396,\"tyre_compound\":\"UNKNOWN\",\"tyre_age_laps\":null,\"last_lap_time_s\":102.976,\"undercut_flag\":false,\"undercut_prob\":null,\"updated_at\":\"2024-04-21T07:00:00.000Z\"},\"ricciardo\":{\"position\":14,\"gap_ahead_s\":1.263,\"gap_leader_s\":27.485,\"tyre_compound\":\"UNKNOWN\",\"tyre_age_laps\":null,\"last_lap_time_s\":103.843,\"undercut_flag\":false,\"undercut_prob\":null,\"updated_at\":\"2024-04-21T07:00:00.000Z\"},\"russell\":{\"position\":7,\"gap_ahead_s\":1.494,\"gap_leader_s\":17.949,\"tyre_compound\":\"UNKNOWN\",\"tyre_age_laps\":null,\"last_lap_time_s\":103.985,\"undercut_flag\":false,\"undercut_prob\":null,\"updated_at\":\"2024-04-21T07:00:00.000Z\"},\"sainz\":{\"position\":8,\"gap_ahead_s\":0.443,\"gap_leader_s\":18.392,\"tyre_compound\":\"UNKNOWN\",\"tyre_age_laps\":null,\"last_lap_time_s\":102.8,\"undercut_flag\":false,\"undercut_prob\":null,\"updated_at\":\"2024-04-21T07:00:00.000Z\"},\"sargeant\":{\"position\":18,\"gap_ahead_s\":1.474,\"gap_leader_s\":32.635,\"tyre_compound\":\"UNKNOWN\",\"tyre_age_laps\":null,\"last_lap_time_s\":104.213,\"undercut_flag\":false,\"undercut_prob\":null,\"updated_at\":\"2024-04-21T07:00:00.000Z\"},\"stroll\":{\"position\":9,\"gap_ahead_s\":3.768,\"gap_leader_s\":20.515,\"tyre_compound\":\"UNKNOWN\",\"tyre_age_laps\":null,\"last_lap_time_s\":103.068,\"undercut_flag\":false,\"undercut_prob\":null,\"updated_at\":\"2024-04-21T07:00:00.000Z\"},\"tsunoda\":{\"position\":19,\"gap_ahead_s\":0.61,\"gap_leader_s\":33.245,\"tyre_compound\":\"UNKNOWN\",\"tyre_age_laps\":null,\"last_lap_time_s\":108.43,\"undercut_flag\":false,\"undercut_prob\":null,\"updated_at\":\"2024-04-21T07:00:00.000Z\"},\"zhou\":{\"position\":20,\"gap_ahead_s\":4.088,\"gap_leader_s\":37.333,\"tyre_compound\":\"UNKNOWN\",\"tyre_age_laps\":null,\"last_lap_time_s\":109.478,\"undercut_flag\":false,\"undercut_prob\":null,\"updated_at\":\"2024-04-21T07:00:00.000Z\"}},\"order\":[{\"driver_id\":\"max_verstappen\",\"position\":1},{\"driver_id\":\"perez\",\"position\":2},{\"driver_id\":\"norris\",\"position\":3},{\"driver_id\":\"alonso\",\"position\":4},{\"driver_id\":\"piastri\",\"position\":5},{\"driver_id\":\"leclerc\",\"position\":6},{\"driver_id\":\"russell\",\"position\":7},{\"driver_id\":\"sainz\",\"position\":8},{\"driver_id\":\"stroll\",\"position\":9},{\"driver_id\":\"bottas\",\"position\":10},{\"driver_id\":\"ocon\",\"position\":11},{\"driver_id\":\"albon\",\"position\":12},{\"driver_id\":\"gasly\",\"position\":13},{\"driver_id\":\"ricciardo\",\"position\":14},{\"driver_id\":\"hulkenberg\",\"position\":15},{\"driver_id\":\"hamilton\",\"position\":16},{\"driver_id\":\"kevin_magnussen\",\"position\":17},{\"driver_id\":\"sargeant\",\"position\":18},{\"driver_id\":\"tsunoda\",\"position\":19},{\"driver_id\":\"zhou\",\"position\":20}],\"tyres\":{},\"timing\":{\"albon\":{\"lap\":8},\"alonso\":{\"lap\":9},\"bottas\":{\"lap\":8},\"gasly\":{\"lap\":8},\"hamilton\":{\"lap\":8},\"hulkenberg\":{\"lap\":8},\"kevin_magnussen\":{\"lap\":8},\"leclerc\":{\"lap\":9},\"max_verstappen\":{\"lap\":9},\"norris\":{\"lap\":9},\"ocon\":{\"lap\":8},\"perez\":{\"lap\":9},\"piastri\":{\"lap\":9},\"ricciardo\":{\"lap\":8},\"russell\":{\"lap\":9},\"sainz\":{\"lap\":9},\"sargeant\":{\"lap\":8},\"stroll\":{\"lap\":8},\"tsunoda\":{\"lap\":8},\"zhou\":{\"lap\":8}},\"event_id\":\"snapshot-0\"}"
+    },
+    {
+     "raw": "{\"type\":\"lap\",\"season\":2024,\"round\":5,\"event_id\":\"1e7c8ced-96b9-40a0-adfb-5177320410db\",\"payload\":{\"event_id\":\"1e7c8ced-96b9-40a0-adfb-5177320410db\",\"driver_id\":\"stroll\",\"lap\":9,\"race_time_s\":935.221,\"position\":9,\"lap_time_s\":107.714,\"compound\":null,\"tyre_age\":null}}",
+     "zset_after_batch": [
+      "max_verstappen",
+      "perez",
+      "norris",
+      "alonso",
+      "piastri",
+      "leclerc",
+      "russell",
+      "sainz",
+      "stroll",
+      "bottas",
+      "ocon",
+      "albon",
+      "gasly",
+      "ricciardo",
+      "hulkenberg",
+      "hamilton",
+      "kevin_magnussen",
+      "sargeant",
+      "tsunoda",
+      "zhou"
+     ]
+    },
+    {
+     "raw": "{\"type\":\"lap\",\"season\":2024,\"round\":5,\"event_id\":\"ba296a1e-6449-48a7-bec7-a3049e6a591a\",\"payload\":{\"event_id\":\"ba296a1e-6449-48a7-bec7-a3049e6a591a\",\"driver_id\":\"ocon\",\"lap\":9,\"race_time_s\":939.929,\"position\":13,\"lap_time_s\":108.29,\"compound\":null,\"tyre_age\":null}}"
+    },
+    {
+     "raw": "{\"type\":\"lap\",\"season\":2024,\"round\":5,\"event_id\":\"c256280d-24b7-433d-956b-3dd324dee8eb\",\"payload\":{\"event_id\":\"c256280d-24b7-433d-956b-3dd324dee8eb\",\"driver_id\":\"gasly\",\"lap\":9,\"race_time_s\":936.905,\"position\":10,\"lap_time_s\":103.691,\"compound\":null,\"tyre_age\":null}}"
+    },
+    {
+     "raw": "{\"type\":\"lap\",\"season\":2024,\"round\":5,\"event_id\":\"3b8cd538-6fc4-46bb-8e1e-a6a9cd8b9664\",\"payload\":{\"event_id\":\"3b8cd538-6fc4-46bb-8e1e-a6a9cd8b9664\",\"driver_id\":\"bottas\",\"lap\":9,\"race_time_s\":937.499,\"position\":11,\"lap_time_s\":107.977,\"compound\":null,\"tyre_age\":null}}"
+    },
+    {
+     "raw": "{\"type\":\"lap\",\"season\":2024,\"round\":5,\"event_id\":\"1609ab38-fb28-4de5-82b0-e2f8a47d62ac\",\"payload\":{\"event_id\":\"1609ab38-fb28-4de5-82b0-e2f8a47d62ac\",\"driver_id\":\"ricciardo\",\"lap\":9,\"race_time_s\":938.082,\"position\":12,\"lap_time_s\":103.605,\"compound\":null,\"tyre_age\":null}}",
+     "zset_after_batch": [
+      "max_verstappen",
+      "perez",
+      "norris",
+      "alonso",
+      "piastri",
+      "leclerc",
+      "russell",
+      "sainz",
+      "stroll",
+      "gasly",
+      "bottas",
+      "ricciardo",
+      "ocon",
+      "albon",
+      "hulkenberg",
+      "hamilton",
+      "kevin_magnussen",
+      "sargeant",
+      "tsunoda",
+      "zhou"
+     ]
+    },
+    {
+     "raw": "{\"type\":\"lap\",\"season\":2024,\"round\":5,\"event_id\":\"b9d8d24b-f6e4-4a44-9e5b-5f9f322f3252\",\"payload\":{\"event_id\":\"b9d8d24b-f6e4-4a44-9e5b-5f9f322f3252\",\"driver_id\":\"albon\",\"lap\":9,\"race_time_s\":940.978,\"position\":14,\"lap_time_s\":108.371,\"compound\":null,\"tyre_age\":null}}"
+    },
+    {
+     "raw": "{\"type\":\"lap\",\"season\":2024,\"round\":5,\"event_id\":\"36166b95-5a4a-4fbc-950e-7c796944bdd2\",\"payload\":{\"event_id\":\"36166b95-5a4a-4fbc-950e-7c796944bdd2\",\"driver_id\":\"sargeant\",\"lap\":9,\"race_time_s\":942.863,\"position\":16,\"lap_time_s\":103.236,\"compound\":null,\"tyre_age\":null}}"
+    },
+    {
+     "raw": "{\"type\":\"lap\",\"season\":2024,\"round\":5,\"event_id\":\"76392dca-6013-4599-8d8b-2b0d6575485c\",\"payload\":{\"event_id\":\"76392dca-6013-4599-8d8b-2b0d6575485c\",\"driver_id\":\"hamilton\",\"lap\":9,\"race_time_s\":944.289,\"position\":17,\"lap_time_s\":107.942,\"compound\":null,\"tyre_age\":null}}"
+    },
+    {
+     "raw": "{\"type\":\"lap\",\"season\":2024,\"round\":5,\"event_id\":\"8b0c0754-5df9-44a1-aea0-0d911cccc68d\",\"payload\":{\"event_id\":\"8b0c0754-5df9-44a1-aea0-0d911cccc68d\",\"driver_id\":\"kevin_magnussen\",\"lap\":9,\"race_time_s\":941.614,\"position\":15,\"lap_time_s\":103.461,\"compound\":null,\"tyre_age\":null}}",
+     "zset_after_batch": [
+      "max_verstappen",
+      "perez",
+      "norris",
+      "alonso",
+      "piastri",
+      "leclerc",
+      "russell",
+      "sainz",
+      "stroll",
+      "gasly",
+      "bottas",
+      "ricciardo",
+      "ocon",
+      "albon",
+      "kevin_magnussen",
+      "sargeant",
+      "hamilton",
+      "hulkenberg",
+      "tsunoda",
+      "zhou"
+     ]
+    },
+    {
+     "raw": "{\"type\":\"lap\",\"season\":2024,\"round\":5,\"event_id\":\"1138fc82-65fe-487c-95f4-740db16790b0\",\"payload\":{\"event_id\":\"1138fc82-65fe-487c-95f4-740db16790b0\",\"driver_id\":\"hulkenberg\",\"lap\":9,\"race_time_s\":955.678,\"position\":18,\"lap_time_s\":119.939,\"compound\":null,\"tyre_age\":null}}",
+     "zset_after_batch": [
+      "max_verstappen",
+      "perez",
+      "norris",
+      "alonso",
+      "piastri",
+      "leclerc",
+      "russell",
+      "sainz",
+      "stroll",
+      "gasly",
+      "bottas",
+      "ricciardo",
+      "ocon",
+      "albon",
+      "kevin_magnussen",
+      "sargeant",
+      "hamilton",
+      "hulkenberg",
+      "tsunoda",
+      "zhou"
+     ]
+    },
+    {
+     "raw": "{\"type\":\"lap\",\"season\":2024,\"round\":5,\"event_id\":\"ccc61b3e-db9d-4035-80c6-c7797dd62e1f\",\"payload\":{\"event_id\":\"ccc61b3e-db9d-4035-80c6-c7797dd62e1f\",\"driver_id\":\"tsunoda\",\"lap\":9,\"race_time_s\":960.082,\"position\":19,\"lap_time_s\":119.845,\"compound\":null,\"tyre_age\":null}}",
+     "zset_after_batch": [
+      "max_verstappen",
+      "perez",
+      "norris",
+      "alonso",
+      "piastri",
+      "leclerc",
+      "russell",
+      "sainz",
+      "stroll",
+      "gasly",
+      "bottas",
+      "ricciardo",
+      "ocon",
+      "albon",
+      "kevin_magnussen",
+      "sargeant",
+      "hamilton",
+      "hulkenberg",
+      "tsunoda",
+      "zhou"
+     ]
+    },
+    {
+     "raw": "{\"type\":\"lap\",\"season\":2024,\"round\":5,\"event_id\":\"3c3d9b10-b8a1-4344-8795-ae72947cfe3e\",\"payload\":{\"event_id\":\"3c3d9b10-b8a1-4344-8795-ae72947cfe3e\",\"driver_id\":\"zhou\",\"lap\":9,\"race_time_s\":965.539,\"position\":20,\"lap_time_s\":121.214,\"compound\":null,\"tyre_age\":null}}",
+     "zset_after_batch": [
+      "max_verstappen",
+      "perez",
+      "norris",
+      "alonso",
+      "piastri",
+      "leclerc",
+      "russell",
+      "sainz",
+      "stroll",
+      "gasly",
+      "bottas",
+      "ricciardo",
+      "ocon",
+      "albon",
+      "kevin_magnussen",
+      "sargeant",
+      "hamilton",
+      "hulkenberg",
+      "tsunoda",
+      "zhou"
+     ]
+    },
+    {
+     "raw": "{\"type\":\"snapshot\",\"season\":2024,\"round\":5,\"lap\":10,\"drivers\":{\"albon\":{\"position\":14,\"gap_ahead_s\":1.049,\"gap_leader_s\":32.831,\"tyre_compound\":\"UNKNOWN\",\"tyre_age_laps\":null,\"last_lap_time_s\":108.371,\"undercut_flag\":false,\"undercut_prob\":null,\"updated_at\":\"2024-04-21T07:00:00.000Z\"},\"alonso\":{\"position\":4,\"gap_ahead_s\":3.388,\"gap_leader_s\":14.039,\"tyre_compound\":\"UNKNOWN\",\"tyre_age_laps\":null,\"last_lap_time_s\":102.946,\"undercut_flag\":false,\"undercut_prob\":null,\"updated_at\":\"2024-04-21T07:00:00.000Z\"},\"bottas\":{\"position\":11,\"gap_ahead_s\":0.594,\"gap_leader_s\":29.352,\"tyre_compound\":\"UNKNOWN\",\"tyre_age_laps\":null,\"last_lap_time_s\":107.977,\"undercut_flag\":false,\"undercut_prob\":null,\"updated_at\":\"2024-04-21T07:00:00.000Z\"},\"gasly\":{\"position\":10,\"gap_ahead_s\":1.684,\"gap_leader_s\":28.758,\"tyre_compound\":\"UNKNOWN\",\"tyre_age_laps\":null,\"last_lap_time_s\":103.691,\"undercut_flag\":false,\"undercut_prob\":null,\"updated_at\":\"2024-04-21T07:00:00.000Z\"},\"hamilton\":{\"position\":17,\"gap_ahead_s\":1.426,\"gap_leader_s\":36.142,\"tyre_compound\":\"UNKNOWN\",\"tyre_age_laps\":null,\"last_lap_time_s\":107.942,\"undercut_flag\":false,\"undercut_prob\":null,\"updated_at\":\"2024-04-21T07:00:00.000Z\"},\"hulkenberg\":{\"position\":18,\"gap_ahead_s\":11.389,\"gap_leader_s\":47.531,\"tyre_compound\":\"UNKNOWN\",\"tyre_age_laps\":null,\"last_lap_time_s\":119.939,\"undercut_flag\":false,\"undercut_prob\":null,\"updated_at\":\"2024-04-21T07:00:00.000Z\"},\"kevin_magnussen\":{\"position\":15,\"gap_ahead_s\":0.636,\"gap_leader_s\":33.467,\"tyre_compound\":\"UNKNOWN\",\"tyre_age_laps\":null,\"last_lap_time_s\":103.461,\"undercut_flag\":false,\"undercut_prob\":null,\"updated_at\":\"2024-04-21T07:00:00.000Z\"},\"leclerc\":{\"position\":6,\"gap_ahead_s\":1.059,\"gap_leader_s\":16.455,\"tyre_compound\":\"UNKNOWN\",\"tyre_age_laps\":null,\"last_lap_time_s\":102.189,\"undercut_flag\":false,\"undercut_prob\":null,\"updated_at\":\"2024-04-21T07:00:00.000Z\"},\"max_verstappen\":{\"position\":1,\"gap_ahead_s\":null,\"gap_leader_s\":0.0,\"tyre_compound\":\"UNKNOWN\",\"tyre_age_laps\":null,\"last_lap_time_s\":101.424,\"undercut_flag\":false,\"undercut_prob\":null,\"updated_at\":\"2024-04-21T07:00:00.000Z\"},\"norris\":{\"position\":3,\"gap_ahead_s\":3.025,\"gap_leader_s\":10.651,\"tyre_compound\":\"UNKNOWN\",\"tyre_age_laps\":null,\"last_lap_time_s\":101.688,\"undercut_flag\":false,\"undercut_prob\":null,\"updated_at\":\"2024-04-21T07:00:00.000Z\"},\"ocon\":{\"position\":13,\"gap_ahead_s\":1.847,\"gap_leader_s\":31.782,\"tyre_compound\":\"UNKNOWN\",\"tyre_age_laps\":null,\"last_lap_time_s\":108.29,\"undercut_flag\":false,\"undercut_prob\":null,\"updated_at\":\"2024-04-21T07:00:00.000Z\"},\"perez\":{\"position\":2,\"gap_ahead_s\":7.626,\"gap_leader_s\":7.626,\"tyre_compound\":\"UNKNOWN\",\"tyre_age_laps\":null,\"last_lap_time_s\":101.768,\"undercut_flag\":false,\"undercut_prob\":null,\"updated_at\":\"2024-04-21T07:00:00.000Z\"},\"piastri\":{\"position\":5,\"gap_ahead_s\":1.357,\"gap_leader_s\":15.396,\"tyre_compound\":\"UNKNOWN\",\"tyre_age_laps\":null,\"last_lap_time_s\":102.976,\"undercut_flag\":false,\"undercut_prob\":null,\"updated_at\":\"2024-04-21T07:00:00.000Z\"},\"ricciardo\":{\"position\":12,\"gap_ahead_s\":0.583,\"gap_leader_s\":29.935,\"tyre_compound\":\"UNKNOWN\",\"tyre_age_laps\":null,\"last_lap_time_s\":103.605,\"undercut_flag\":false,\"undercut_prob\":null,\"updated_at\":\"2024-04-21T07:00:00.000Z\"},\"russell\":{\"position\":7,\"gap_ahead_s\":1.494,\"gap_leader_s\":17.949,\"tyre_compound\":\"UNKNOWN\",\"tyre_age_laps\":null,\"last_lap_time_s\":103.985,\"undercut_flag\":false,\"undercut_prob\":null,\"updated_at\":\"2024-04-21T07:00:00.000Z\"},\"sainz\":{\"position\":8,\"gap_ahead_s\":0.443,\"gap_leader_s\":18.392,\"tyre_compound\":\"UNKNOWN\",\"tyre_age_laps\":null,\"last_lap_time_s\":102.8,\"undercut_flag\":false,\"undercut_prob\":null,\"updated_at\":\"2024-04-21T07:00:00.000Z\"},\"sargeant\":{\"position\":16,\"gap_ahead_s\":1.249,\"gap_leader_s\":34.716,\"tyre_compound\":\"UNKNOWN\",\"tyre_age_laps\":null,\"last_lap_time_s\":103.236,\"undercut_flag\":false,\"undercut_prob\":null,\"updated_at\":\"2024-04-21T07:00:00.000Z\"},\"stroll\":{\"position\":9,\"gap_ahead_s\":8.682,\"gap_leader_s\":27.074,\"tyre_compound\":\"UNKNOWN\",\"tyre_age_laps\":null,\"last_lap_time_s\":107.714,\"undercut_flag\":false,\"undercut_prob\":null,\"updated_at\":\"2024-04-21T07:00:00.000Z\"},\"tsunoda\":{\"position\":19,\"gap_ahead_s\":4.404,\"gap_leader_s\":51.935,\"tyre_compound\":\"UNKNOWN\",\"tyre_age_laps\":null,\"last_lap_time_s\":119.845,\"undercut_flag\":false,\"undercut_prob\":null,\"updated_at\":\"2024-04-21T07:00:00.000Z\"},\"zhou\":{\"position\":20,\"gap_ahead_s\":5.457,\"gap_leader_s\":57.392,\"tyre_compound\":\"UNKNOWN\",\"tyre_age_laps\":null,\"last_lap_time_s\":121.214,\"undercut_flag\":false,\"undercut_prob\":null,\"updated_at\":\"2024-04-21T07:00:00.000Z\"}},\"order\":[{\"driver_id\":\"max_verstappen\",\"position\":1},{\"driver_id\":\"perez\",\"position\":2},{\"driver_id\":\"norris\",\"position\":3},{\"driver_id\":\"alonso\",\"position\":4},{\"driver_id\":\"piastri\",\"position\":5},{\"driver_id\":\"leclerc\",\"position\":6},{\"driver_id\":\"russell\",\"position\":7},{\"driver_id\":\"sainz\",\"position\":8},{\"driver_id\":\"stroll\",\"position\":9},{\"driver_id\":\"gasly\",\"position\":10},{\"driver_id\":\"bottas\",\"position\":11},{\"driver_id\":\"ricciardo\",\"position\":12},{\"driver_id\":\"ocon\",\"position\":13},{\"driver_id\":\"albon\",\"position\":14},{\"driver_id\":\"kevin_magnussen\",\"position\":15},{\"driver_id\":\"sargeant\",\"position\":16},{\"driver_id\":\"hamilton\",\"position\":17},{\"driver_id\":\"hulkenberg\",\"position\":18},{\"driver_id\":\"tsunoda\",\"position\":19},{\"driver_id\":\"zhou\",\"position\":20}],\"tyres\":{},\"timing\":{\"albon\":{\"lap\":9},\"alonso\":{\"lap\":9},\"bottas\":{\"lap\":9},\"gasly\":{\"lap\":9},\"hamilton\":{\"lap\":9},\"hulkenberg\":{\"lap\":9},\"kevin_magnussen\":{\"lap\":9},\"leclerc\":{\"lap\":9},\"max_verstappen\":{\"lap\":10},\"norris\":{\"lap\":9},\"ocon\":{\"lap\":9},\"perez\":{\"lap\":9},\"piastri\":{\"lap\":9},\"ricciardo\":{\"lap\":9},\"russell\":{\"lap\":9},\"sainz\":{\"lap\":9},\"sargeant\":{\"lap\":9},\"stroll\":{\"lap\":9},\"tsunoda\":{\"lap\":9},\"zhou\":{\"lap\":9}},\"event_id\":\"snapshot-10\"}"
+    },
+    {
+     "raw": "{\"type\":\"lap\",\"season\":2024,\"round\":5,\"event_id\":\"0bcc62ac-a0e1-4c51-b54b-3d7b61107a91\",\"payload\":{\"event_id\":\"0bcc62ac-a0e1-4c51-b54b-3d7b61107a91\",\"driver_id\":\"max_verstappen\",\"lap\":10,\"race_time_s\":1009.571,\"position\":1,\"lap_time_s\":101.424,\"compound\":null,\"tyre_age\":null}}",
+     "zset_after_batch": [
+      "max_verstappen",
+      "perez",
+      "norris",
+      "alonso",
+      "piastri",
+      "leclerc",
+      "russell",
+      "sainz",
+      "stroll",
+      "gasly",
+      "bottas",
+      "ricciardo",
+      "ocon",
+      "albon",
+      "kevin_magnussen",
+      "sargeant",
+      "hamilton",
+      "hulkenberg",
+      "tsunoda",
+      "zhou"
+     ]
+    },
+    {
+     "raw": "{\"type\":\"lap\",\"season\":2024,\"round\":5,\"event_id\":\"eae3c608-2140-4971-97ab-b853a6f4812a\",\"payload\":{\"event_id\":\"eae3c608-2140-4971-97ab-b853a6f4812a\",\"driver_id\":\"norris\",\"lap\":10,\"race_time_s\":1020.493,\"position\":3,\"lap_time_s\":101.695,\"compound\":null,\"tyre_age\":null}}"
+    },
+    {
+     "raw": "{\"type\":\"lap\",\"season\":2024,\"round\":5,\"event_id\":\"aa9d6213-f155-475c-8744-7a2c3f6104d8\",\"payload\":{\"event_id\":\"aa9d6213-f155-475c-8744-7a2c3f6104d8\",\"driver_id\":\"perez\",\"lap\":10,\"race_time_s\":1017.613,\"position\":2,\"lap_time_s\":101.84,\"compound\":null,\"tyre_age\":null}}",
+     "zset_after_batch": [
+      "max_verstappen",
+      "perez",
+      "norris",
+      "alonso",
+      "piastri",
+      "leclerc",
+      "russell",
+      "sainz",
+      "stroll",
+      "gasly",
+      "bottas",
+      "ricciardo",
+      "ocon",
+      "albon",
+      "kevin_magnussen",
+      "sargeant",
+      "hamilton",
+      "hulkenberg",
+      "tsunoda",
+      "zhou"
+     ]
+    },
+    {
+     "raw": "{\"type\":\"lap\",\"season\":2024,\"round\":5,\"event_id\":\"f1afb00a-b291-43c4-a7fa-eb2db6395bb4\",\"payload\":{\"event_id\":\"f1afb00a-b291-43c4-a7fa-eb2db6395bb4\",\"driver_id\":\"alonso\",\"lap\":10,\"race_time_s\":1025.269,\"position\":4,\"lap_time_s\":103.083,\"compound\":null,\"tyre_age\":null}}"
+    },
+    {
+     "raw": "{\"type\":\"lap\",\"season\":2024,\"round\":5,\"event_id\":\"5be24ed5-d02a-4715-a103-1de51ebecc64\",\"payload\":{\"event_id\":\"5be24ed5-d02a-4715-a103-1de51ebecc64\",\"driver_id\":\"piastri\",\"lap\":10,\"race_time_s\":1026.201,\"position\":5,\"lap_time_s\":102.658,\"compound\":null,\"tyre_age\":null}}",
+     "zset_after_batch": [
+      "max_verstappen",
+      "perez",
+      "norris",
+      "alonso",
+      "piastri",
+      "leclerc",
+      "russell",
+      "sainz",
+      "stroll",
+      "gasly",
+      "bottas",
+      "ricciardo",
+      "ocon",
+      "albon",
+      "kevin_magnussen",
+      "sargeant",
+      "hamilton",
+      "hulkenberg",
+      "tsunoda",
+      "zhou"
+     ]
+    }
+   ]
+  },
+  {
+   "name": "reference_lap_1",
+   "note": "a page connected before the start: the lap-1 snapshot arrives before KMAG/HAM's lap-1 frames",
+   "frames": [
+    {
+     "raw": "{\"type\":\"snapshot\",\"season\":2024,\"round\":5,\"lap\":0,\"drivers\":{\"albon\":{\"position\":13,\"gap_ahead_s\":0.467,\"gap_leader_s\":7.836,\"tyre_compound\":\"UNKNOWN\",\"tyre_age_laps\":null,\"last_lap_time_s\":109.364,\"undercut_flag\":false,\"undercut_prob\":null,\"updated_at\":\"2024-04-21T07:00:00.000Z\"},\"alonso\":{\"position\":2,\"gap_ahead_s\":1.645,\"gap_leader_s\":1.645,\"tyre_compound\":\"UNKNOWN\",\"tyre_age_laps\":null,\"last_lap_time_s\":103.173,\"undercut_flag\":false,\"undercut_prob\":null,\"updated_at\":\"2024-04-21T07:00:00.000Z\"},\"bottas\":{\"position\":11,\"gap_ahead_s\":0.419,\"gap_leader_s\":6.621,\"tyre_compound\":\"UNKNOWN\",\"tyre_age_laps\":null,\"last_lap_time_s\":108.149,\"undercut_flag\":false,\"undercut_prob\":null,\"updated_at\":\"2024-04-21T07:00:00.000Z\"},\"gasly\":{\"position\":14,\"gap_ahead_s\":0.543,\"gap_leader_s\":8.379,\"tyre_compound\":\"UNKNOWN\",\"tyre_age_laps\":null,\"last_lap_time_s\":109.907,\"undercut_flag\":false,\"undercut_prob\":null,\"updated_at\":\"2024-04-21T07:00:00.000Z\"},\"hamilton\":{\"position\":19,\"gap_ahead_s\":0.416,\"gap_leader_s\":9.974,\"tyre_compound\":\"UNKNOWN\",\"tyre_age_laps\":null,\"last_lap_time_s\":111.502,\"undercut_flag\":false,\"undercut_prob\":null,\"updated_at\":\"2024-04-21T07:00:00.000Z\"},\"hulkenberg\":{\"position\":8,\"gap_ahead_s\":0.553,\"gap_leader_s\":5.513,\"tyre_compound\":\"UNKNOWN\",\"tyre_age_laps\":null,\"last_lap_time_s\":107.041,\"undercut_flag\":false,\"undercut_prob\":null,\"updated_at\":\"2024-04-21T07:00:00.000Z\"},\"kevin_magnussen\":{\"position\":18,\"gap_ahead_s\":0.415,\"gap_leader_s\":9.558,\"tyre_compound\":\"UNKNOWN\",\"tyre_age_laps\":null,\"last_lap_time_s\":111.086,\"undercut_flag\":false,\"undercut_prob\":null,\"updated_at\":\"2024-04-21T07:00:00.000Z\"},\"leclerc\":{\"position\":7,\"gap_ahead_s\":0.742,\"gap_leader_s\":4.96,\"tyre_compound\":\"UNKNOWN\",\"tyre_age_laps\":null,\"last_lap_time_s\":106.488,\"undercut_flag\":false,\"undercut_prob\":null,\"updated_at\":\"2024-04-21T07:00:00.000Z\"},\"max_verstappen\":{\"position\":1,\"gap_ahead_s\":null,\"gap_leader_s\":0.0,\"tyre_compound\":\"UNKNOWN\",\"tyre_age_laps\":null,\"last_lap_time_s\":101.528,\"undercut_flag\":false,\"undercut_prob\":null,\"updated_at\":\"2024-04-21T07:00:00.000Z\"},\"norris\":{\"position\":4,\"gap_ahead_s\":0.554,\"gap_leader_s\":2.996,\"tyre_compound\":\"UNKNOWN\",\"tyre_age_laps\":null,\"last_lap_time_s\":104.524,\"undercut_flag\":false,\"undercut_prob\":null,\"updated_at\":\"2024-04-21T07:00:00.000Z\"},\"ocon\":{\"position\":12,\"gap_ahead_s\":0.748,\"gap_leader_s\":7.369,\"tyre_compound\":\"UNKNOWN\",\"tyre_age_laps\":null,\"last_lap_time_s\":108.897,\"undercut_flag\":false,\"undercut_prob\":null,\"updated_at\":\"2024-04-21T07:00:00.000Z\"},\"perez\":{\"position\":3,\"gap_ahead_s\":0.797,\"gap_leader_s\":2.442,\"tyre_compound\":\"UNKNOWN\",\"tyre_age_laps\":null,\"last_lap_time_s\":103.97,\"undercut_flag\":false,\"undercut_prob\":null,\"updated_at\":\"2024-04-21T07:00:00.000Z\"},\"piastri\":{\"position\":5,\"gap_ahead_s\":0.597,\"gap_leader_s\":3.593,\"tyre_compound\":\"UNKNOWN\",\"tyre_age_laps\":null,\"last_lap_time_s\":105.121,\"undercut_flag\":false,\"undercut_prob\":null,\"updated_at\":\"2024-04-21T07:00:00.000Z\"},\"ricciardo\":{\"position\":15,\"gap_ahead_s\":0.348,\"gap_leader_s\":8.727,\"tyre_compound\":\"UNKNOWN\",\"tyre_age_laps\":null,\"last_lap_time_s\":110.255,\"undercut_flag\":false,\"undercut_prob\":null,\"updated_at\":\"2024-04-21T07:00:00.000Z\"},\"russell\":{\"position\":6,\"gap_ahead_s\":0.625,\"gap_leader_s\":4.218,\"tyre_compound\":\"UNKNOWN\",\"tyre_age_laps\":null,\"last_lap_time_s\":105.746,\"undercut_flag\":false,\"undercut_prob\":null,\"updated_at\":\"2024-04-21T07:00:00.000Z\"},\"sainz\":{\"position\":9,\"gap_ahead_s\":0.106,\"gap_leader_s\":5.619,\"tyre_compound\":\"UNKNOWN\",\"tyre_age_laps\":null,\"last_lap_time_s\":107.147,\"undercut_flag\":false,\"undercut_prob\":null,\"updated_at\":\"2024-04-21T07:00:00.000Z\"},\"sargeant\":{\"position\":20,\"gap_ahead_s\":0.628,\"gap_leader_s\":10.602,\"tyre_compound\":\"UNKNOWN\",\"tyre_age_laps\":null,\"last_lap_time_s\":112.13,\"undercut_flag\":false,\"undercut_prob\":null,\"updated_at\":\"2024-04-21T07:00:00.000Z\"},\"stroll\":{\"position\":10,\"gap_ahead_s\":0.583,\"gap_leader_s\":6.202,\"tyre_compound\":\"UNKNOWN\",\"tyre_age_laps\":null,\"last_lap_time_s\":107.73,\"undercut_flag\":false,\"undercut_prob\":null,\"updated_at\":\"2024-04-21T07:00:00.000Z\"},\"tsunoda\":{\"position\":16,\"gap_ahead_s\":0.37,\"gap_leader_s\":9.097,\"tyre_compound\":\"UNKNOWN\",\"tyre_age_laps\":null,\"last_lap_time_s\":110.625,\"undercut_flag\":false,\"undercut_prob\":null,\"updated_at\":\"2024-04-21T07:00:00.000Z\"},\"zhou\":{\"position\":17,\"gap_ahead_s\":0.046,\"gap_leader_s\":9.143,\"tyre_compound\":\"UNKNOWN\",\"tyre_age_laps\":null,\"last_lap_time_s\":110.671,\"undercut_flag\":false,\"undercut_prob\":null,\"updated_at\":\"2024-04-21T07:00:00.000Z\"}},\"order\":[{\"driver_id\":\"max_verstappen\",\"position\":1},{\"driver_id\":\"alonso\",\"position\":2},{\"driver_id\":\"perez\",\"position\":3},{\"driver_id\":\"norris\",\"position\":4},{\"driver_id\":\"piastri\",\"position\":5},{\"driver_id\":\"russell\",\"position\":6},{\"driver_id\":\"leclerc\",\"position\":7},{\"driver_id\":\"hulkenberg\",\"position\":8},{\"driver_id\":\"sainz\",\"position\":9},{\"driver_id\":\"stroll\",\"position\":10},{\"driver_id\":\"bottas\",\"position\":11},{\"driver_id\":\"ocon\",\"position\":12},{\"driver_id\":\"albon\",\"position\":13},{\"driver_id\":\"gasly\",\"position\":14},{\"driver_id\":\"ricciardo\",\"position\":15},{\"driver_id\":\"tsunoda\",\"position\":16},{\"driver_id\":\"zhou\",\"position\":17},{\"driver_id\":\"kevin_magnussen\",\"position\":18},{\"driver_id\":\"hamilton\",\"position\":19},{\"driver_id\":\"sargeant\",\"position\":20}],\"tyres\":{},\"timing\":{\"albon\":{\"lap\":1},\"alonso\":{\"lap\":1},\"bottas\":{\"lap\":1},\"gasly\":{\"lap\":1},\"hamilton\":{\"lap\":1},\"hulkenberg\":{\"lap\":1},\"kevin_magnussen\":{\"lap\":1},\"leclerc\":{\"lap\":1},\"max_verstappen\":{\"lap\":1},\"norris\":{\"lap\":1},\"ocon\":{\"lap\":1},\"perez\":{\"lap\":1},\"piastri\":{\"lap\":1},\"ricciardo\":{\"lap\":1},\"russell\":{\"lap\":1},\"sainz\":{\"lap\":1},\"sargeant\":{\"lap\":1},\"stroll\":{\"lap\":1},\"tsunoda\":{\"lap\":1},\"zhou\":{\"lap\":1}},\"event_id\":\"snapshot-0\"}"
+    },
+    {
+     "raw": "{\"type\":\"snapshot\",\"season\":2024,\"round\":5,\"lap\":1,\"drivers\":{\"albon\":{\"position\":13,\"gap_ahead_s\":0.467,\"gap_leader_s\":7.836,\"tyre_compound\":\"UNKNOWN\",\"tyre_age_laps\":null,\"last_lap_time_s\":109.364,\"undercut_flag\":false,\"undercut_prob\":null,\"updated_at\":\"2024-04-21T07:00:00.000Z\"},\"alonso\":{\"position\":2,\"gap_ahead_s\":1.645,\"gap_leader_s\":1.645,\"tyre_compound\":\"UNKNOWN\",\"tyre_age_laps\":null,\"last_lap_time_s\":103.173,\"undercut_flag\":false,\"undercut_prob\":null,\"updated_at\":\"2024-04-21T07:00:00.000Z\"},\"bottas\":{\"position\":11,\"gap_ahead_s\":0.419,\"gap_leader_s\":6.621,\"tyre_compound\":\"UNKNOWN\",\"tyre_age_laps\":null,\"last_lap_time_s\":108.149,\"undercut_flag\":false,\"undercut_prob\":null,\"updated_at\":\"2024-04-21T07:00:00.000Z\"},\"gasly\":{\"position\":14,\"gap_ahead_s\":0.543,\"gap_leader_s\":8.379,\"tyre_compound\":\"UNKNOWN\",\"tyre_age_laps\":null,\"last_lap_time_s\":109.907,\"undercut_flag\":false,\"undercut_prob\":null,\"updated_at\":\"2024-04-21T07:00:00.000Z\"},\"hulkenberg\":{\"position\":8,\"gap_ahead_s\":0.553,\"gap_leader_s\":5.513,\"tyre_compound\":\"UNKNOWN\",\"tyre_age_laps\":null,\"last_lap_time_s\":107.041,\"undercut_flag\":false,\"undercut_prob\":null,\"updated_at\":\"2024-04-21T07:00:00.000Z\"},\"leclerc\":{\"position\":7,\"gap_ahead_s\":0.742,\"gap_leader_s\":4.96,\"tyre_compound\":\"UNKNOWN\",\"tyre_age_laps\":null,\"last_lap_time_s\":106.488,\"undercut_flag\":false,\"undercut_prob\":null,\"updated_at\":\"2024-04-21T07:00:00.000Z\"},\"max_verstappen\":{\"position\":1,\"gap_ahead_s\":null,\"gap_leader_s\":0.0,\"tyre_compound\":\"UNKNOWN\",\"tyre_age_laps\":null,\"last_lap_time_s\":101.528,\"undercut_flag\":false,\"undercut_prob\":null,\"updated_at\":\"2024-04-21T07:00:00.000Z\"},\"norris\":{\"position\":4,\"gap_ahead_s\":0.554,\"gap_leader_s\":2.996,\"tyre_compound\":\"UNKNOWN\",\"tyre_age_laps\":null,\"last_lap_time_s\":104.524,\"undercut_flag\":false,\"undercut_prob\":null,\"updated_at\":\"2024-04-21T07:00:00.000Z\"},\"ocon\":{\"position\":12,\"gap_ahead_s\":0.748,\"gap_leader_s\":7.369,\"tyre_compound\":\"UNKNOWN\",\"tyre_age_laps\":null,\"last_lap_time_s\":108.897,\"undercut_flag\":false,\"undercut_prob\":null,\"updated_at\":\"2024-04-21T07:00:00.000Z\"},\"perez\":{\"position\":3,\"gap_ahead_s\":0.797,\"gap_leader_s\":2.442,\"tyre_compound\":\"UNKNOWN\",\"tyre_age_laps\":null,\"last_lap_time_s\":103.97,\"undercut_flag\":false,\"undercut_prob\":null,\"updated_at\":\"2024-04-21T07:00:00.000Z\"},\"piastri\":{\"position\":5,\"gap_ahead_s\":0.597,\"gap_leader_s\":3.593,\"tyre_compound\":\"UNKNOWN\",\"tyre_age_laps\":null,\"last_lap_time_s\":105.121,\"undercut_flag\":false,\"undercut_prob\":null,\"updated_at\":\"2024-04-21T07:00:00.000Z\"},\"ricciardo\":{\"position\":15,\"gap_ahead_s\":0.348,\"gap_leader_s\":8.727,\"tyre_compound\":\"UNKNOWN\",\"tyre_age_laps\":null,\"last_lap_time_s\":110.255,\"undercut_flag\":false,\"undercut_prob\":null,\"updated_at\":\"2024-04-21T07:00:00.000Z\"},\"russell\":{\"position\":6,\"gap_ahead_s\":0.625,\"gap_leader_s\":4.218,\"tyre_compound\":\"UNKNOWN\",\"tyre_age_laps\":null,\"last_lap_time_s\":105.746,\"undercut_flag\":false,\"undercut_prob\":null,\"updated_at\":\"2024-04-21T07:00:00.000Z\"},\"sainz\":{\"position\":9,\"gap_ahead_s\":0.106,\"gap_leader_s\":5.619,\"tyre_compound\":\"UNKNOWN\",\"tyre_age_laps\":null,\"last_lap_time_s\":107.147,\"undercut_flag\":false,\"undercut_prob\":null,\"updated_at\":\"2024-04-21T07:00:00.000Z\"},\"stroll\":{\"position\":10,\"gap_ahead_s\":0.583,\"gap_leader_s\":6.202,\"tyre_compound\":\"UNKNOWN\",\"tyre_age_laps\":null,\"last_lap_time_s\":107.73,\"undercut_flag\":false,\"undercut_prob\":null,\"updated_at\":\"2024-04-21T07:00:00.000Z\"},\"tsunoda\":{\"position\":16,\"gap_ahead_s\":0.37,\"gap_leader_s\":9.097,\"tyre_compound\":\"UNKNOWN\",\"tyre_age_laps\":null,\"last_lap_time_s\":110.625,\"undercut_flag\":false,\"undercut_prob\":null,\"updated_at\":\"2024-04-21T07:00:00.000Z\"},\"zhou\":{\"position\":17,\"gap_ahead_s\":0.046,\"gap_leader_s\":9.143,\"tyre_compound\":\"UNKNOWN\",\"tyre_age_laps\":null,\"last_lap_time_s\":110.671,\"undercut_flag\":false,\"undercut_prob\":null,\"updated_at\":\"2024-04-21T07:00:00.000Z\"}},\"order\":[{\"driver_id\":\"max_verstappen\",\"position\":1},{\"driver_id\":\"alonso\",\"position\":2},{\"driver_id\":\"perez\",\"position\":3},{\"driver_id\":\"norris\",\"position\":4},{\"driver_id\":\"piastri\",\"position\":5},{\"driver_id\":\"russell\",\"position\":6},{\"driver_id\":\"leclerc\",\"position\":7},{\"driver_id\":\"hulkenberg\",\"position\":8},{\"driver_id\":\"sainz\",\"position\":9},{\"driver_id\":\"stroll\",\"position\":10},{\"driver_id\":\"bottas\",\"position\":11},{\"driver_id\":\"ocon\",\"position\":12},{\"driver_id\":\"albon\",\"position\":13},{\"driver_id\":\"gasly\",\"position\":14},{\"driver_id\":\"ricciardo\",\"position\":15},{\"driver_id\":\"tsunoda\",\"position\":16},{\"driver_id\":\"zhou\",\"position\":17}],\"tyres\":{},\"timing\":{\"albon\":{\"lap\":1},\"alonso\":{\"lap\":1},\"bottas\":{\"lap\":1},\"gasly\":{\"lap\":1},\"hulkenberg\":{\"lap\":1},\"leclerc\":{\"lap\":1},\"max_verstappen\":{\"lap\":1},\"norris\":{\"lap\":1},\"ocon\":{\"lap\":1},\"perez\":{\"lap\":1},\"piastri\":{\"lap\":1},\"ricciardo\":{\"lap\":1},\"russell\":{\"lap\":1},\"sainz\":{\"lap\":1},\"stroll\":{\"lap\":1},\"tsunoda\":{\"lap\":1},\"zhou\":{\"lap\":1}},\"event_id\":\"snapshot-1\"}"
+    },
+    {
+     "raw": "{\"type\":\"lap\",\"season\":2024,\"round\":5,\"event_id\":\"43a55ad0-8e57-4299-8015-5ae0a1dbfff8\",\"payload\":{\"event_id\":\"43a55ad0-8e57-4299-8015-5ae0a1dbfff8\",\"driver_id\":\"russell\",\"lap\":1,\"race_time_s\":105.746,\"position\":6,\"lap_time_s\":105.746,\"compound\":null,\"tyre_age\":null}}"
+    },
+    {
+     "raw": "{\"type\":\"lap\",\"season\":2024,\"round\":5,\"event_id\":\"a063b36f-1545-44b4-a913-8c3cc38dbba4\",\"payload\":{\"event_id\":\"a063b36f-1545-44b4-a913-8c3cc38dbba4\",\"driver_id\":\"leclerc\",\"lap\":1,\"race_time_s\":106.488,\"position\":7,\"lap_time_s\":106.488,\"compound\":null,\"tyre_age\":null}}"
+    },
+    {
+     "raw": "{\"type\":\"lap\",\"season\":2024,\"round\":5,\"event_id\":\"ccda9e3e-9f0d-4379-a689-fc01ed2d184b\",\"payload\":{\"event_id\":\"ccda9e3e-9f0d-4379-a689-fc01ed2d184b\",\"driver_id\":\"ocon\",\"lap\":1,\"race_time_s\":108.897,\"position\":12,\"lap_time_s\":108.897,\"compound\":null,\"tyre_age\":null}}"
+    },
+    {
+     "raw": "{\"type\":\"lap\",\"season\":2024,\"round\":5,\"event_id\":\"adaa4147-4678-458f-9b07-b737bf254e86\",\"payload\":{\"event_id\":\"adaa4147-4678-458f-9b07-b737bf254e86\",\"driver_id\":\"albon\",\"lap\":1,\"race_time_s\":109.364,\"position\":13,\"lap_time_s\":109.364,\"compound\":null,\"tyre_age\":null}}"
+    },
+    {
+     "raw": "{\"type\":\"lap\",\"season\":2024,\"round\":5,\"event_id\":\"1edc5c41-9648-4d66-b312-daad684155d4\",\"payload\":{\"event_id\":\"1edc5c41-9648-4d66-b312-daad684155d4\",\"driver_id\":\"alonso\",\"lap\":1,\"race_time_s\":103.173,\"position\":2,\"lap_time_s\":103.173,\"compound\":null,\"tyre_age\":null}}"
+    },
+    {
+     "raw": "{\"type\":\"lap\",\"season\":2024,\"round\":5,\"event_id\":\"4c5af97e-54ed-490e-b198-fcfbda010844\",\"payload\":{\"event_id\":\"4c5af97e-54ed-490e-b198-fcfbda010844\",\"driver_id\":\"norris\",\"lap\":1,\"race_time_s\":104.524,\"position\":4,\"lap_time_s\":104.524,\"compound\":null,\"tyre_age\":null}}"
+    },
+    {
+     "raw": "{\"type\":\"lap\",\"season\":2024,\"round\":5,\"event_id\":\"112af7f5-18cc-44ca-9866-1f816eea2030\",\"payload\":{\"event_id\":\"112af7f5-18cc-44ca-9866-1f816eea2030\",\"driver_id\":\"piastri\",\"lap\":1,\"race_time_s\":105.121,\"position\":5,\"lap_time_s\":105.121,\"compound\":null,\"tyre_age\":null}}"
+    },
+    {
+     "raw": "{\"type\":\"lap\",\"season\":2024,\"round\":5,\"event_id\":\"d06ef6ef-cc11-48af-bbf5-25a8dd4e1878\",\"payload\":{\"event_id\":\"d06ef6ef-cc11-48af-bbf5-25a8dd4e1878\",\"driver_id\":\"hulkenberg\",\"lap\":1,\"race_time_s\":107.041,\"position\":8,\"lap_time_s\":107.041,\"compound\":null,\"tyre_age\":null}}"
+    },
+    {
+     "raw": "{\"type\":\"lap\",\"season\":2024,\"round\":5,\"event_id\":\"88cd89e2-60f0-4ee2-825b-7b774ad44b39\",\"payload\":{\"event_id\":\"88cd89e2-60f0-4ee2-825b-7b774ad44b39\",\"driver_id\":\"sainz\",\"lap\":1,\"race_time_s\":107.147,\"position\":9,\"lap_time_s\":107.147,\"compound\":null,\"tyre_age\":null}}"
+    },
+    {
+     "raw": "{\"type\":\"lap\",\"season\":2024,\"round\":5,\"event_id\":\"8828f855-20db-4c2f-82de-d77d1f079033\",\"payload\":{\"event_id\":\"8828f855-20db-4c2f-82de-d77d1f079033\",\"driver_id\":\"stroll\",\"lap\":1,\"race_time_s\":107.73,\"position\":10,\"lap_time_s\":107.73,\"compound\":null,\"tyre_age\":null}}"
+    },
+    {
+     "raw": "{\"type\":\"lap\",\"season\":2024,\"round\":5,\"event_id\":\"c4ad4a3d-1b29-46bb-a2c5-9487be4bfb68\",\"payload\":{\"event_id\":\"c4ad4a3d-1b29-46bb-a2c5-9487be4bfb68\",\"driver_id\":\"bottas\",\"lap\":1,\"race_time_s\":108.149,\"position\":11,\"lap_time_s\":108.149,\"compound\":null,\"tyre_age\":null}}"
+    },
+    {
+     "raw": "{\"type\":\"lap\",\"season\":2024,\"round\":5,\"event_id\":\"ff90da0e-dcf9-4a8d-8a27-a1e73477d3f7\",\"payload\":{\"event_id\":\"ff90da0e-dcf9-4a8d-8a27-a1e73477d3f7\",\"driver_id\":\"gasly\",\"lap\":1,\"race_time_s\":109.907,\"position\":14,\"lap_time_s\":109.907,\"compound\":null,\"tyre_age\":null}}"
+    },
+    {
+     "raw": "{\"type\":\"lap\",\"season\":2024,\"round\":5,\"event_id\":\"2d14010f-34f4-43cd-9e4e-fd2ad7bba3f7\",\"payload\":{\"event_id\":\"2d14010f-34f4-43cd-9e4e-fd2ad7bba3f7\",\"driver_id\":\"tsunoda\",\"lap\":1,\"race_time_s\":110.625,\"position\":16,\"lap_time_s\":110.625,\"compound\":null,\"tyre_age\":null}}"
+    },
+    {
+     "raw": "{\"type\":\"lap\",\"season\":2024,\"round\":5,\"event_id\":\"eb0c3e3c-0afc-41c5-9355-1765ca301951\",\"payload\":{\"event_id\":\"eb0c3e3c-0afc-41c5-9355-1765ca301951\",\"driver_id\":\"zhou\",\"lap\":1,\"race_time_s\":110.671,\"position\":17,\"lap_time_s\":110.671,\"compound\":null,\"tyre_age\":null}}"
+    },
+    {
+     "raw": "{\"type\":\"lap\",\"season\":2024,\"round\":5,\"event_id\":\"66d4955b-aeb8-40c0-b95f-3019c7e740b7\",\"payload\":{\"event_id\":\"66d4955b-aeb8-40c0-b95f-3019c7e740b7\",\"driver_id\":\"max_verstappen\",\"lap\":1,\"race_time_s\":101.528,\"position\":1,\"lap_time_s\":101.528,\"compound\":null,\"tyre_age\":null}}"
+    },
+    {
+     "raw": "{\"type\":\"lap\",\"season\":2024,\"round\":5,\"event_id\":\"d695ff23-28c4-4143-8fab-9e89760aed96\",\"payload\":{\"event_id\":\"d695ff23-28c4-4143-8fab-9e89760aed96\",\"driver_id\":\"perez\",\"lap\":1,\"race_time_s\":103.97,\"position\":3,\"lap_time_s\":103.97,\"compound\":null,\"tyre_age\":null}}"
+    },
+    {
+     "raw": "{\"type\":\"lap\",\"season\":2024,\"round\":5,\"event_id\":\"02bbf7d9-578e-4736-a108-8dc7d9528427\",\"payload\":{\"event_id\":\"02bbf7d9-578e-4736-a108-8dc7d9528427\",\"driver_id\":\"ricciardo\",\"lap\":1,\"race_time_s\":110.255,\"position\":15,\"lap_time_s\":110.255,\"compound\":null,\"tyre_age\":null}}"
+    },
+    {
+     "raw": "{\"type\":\"lap\",\"season\":2024,\"round\":5,\"event_id\":\"03c812e7-bd0c-472c-8b72-bd5cd89ed748\",\"payload\":{\"event_id\":\"03c812e7-bd0c-472c-8b72-bd5cd89ed748\",\"driver_id\":\"sargeant\",\"lap\":1,\"race_time_s\":112.13,\"position\":20,\"lap_time_s\":112.13,\"compound\":null,\"tyre_age\":null}}"
+    },
+    {
+     "raw": "{\"type\":\"lap\",\"season\":2024,\"round\":5,\"event_id\":\"19e6406c-1680-4984-81fd-6c134db917c8\",\"payload\":{\"event_id\":\"19e6406c-1680-4984-81fd-6c134db917c8\",\"driver_id\":\"hamilton\",\"lap\":1,\"race_time_s\":111.502,\"position\":19,\"lap_time_s\":111.502,\"compound\":null,\"tyre_age\":null}}"
+    },
+    {
+     "raw": "{\"type\":\"lap\",\"season\":2024,\"round\":5,\"event_id\":\"571b8807-0d1a-4538-9f47-fed527394514\",\"payload\":{\"event_id\":\"571b8807-0d1a-4538-9f47-fed527394514\",\"driver_id\":\"kevin_magnussen\",\"lap\":1,\"race_time_s\":111.086,\"position\":18,\"lap_time_s\":111.086,\"compound\":null,\"tyre_age\":null}}",
+     "zset_after_batch": [
+      "max_verstappen",
+      "alonso",
+      "perez",
+      "norris",
+      "piastri",
+      "russell",
+      "leclerc",
+      "hulkenberg",
+      "sainz",
+      "stroll",
+      "bottas",
+      "ocon",
+      "albon",
+      "gasly",
+      "ricciardo",
+      "tsunoda",
+      "zhou",
+      "kevin_magnussen",
+      "hamilton",
+      "sargeant"
+     ]
+    }
+   ]
+  }
+ ]
+}

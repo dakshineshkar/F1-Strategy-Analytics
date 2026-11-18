@@ -15,7 +15,10 @@ import {
   towerRows,
 } from "@/lib/reducer";
 
-import { alertMsg, lap, msg, snapshot, snapshotMsg, uuid } from "./helpers";
+import type { RaceSnapshot } from "@/lib/api";
+import { NO_TIMING } from "@/lib/timing";
+
+import { alertMsg, driver, lap, msg, snapshot, snapshotMsg, uuid } from "./helpers";
 
 const run = (actions: RaceAction[], start: RaceState = initialState(2024, 5)): RaceState =>
   actions.reduce(raceReducer, start);
@@ -338,5 +341,166 @@ describe("unknown drivers (Fix D)", () => {
     expect(Object.keys(s.drivers)).toEqual(expect.arrayContaining(["ghost", "phantom", "spectre"]));
     // the same id again is a known row now: counted once
     expect(run([ev2(lap("ghost", 3, 270, 3))], s).unknownDrivers).toBe(3);
+  });
+});
+
+// ------------------------------------------------------------- F37: opening or reconnecting mid-lap
+/** A snapshot whose timing hash gives each car its latest lap (``laps``) and gaps ``gaps``. */
+function lapSnapshot(
+  order: string[],
+  laps: Record<string, number>,
+  gaps: number[] = order.map((_, i) => i * 1.5),
+  hash: "timing" | "tyres" | "none" = "timing",
+): RaceSnapshot {
+  const data = snapshot(order);
+  order.forEach((id, i) => {
+    data.drivers[id] = driver(i + 1, {
+      gap_leader_s: gaps[i] ?? null,
+      gap_ahead_s: i === 0 ? null : round3((gaps[i] ?? 0) - (gaps[i - 1] ?? 0)),
+    });
+  });
+  for (const [id, l] of Object.entries(laps)) {
+    if (hash === "timing") data.timing[id] = { lap: l, ...NO_TIMING };
+    if (hash === "tyres") data.tyres[id] = { lap: l, tyre_life_laps: l, tyre_life_at_start_laps: 0 };
+  }
+  return data;
+}
+const round3 = (x: number): number => Math.round(x * 1000) / 1000;
+const snapAction = (data: RaceSnapshot): RaceAction => ({ type: "snapshot", data });
+const snapEvent = (data: RaceSnapshot, n: number): RaceAction =>
+  ev(JSON.stringify({ type: "snapshot", lap: n, ...data, event_id: `snapshot-${n}`, sse_sent_at_ms: 1 }));
+
+/** Rows shown below a row whose gap to the leader is more than 5 s larger (the F37 symptom). */
+function inversions(s: RaceState): string[] {
+  const out: string[] = [];
+  let maxAbove = -Infinity;
+  for (const r of towerRows(s)) {
+    if (r.gapLeaderS === null) continue;
+    if (r.gapLeaderS + 5 < maxAbove) out.push(r.driverId);
+    maxAbove = Math.max(maxAbove, r.gapLeaderS);
+  }
+  return out;
+}
+
+function deepFreeze<T>(o: T): T {
+  if (o !== null && typeof o === "object" && !Object.isFrozen(o)) {
+    Object.freeze(o);
+    for (const v of Object.values(o as object)) deepFreeze(v);
+  }
+  return o;
+}
+
+describe("opening mid-lap (F37)", () => {
+  // The F37 capture, 2024 R5 lap 10: the page opens after VER..SAI crossed lap 9 and before
+  // STR..ZHO did; then STR..ZHO cross lap 9 and VER, PER, NOR, ALO cross lap 10.
+  const F37 = [
+    "max_verstappen", "perez", "norris", "alonso", "piastri", "leclerc", "russell", "sainz",
+    "stroll", "gasly", "bottas", "ricciardo", "ocon", "albon", "kevin_magnussen", "sargeant",
+    "hamilton", "hulkenberg", "tsunoda", "zhou",
+  ];
+  const GAPS = [0, 8.0, 10.9, 14.7, 15.4, 16.5, 17.9, 18.4, 27.1, 28.8, 29.4, 29.9, 31.8, 32.8, 33.5, 34.7, 36.1, 47.5, 51.9, 57.4];
+  const LAP = 96;
+  const opened = (): RaceState => {
+    const laps = Object.fromEntries(F37.map((id, i) => [id, i < 8 ? 9 : 8]));
+    let s = run([snapAction(lapSnapshot(F37, laps, GAPS))]);
+    for (let i = 8; i < 20; i++) s = raceReducer(s, ev(lap(F37[i]!, 9, 9 * LAP + GAPS[i]!, i + 1)));
+    for (let i = 0; i < 4; i++) s = raceReducer(s, ev(lap(F37[i]!, 10, 10 * LAP + GAPS[i]!, i + 1)));
+    return s;
+  };
+
+  it("the exact F37 case: PIA, LEC, RUS, SAI come out P5-P8, not P17-P20", () => {
+    const s = opened();
+    expect(towerRows(s).map((r) => [r.position, r.driverId])).toEqual(F37.map((id, i) => [i + 1, id]));
+    expect(s.order.slice(4, 8)).toEqual(["piastri", "leclerc", "russell", "sainz"]);
+    expect(towerRows(s).slice(4, 8).map((r) => r.lap)).toEqual([9, 9, 9, 9]);
+    expect(inversions(s)).toEqual([]);
+  });
+
+  it("a car with no timing and no tyre hash keeps today's fallback (previous order)", () => {
+    // cars with a lap event rank first; the others keep the snapshot order below them
+    let s = run([snapAction(lapSnapshot(F37, {}, GAPS, "none"))]);
+    s = raceReducer(s, ev(lap("stroll", 9, 9 * LAP + 27.1, 9)));
+    expect(s.order[0]).toBe("stroll");
+    expect(s.order.slice(1)).toEqual(F37.filter((id) => id !== "stroll"));
+    expect(s.drivers.piastri).toMatchObject({ lap: null, snapshotRank: null });
+  });
+
+  it("uses the tyre hash's lap when the timing hash is missing", () => {
+    const laps = { a: 5, b: 5, c: 4 };
+    let s = run([snapAction(lapSnapshot(["a", "b", "c"], laps, [0, 1, 2], "tyres"))]);
+    s = raceReducer(s, ev(lap("c", 5, 5 * LAP + 2, 3)));
+    expect(s.order).toEqual(["a", "b", "c"]);
+    expect(s.drivers.b).toMatchObject({ lap: 5, raceTimeS: null, snapshotRank: 1 });
+  });
+
+  it("a lapped car is ordered by laps completed first", () => {
+    // L is a lap down: lap 7 in the snapshot while the others are on 9 / 8
+    let s = run([snapAction(lapSnapshot(["a", "b", "y", "l"], { a: 9, b: 9, y: 8, l: 7 }, [0, 2, 90, 100]))]);
+    s = raceReducer(s, ev(lap("l", 8, 8 * LAP + 100, 4)));
+    expect(s.order).toEqual(["a", "b", "y", "l"]); // y crossed lap 8 before the snapshot, l after it
+    s = raceReducer(s, ev(lap("a", 10, 10 * LAP, 1)));
+    expect(s.order).toEqual(["a", "b", "y", "l"]);
+    expect(s.drivers.l).toMatchObject({ lap: 8, snapshotRank: null });
+    s = raceReducer(s, ev(lap("y", 9, 9 * LAP + 90, 3)));
+    s = raceReducer(s, ev(lap("l", 9, 9 * LAP + 100, 4)));
+    expect(s.order).toEqual(["a", "b", "y", "l"]);
+  });
+
+  it("a snapshot lap older than or equal to the page's own lap never overwrites it", () => {
+    const seen = run([snapAction(lapSnapshot(["a", "b"], {}, [0, 1], "none")), ev(lap("a", 12, 1150.2, 1)), ev(lap("b", 12, 1151.4, 2))]);
+    const older = raceReducer(seen, snapAction(lapSnapshot(["a", "b"], { a: 11, b: 11 })));
+    expect(older.drivers.a).toMatchObject({ lap: 12, raceTimeS: 1150.2, jolpicaPosition: 1, snapshotRank: null });
+    const equal = raceReducer(seen, snapAction(lapSnapshot(["a", "b"], { a: 12, b: 12 })));
+    expect(equal.drivers.a).toMatchObject({ lap: 12, raceTimeS: 1150.2, jolpicaPosition: 1, snapshotRank: 0 });
+    expect(equal.drivers.b).toMatchObject({ lap: 12, raceTimeS: 1151.4, snapshotRank: 1 });
+  });
+
+  it("a leader-lap snapshot that arrives before its own lap frames keeps the zset order", () => {
+    // 2024 R5 lap 1 as recorded: the snapshot already holds every lap-1 crossing; c and d's frames
+    // arrive later. No car jumps to P1 meanwhile.
+    const order = ["a", "b", "c", "d"];
+    let s = run([ev(snapshotMsg([], 0)), snapEvent(lapSnapshot(order, { a: 1, b: 1, c: 1, d: 1 }), 1)]);
+    const seen: string[][] = [];
+    for (const [id, t, p] of [["b", 92, 2], ["a", 91, 1], ["c", 93, 3], ["d", 94, 4]] as const) {
+      s = raceReducer(s, ev(lap(id, 1, t, p)));
+      seen.push([...s.order]);
+    }
+    expect(seen).toEqual([order, order, order, order]);
+    expect(s.drivers.d).toMatchObject({ lap: 1, raceTimeS: 94, snapshotRank: 3 });
+  });
+
+  it("is pure: the previous state is never mutated", () => {
+    const before = deepFreeze(opened());
+    const snap = deepFreeze(lapSnapshot(F37, Object.fromEntries(F37.map((id) => [id, 11]))));
+    expect(() => raceReducer(before, snapAction(snap))).not.toThrow();
+    expect(() => raceReducer(before, ev(lap("piastri", 10, 10 * LAP + 15.4, 5)))).not.toThrow();
+    expect(before.order.slice(4, 8)).toEqual(["piastri", "leclerc", "russell", "sainz"]);
+  });
+});
+
+describe("reconnect after missed laps (F37)", () => {
+  it("keeps the zset order between cars timed before the gap and cars only the snapshot knows", () => {
+    // the page timed laps 1-13 of a, b, c and a's lap 14, then dropped; b crossed lap 14 in the gap
+    const actions: RaceAction[] = [snapAction(lapSnapshot(["a", "b", "c"], {}, [0, 1, 2], "none"))];
+    for (let l = 1; l <= 13; l++) {
+      actions.push(ev(lap("a", l, l * 96, 1)), ev(lap("b", l, l * 96 + 1, 2)), ev(lap("c", l, l * 96 + 2, 3)));
+    }
+    actions.push(ev(lap("a", 14, 14 * 96, 1)), { type: "connection", status: "reconnecting" });
+    const before = run(actions);
+    expect(before.drivers.b).toMatchObject({ lap: 13 });
+
+    let s = raceReducer(before, snapAction(lapSnapshot(["a", "b", "c"], { a: 14, b: 14, c: 13 })));
+    expect(s.order).toEqual(["a", "b", "c"]);
+    expect(s.drivers.a).toMatchObject({ lap: 14, raceTimeS: 14 * 96, snapshotRank: 0 });
+    expect(s.drivers.b).toMatchObject({ lap: 14, raceTimeS: null, snapshotRank: 1 });
+
+    s = raceReducer(s, ev(lap("c", 14, 14 * 96 + 2, 3))); // crossed after the snapshot: behind both
+    expect(s.order).toEqual(["a", "b", "c"]);
+    s = raceReducer(s, ev(lap("b", 15, 15 * 96 + 1, 2))); // a lap-15 car goes ahead of every lap-14 car
+    expect(s.order).toEqual(["b", "a", "c"]);
+    s = raceReducer(s, ev(lap("a", 15, 15 * 96, 1)));
+    expect(s.order).toEqual(["a", "b", "c"]);
+    expect(towerRows(s).map((r) => r.position)).toEqual([1, 2, 3]);
+    expect(inversions(s)).toEqual([]);
   });
 });

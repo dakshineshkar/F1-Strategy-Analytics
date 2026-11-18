@@ -130,6 +130,7 @@ const row = (id: string, more: Partial<DriverRow>): DriverRow => ({
   stops: 0,
   lastPitLap: null,
   known: true,
+  snapshotRank: null,
   ...more,
 });
 

@@ -2061,8 +2061,74 @@
       `data/checkpoints/`);
     - web stopped for `make web-e2e`, then rebuilt and recreated with `--no-deps`;
     - the api returned to `make api-up FULL=1 REPLAY=1`.
+- F37 fix (2026-11-18): the live order after opening or reconnecting mid-lap. **Done.** It was a client reducer
+  bug, not a data bug.
+  - **Cause.** The snapshot set no lap on a row. `liveOrder` therefore ranked only cars whose lap frame arrived
+    on this connection, and every car that crossed before the page opened sank to the bottom. The design
+    review's lap-10 capture showed PIA/LEC/RUS/SAI at P17-P20 with +15-18 s gaps.
+  - **Investigation (scratch, not committed).**
+    - A 10× replay of 2024 R5 (full lake) was recorded: 1,308 SSE frames and 2,323 Redis probes.
+    - Redis is consistent: a client connected from the start matched the zset after 446 of 446 batches.
+    - The HEAD reducer, opened at each probe, disagreed with that client in 1,279 of 2,323 openings.
+  - **Fix** (`web/src/lib/reducer.ts` only; `applySnapshot` and `liveOrder` stay pure):
+    - `DriverRow.snapshotRank` is the car's index in the latest snapshot zset, when that snapshot holds the car's
+      latest crossing.
+    - The snapshot gives each car its latest lap from the timing hash (else the tyre hash). It overwrites a
+      row's lap only when that lap is newer than the one the page saw. An older or equal lap never overwrites,
+      and no hash keeps the previous fallback.
+    - `liveOrder` ranks by laps completed (desc) first. Within one lap, crossings the snapshot holds come first
+      in zset order, and crossings that arrived later follow by crossing time.
+    - This differs from the first proposal (a snapshot-only lap first, by crossing time). That proposal broke a
+      reconnect: a car timed before the drop fell behind a car that only the snapshot knew. It also put KMAG/HAM
+      at P1/P2 while a lap-1 snapshot arrived before their frames.
+    - No change to the Redis contract, the API, the stream job or any Python file.
+  - **Tests** (Vitest 336 -> 348):
+    - `reducer.test.ts`, the "opening mid-lap (F37)" cases:
+      - the exact F37 tower (PIA/LEC/RUS/SAI P5-P8, no gap inversion);
+      - the tyre-hash lap;
+      - a lapped car;
+      - an older or equal snapshot lap;
+      - no hash;
+      - a leader-lap snapshot before its frames;
+      - purity (deep-frozen state).
+    - `reducer.test.ts`, a reconnect test.
+    - `web/tests/f37.test.ts` with `web/tests/fixtures/f37_2024_5.json` (41,772 B), cut from the recording:
+      - The fixture holds only the fields the ordering needs. Every kept number equals the committed sample
+        Jolpica 2024 R5 laps. Compound, tyre, sector, speed-trap and undercut fields are dropped or
+        neutralised.
+      - It holds the exact F37 opening (the order equals the recorded zset after each batch) and lap 1 from the
+        start.
+    - 9 of the new tests fail on HEAD's reducer.
+  - **Evidence.**
+    - Web: lint and typecheck clean; Vitest **348 passed**; `archive.test.ts` 34 passed.
+    - The scratch harness on the real fixed reducer gives:
+      - relative order: 0 of 2,323 openings disagree with the reference client;
+      - zset after each batch: 0 of 2,323 openings disagree, and the reference matches it 446 of 446 times.
+      - Strict full-list equality: 1 of 2,323. That page opened when Redis held 17 cars, and for 2 frames
+        (0 ms) it lacked HAM/KMAG, whose first frames had not arrived yet.
+    - `make archive-equivalence SEASON=2024 ROUND=5 LAPS=5,22,45`: **EQUIVALENT** (sample api).
+      - Rebuild identical.
+      - Alerts 113 / 19 / 9 = 141, and 409 decisions equal to parity.
+      - `check_alerts` and `compare_race` OK.
+      - Redis == bundle at laps 5, 22 and 45 and after `session_end`; every message equal.
+    - The R5 alert check is taken from this output (the Feature 5 alert script is not in the repo).
+    - `make experiments-sample`: OK 7, OK (metadata differs) 1, DIFF 0, MISSING 0. The 2 NEW files are the
+      what-if consistency outputs in `data/whatif/`.
+    - `results/` byte-identical: `git status results/` clean, `results/stream_parity_full.csv` sha256
+      aad8df67….
+    - The full 90-race stream-parity rerun was skipped on purpose: no stream-job, API or Python file changed.
+  - **Services:**
+    - the api was recreated in sample mode (`make api-up REPLAY=1`) for the archive equivalence, which wrote the
+      sample 2024 R5 Redis keys, `data/demo/` and `data/checkpoints/`;
+    - the api then returned to `make api-up FULL=1 REPLAY=1`.
+  - **Cleanup:** the aborted run `data/demo/2024_5_20261118T171728.726Z` was deleted (it stopped after lap 1).
+    `data/demo/` is gitignored.
+  - **Critique:**
+    - F37 is marked fixed;
+    - new **F38 (P2)**: mark cars still on the previous lap, so cross-lap gap inversions read correctly.
 ## Next
 - S18: report, docs and demo rehearsal (#44): `docs/report/`, `docs/demo_script.md`.
+- UI redesign: include critique F38 (mark cars still on the previous lap).
 - Push and watch the first CI run of the `e2e` job on GitHub (runner build time and disk are unmeasured).
 ## Known issues
 - Feature 7:
@@ -2419,6 +2485,8 @@ Feature 7: `uv run pytest tests/unit/test_producer.py tests/unit/test_api_replay
 `cd web && npx vitest run tests/replays.test.ts`; with `make api-up REPLAY=1` (sample): `make replay-control-check SEASON=2024 ROUND=5
 EXPECT_TRIGGERS=113,19,9 EXPECT_DECISIONS=409` (expect EQUIVALENT), `make archive-equivalence SEASON=2024 ROUND=5 LAPS=5,22,45`,
 then `docker compose stop web && make web-e2e`.
+
+F37 fix: `cd web && npm run lint && npm run typecheck && npx vitest run tests/reducer.test.ts tests/f37.test.ts tests/archive.test.ts`.
 
 ## 9f approval
 - 2026-11-13: label-definition-v1, model-spec-v1 and model-spec-v2 approved for the single 2025 test run by Parinith D. on behalf of the team (Data Wranglers). No further sign-off required.

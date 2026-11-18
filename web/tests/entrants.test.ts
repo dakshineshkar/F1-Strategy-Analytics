@@ -196,6 +196,7 @@ const row = (id: string, position: number): DriverRow => ({
   stops: 0,
   lastPitLap: null,
   known: true,
+  snapshotRank: null,
 });
 
 describe("timing tower with entrants", () => {

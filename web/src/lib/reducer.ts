@@ -12,7 +12,11 @@
  *     ``race_time_s`` at the same lap number, the ``timing_gaps`` definition the stream job uses:
  *     the leader is the car with Jolpica position 1, and the car ahead has position − 1.
  *   - The order follows the stream job's live rank (``live_state.live_order``): laps completed
- *     desc, then crossing time, then Jolpica position.
+ *     desc, then crossing time, then Jolpica position. A page that opens (or reconnects) mid-lap
+ *     knows the crossing times only of the laps it saw arrive, so the snapshot's order sorted set
+ *     ranks every crossing the snapshot already holds (F37): within one lap number those cars come
+ *     first, in zset order, and the cars whose crossing arrived after the snapshot follow by
+ *     crossing time. The car's lap in the snapshot is the lap of its timing (else tyre) hash.
  *   - `pit_in` / `pit_out` mark the car in the pit lane, `undercut_alert` updates the
  *     (attacker, defender) group, and `session_end` closes the race.
  *
@@ -61,6 +65,10 @@ export interface DriverRow {
   timingLap: number | null;
   /** True once the driver appeared in a snapshot. */
   known: boolean;
+  /** The car's index in the latest snapshot's order sorted set when that snapshot holds the car's
+   * latest crossing (``lap``); null when that crossing arrived after the snapshot, or without a
+   * lap. Ranks the cars whose crossing time this page never saw (F37). */
+  snapshotRank: number | null;
 }
 
 export interface LapPoint {
@@ -163,6 +171,7 @@ function emptyRow(driverId: string): DriverRow {
     timing: NO_TIMING,
     timingLap: null,
     known: false,
+    snapshotRank: null,
   };
 }
 
@@ -178,14 +187,21 @@ function withPositions(drivers: Record<string, DriverRow>, order: string[]): Rec
   return out;
 }
 
-/** The stream job's live rank for drivers with lap data; the others keep their previous order. */
+/** The stream job's live rank for drivers with a lap; the others keep their previous order.
+ *
+ * Key: laps completed desc (a lapped car ranks by laps first); within one lap number the crossings
+ * the latest snapshot holds (``snapshotRank`` set) before the ones that arrived after it, which
+ * happened later; the former by zset rank, the latter by crossing time, then Jolpica position. */
 export function liveOrder(drivers: Record<string, DriverRow>, previous: string[]): string[] {
-  const timed = Object.values(drivers).filter((d) => d.lap !== null && d.raceTimeS !== null);
+  const timed = Object.values(drivers).filter((d) => d.lap !== null);
   timed.sort(
     (a, b) =>
       (b.lap ?? 0) - (a.lap ?? 0) ||
-      (a.raceTimeS ?? 0) - (b.raceTimeS ?? 0) ||
-      (a.jolpicaPosition ?? 1e6) - (b.jolpicaPosition ?? 1e6) ||
+      Number(a.snapshotRank === null) - Number(b.snapshotRank === null) ||
+      (a.snapshotRank !== null && b.snapshotRank !== null
+        ? a.snapshotRank - b.snapshotRank
+        : (a.raceTimeS ?? 0) - (b.raceTimeS ?? 0) ||
+          (a.jolpicaPosition ?? 1e6) - (b.jolpicaPosition ?? 1e6)) ||
       a.driverId.localeCompare(b.driverId),
   );
   const ranked = timed.map((d) => d.driverId);
@@ -258,6 +274,8 @@ function applyLap(state: RaceState, e: LapEvent): RaceState {
       timing: e.timing,
       timingLap: e.lap,
       stops: e.timing.pitStops ?? row.stops,
+      // the same lap as the snapshot's: the snapshot holds this crossing, its zset rank stays
+      snapshotRank: row.lap !== null && e.lap === row.lap ? row.snapshotRank : null,
     };
   } else {
     drivers[e.driverId] = row; // an older lap: history only, the tower never regresses
@@ -353,7 +371,11 @@ function applySnapshot(state: RaceState, data: RaceSnapshot): RaceState {
   if (data.season !== state.season || data.round !== state.round) {
     return { ...state, foreign: state.foreign + 1 };
   }
-  const drivers: Record<string, DriverRow> = { ...state.drivers };
+  // ranks of an older snapshot are never compared with this one's
+  const drivers: Record<string, DriverRow> = {};
+  for (const [id, r] of Object.entries(state.drivers)) {
+    drivers[id] = r.snapshotRank === null ? r : { ...r, snapshotRank: null };
+  }
   for (const [id, h] of Object.entries(data.drivers)) {
     const row = drivers[id] ?? emptyRow(id);
     // the tyre hash carries its lap: never let an older one replace what a newer lap event set
@@ -385,6 +407,19 @@ function applySnapshot(state: RaceState, data: RaceSnapshot): RaceState {
   // The order sorted set is authoritative; drivers it does not (yet) hold follow in their old order.
   const zset = [...data.order].sort((a, b) => a.position - b.position).map((o) => o.driver_id);
   for (const id of zset) if (!(id in drivers)) drivers[id] = { ...emptyRow(id), known: true };
+  // F37: the car's latest lap per the snapshot (timing hash, else tyre hash). A newer lap than this
+  // page saw has no crossing time here; the same lap is a crossing the snapshot holds. Either way
+  // the zset ranks it. An older lap, or no hash, leaves the row as it is.
+  zset.forEach((id, idx) => {
+    const row = drivers[id] as DriverRow;
+    const hashLap = data.timing[id]?.lap ?? data.tyres[id]?.lap;
+    if (hashLap === undefined) return;
+    if (row.lap === null || hashLap > row.lap) {
+      drivers[id] = { ...row, lap: hashLap, raceTimeS: null, jolpicaPosition: null, snapshotRank: idx };
+    } else if (hashLap === row.lap) {
+      drivers[id] = { ...row, snapshotRank: idx };
+    }
+  });
   const inZset = new Set(zset);
   const rest = [
     ...state.order.filter((id) => !inZset.has(id) && id in drivers),
