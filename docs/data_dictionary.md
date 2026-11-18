@@ -985,7 +985,8 @@ by `GET /api/archive` and `GET /api/archive/{s}/{r}`. No feature, model input, r
 `RaceStore`, in one micro-batch per leader lap. A snapshot is taken after each batch with the API's `read_race_state`.
 Details and the proof of equivalence are in `docs/architecture.md` ("Post-race archive").
 
-**`bundle.json.gz`**: gzip (`mtime` 0, level 9) of canonical JSON (sorted keys, no spaces, no NaN). Schema version 1
+**`bundle.json.gz`**: gzip (`mtime` 0, level 9) of canonical JSON (sorted keys, no spaces, no NaN). Schema version 2
+(Feature 5; the API and the dashboard still read version 1, which lacks `snapshots[].timing` and `status`). Version 1
 (`f1sa.archive.schema.ArchiveBundle`):
 
 | Field | Content |
@@ -998,6 +999,8 @@ Details and the proof of equivalence are in `docs/architecture.md` ("Post-race a
 | `decisions[]` | every rule-eligible pair the stream scored: `evaluated_lap` (micro-batch lap), `decision_lap`, `attacker_id`, `defender_id`, `gap_s`, `probability` (calibrated) |
 | `track[]` | per lap, the leader's `is_sc_lap`, `is_vsc_lap`, `is_red_flag_lap`, `is_neutralised_lap`, `neutralised_source` (`track_status` / `heuristic`) and raw `track_status` codes (`clean/analysis_laps`) |
 | `race_control[]` | the `clean/analysis_race_control` rows (empty in the sample) |
+| `snapshots[].timing` (v2) | the additive timing hash per driver (`race:{s}:{r}:timing:{driverId}`, decoded as `GET /state` decodes it): `lap`, `sector1_s` .. `sector3_s`, `speed_trap_kph`, `pb_sector1_s` .. `pb_sector3_s`, `pb_speed_trap_kph`, `pit_stops`, `updated_at` |
+| `status[]` (v2) | per snapshot lap: `lap`, `status` (green / sc / vsc / red / neutralised / unknown), `source` (track_status / estimated / none), `message`, `message_lap`, from the live `race_status` over the bundle's own messages up to lap N |
 
 - **Clock (simulated).** `updated_at`, `published_at`, `event_ts` and the `*_ms` fields follow race start + 180 s + race
   time (the `df_jobs` lap-timestamp convention), not wall clock. A live replay stamps wall clock, so the equivalence
@@ -1009,5 +1012,29 @@ Details and the proof of equivalence are in `docs/architecture.md` ("Post-race a
   sha256) plus `schema_version`, `season`, `round`, `race_name`, `laps`, `synthetic`, `model_version`, `scorer_sha256`,
   `sha256` / `size_bytes` (of `bundle.json.gz`, the API's ETag), `raw_bytes`, `n_snapshots`, `n_messages`, `n_alerts`
   and `n_decisions`.
-- **Sizes (sample lake, deployed model).** 2023 R5: 57 laps, 1,395 messages (216 alerts), 567 decisions, 1,417,039 B
-  JSON → 139,465 B gzip. 2024 R5: 56 laps, 1,252 messages (141 alerts), 409 decisions, 1,257,110 B → 123,092 B.
+- **Sizes (sample lake, deployed model, schema v2).** 2023 R5: 57 laps, 1,395 messages (216 alerts), 567 decisions,
+  1,883,740 B JSON → 148,931 B gzip. 2024 R5: 56 laps, 1,252 messages (141 alerts), 409 decisions, 1,700,600 B →
+  132,069 B (v1 was 1,417,039 → 139,465 B and 1,257,110 → 123,092 B; the same counts).
+
+## Timing-tower values (Feature 5, display only)
+Lap events (`streaming.events.TOWER_FIELDS`), the additive Redis hash `race:{s}:{r}:timing:{driverId}`
+(`serving.keys.TIMING_FIELDS`) and the archive v2 snapshots carry, per car and lap L:
+
+| Field | Source | Rule |
+|---|---|---|
+| `sector1_s`, `sector2_s`, `sector3_s` | `clean/analysis_laps` (TracingInsights `Sector1Time` .. `Sector3Time`) | the lap's value; null without TI (the sample), for lap 1's S1, or when not a finite number > 0 |
+| `speed_trap_kph` | `clean/analysis_laps.speed_st_kph` (TI `SpeedST`) | the lap's value, as above |
+| `pb_sector1_s` .. `pb_sector3_s` | `producer.running_timing` | minimum of the driver's own sector over its laps <= L (null until it has one) |
+| `pb_speed_trap_kph` | `producer.running_timing` | maximum of the driver's speed trap over its laps <= L |
+| `pit_stops` | Jolpica `pitstops` (the producer's stops) | the driver's stops with in-lap <= L (int >= 0, both modes) |
+
+- **No hindsight.** Only the driver's laps <= L are read (later laps can change nothing at L; tested with later laps
+  scaled x100). The dashboard's overall best so far is the best of the cars' personal bests, so it is causal too.
+- **Deleted laps count**: a lap deletion (TI `deleted`) is decided after the lap, so using it at L would be
+  hindsight. A deleted lap's sectors can therefore be shown as PB / OB.
+- **The race-status banner** (`GET /api/races/{s}/{r}/status?lap=N`, archive `status[]`): with race control in the
+  lake, the leader's lap-N `analysis_laps` track-status codes and the latest key `analysis_race_control` message
+  with lap <= N; otherwise the engineer view's causal lap-time estimate over the lap rows <= N. The lap event's
+  `track_neutral` / `track_red_flag` (batch heuristic, hindsight) are never used for it.
+- Nothing model-related reads any of these values: not the rule, the live features, the scorer, the alert policy,
+  the what-if or `results/`.

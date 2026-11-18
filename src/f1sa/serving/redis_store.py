@@ -20,6 +20,12 @@ always written, ``""`` when unknown): ``tyre_life_laps`` (int >= 1), ``tyre_life
 (int >= 0), ``lap`` (int >= 1, the lap the value belongs to) and ``updated_at``. It is queued in the
 same pipeline as the driver hashes and follows the same TTL rules.
 
+The additive, display-only timing hash ``race:{s}:{r}:timing:{driverId}`` (Feature 5;
+``keys.TIMING_FIELDS``; all 11 always written, ``""`` when unknown): ``lap`` (int >= 1), the lap's
+``sector1_s`` .. ``sector3_s`` and ``speed_trap_kph`` (float ``repr`` > 0), the driver's best so far
+``pb_sector1_s`` .. ``pb_sector3_s`` / ``pb_speed_trap_kph`` and ``pit_stops`` (int >= 0), and
+``updated_at``. Same pipeline, same TTL rules.
+
 Events on ``race:{s}:{r}:events`` are JSON objects with ``type`` (``keys.EVENT_TYPES``),
 ``season``, ``round``, ``event_ts`` (the caller's event time, ISO-8601 UTC ms, or null),
 ``published_at`` (set by the store) and ``payload``.
@@ -168,6 +174,72 @@ def encode_tyre(tyre: TyreLife, now: datetime) -> dict[str, str]:
     return out
 
 
+TIMING_VALUES: tuple[str, ...] = K.TIMING_FIELDS[1:9]
+"""The 8 float fields of the timing hash (sectors, speed trap and their bests so far)."""
+
+
+@dataclass(frozen=True)
+class TimingRow:
+    """The timing-tower values of one driver's lap ``lap`` (Feature 5, display only;
+    ``updated_at`` set by the store). ``None`` means unknown."""
+
+    lap: int
+    sector1_s: float | None = None
+    sector2_s: float | None = None
+    sector3_s: float | None = None
+    speed_trap_kph: float | None = None
+    pb_sector1_s: float | None = None
+    pb_sector2_s: float | None = None
+    pb_sector3_s: float | None = None
+    pb_speed_trap_kph: float | None = None
+    pit_stops: int | None = None
+
+    def __post_init__(self) -> None:
+        _int("lap", self.lap, 1, nullable=False)
+        for name in TIMING_VALUES:
+            value = getattr(self, name)
+            _finite(name, value, 0.0)
+            if value is not None and value <= 0:
+                raise StoreError(f"{name} must be > 0, got {value!r}")
+        _int("pit_stops", self.pit_stops, 0, nullable=True)
+
+
+def encode_timing(row: TimingRow, now: datetime) -> dict[str, str]:
+    """The 11 timing-hash fields as strings, in ``keys.TIMING_FIELDS`` order."""
+    out = {
+        "lap": str(row.lap),
+        **{name: _num(getattr(row, name)) for name in TIMING_VALUES},
+        "pit_stops": _opt(row.pit_stops),
+        "updated_at": iso_ms(now),
+    }
+    assert tuple(out) == K.TIMING_FIELDS
+    return out
+
+
+@dataclass(frozen=True)
+class StoredTiming:
+    timing: TimingRow
+    updated_at: str
+
+
+def decode_timing(raw: Mapping[Any, Any]) -> StoredTiming | None:
+    """The inverse of ``encode_timing``; ``None`` for an empty hash. Raises ``StoreError`` (or
+    ``ValueError``) on a hash outside the 11 fields."""
+    if not raw:
+        return None
+    h = {_text(k): _text(v) for k, v in raw.items()}
+    if set(h) != set(K.TIMING_FIELDS):
+        raise StoreError(f"timing hash fields {sorted(h)} differ from {K.TIMING_FIELDS}")
+    if h["lap"] == NULL:
+        raise StoreError("timing hash lap is empty")
+    row = TimingRow(
+        lap=int(h["lap"]),
+        **{name: None if h[name] == NULL else float(h[name]) for name in TIMING_VALUES},
+        pit_stops=None if h["pit_stops"] == NULL else int(h["pit_stops"]),
+    )
+    return StoredTiming(timing=row, updated_at=h["updated_at"])
+
+
 @dataclass(frozen=True)
 class StoredTyreLife:
     tyre: TyreLife
@@ -293,12 +365,13 @@ Commands = redis.client.Pipeline | aioredis.client.Pipeline
 @dataclass(frozen=True)
 class Batch:
     """One micro-batch: driver states, optional full order, events and (display only) tyre
-    lives."""
+    lives and timing-tower rows."""
 
     states: Mapping[str, DriverState] = field(default_factory=dict)
     order: Mapping[str, int] | None = None
     events: Sequence[Event] = ()
     tyres: Mapping[str, TyreLife] = field(default_factory=dict)
+    timings: Mapping[str, TimingRow] = field(default_factory=dict)
 
 
 class _Base:
@@ -327,6 +400,16 @@ class _Base:
         pipe.expire(key, self.settings.redis_safety_ttl_s)
         return 2
 
+    def upsert_timing(
+        self, pipe: Commands, season: int, round_: int, driver_id: str, row: TimingRow
+    ) -> int:
+        """HSET the 11 timing fields, then EXPIRE with the safety TTL (same pipeline)."""
+        key = K.timing_key(season, round_, driver_id)
+        fields: dict[Any, Any] = encode_timing(row, self.now())
+        pipe.hset(key, mapping=fields)
+        pipe.expire(key, self.settings.redis_safety_ttl_s)
+        return 2
+
     def set_order(self, pipe: Commands, season: int, round_: int, order: Mapping[str, int]) -> int:
         """ZADD (member = driverId, score = position), then EXPIRE with the safety TTL."""
         key = K.order_key(season, round_)
@@ -342,13 +425,15 @@ class _Base:
         return 1
 
     def _queue_batch(self, pipe: Commands, season: int, round_: int, batch: Batch) -> int:
-        if not (batch.states or batch.order or batch.events or batch.tyres):
+        if not (batch.states or batch.order or batch.events or batch.tyres or batch.timings):
             raise StoreError("empty micro-batch")
         n = 0
         for driver_id, state in batch.states.items():
             n += self.upsert_driver_state(pipe, season, round_, driver_id, state)
         for driver_id, tyre in batch.tyres.items():
             n += self.upsert_tyre(pipe, season, round_, driver_id, tyre)
+        for driver_id, row in batch.timings.items():
+            n += self.upsert_timing(pipe, season, round_, driver_id, row)
         if batch.order is not None:
             n += self.set_order(pipe, season, round_, batch.order)
         for event in batch.events:
@@ -427,6 +512,9 @@ class RaceStore(_Base):
     def get_tyre(self, season: int, round_: int, driver_id: str) -> StoredTyreLife | None:
         return decode_tyre(self.client.hgetall(K.tyre_key(season, round_, driver_id)))
 
+    def get_timing(self, season: int, round_: int, driver_id: str) -> StoredTiming | None:
+        return decode_timing(self.client.hgetall(K.timing_key(season, round_, driver_id)))
+
     def get_order(self, season: int, round_: int) -> list[tuple[str, int]]:
         """``[(driverId, position), ...]`` by position."""
         return _decode_order(
@@ -484,6 +572,9 @@ class AsyncRaceStore(_Base):
 
     async def get_tyre(self, season: int, round_: int, driver_id: str) -> StoredTyreLife | None:
         return decode_tyre(await self.client.hgetall(K.tyre_key(season, round_, driver_id)))
+
+    async def get_timing(self, season: int, round_: int, driver_id: str) -> StoredTiming | None:
+        return decode_timing(await self.client.hgetall(K.timing_key(season, round_, driver_id)))
 
     async def get_order(self, season: int, round_: int) -> list[tuple[str, int]]:
         rows = await self.client.zrange(K.order_key(season, round_), 0, -1, withscores=True)

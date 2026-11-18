@@ -288,6 +288,67 @@ def test_tracinginsights_compound_changes_no_model_input(
     assert n_life == sum(len(ti_inputs[r].laps) for r in races)  # every fixture lap is covered
 
 
+def test_tower_timing_changes_no_model_input(
+    model: dict[str, Any], scenario_tables: dict[str, Any]
+) -> None:
+    """Feature 5: the races with and without ``analysis_laps`` (sectors on every lap). The events
+    differ only in the display fields; the decisions (21 inputs, P), the alerts and every
+    9-field driver-hash value (except ``updated_at``) and the order are identical. The additive
+    timing hash carries the sectors only with the table; the stop count is there in both."""
+    from pyspark.sql import functions as F
+
+    from f1sa.serving import keys as K
+    from f1sa.streaming.producer import ANALYSIS_LAPS_TABLE
+
+    clean = scenario_tables["clean"]
+    with_sectors = {
+        **clean,
+        ANALYSIS_LAPS_TABLE: clean["laps"].select(
+            "season",
+            "round",
+            "driver_id",
+            "lap",
+            (F.lit(20.0) + F.col("lap") / 10).alias("sector1_s"),
+            (F.lit(30.0) - F.col("lap") / 10).alias("sector2_s"),
+            F.lit(25.0).alias("sector3_s"),
+            (F.lit(300.0) + F.col("lap")).alias("speed_st_kph"),
+        ),
+    }
+    races = sorted(scenario_tables["inputs"])
+    base_ev = {r: build_events(scenario_tables["inputs"][r], N_PARTITIONS) for r in races}
+    tower_inputs = {r: race_inputs(with_sectors, *r) for r in races}
+    tower_ev = {r: build_events(tower_inputs[r], N_PARTITIONS) for r in races}
+    for r in races:
+        assert [_event_view(o, keep_compound=False) for o in base_ev[r]] == [
+            _event_view(o, keep_compound=False) for o in tower_ev[r]
+        ]
+        assert any(o.event.sector1_s is not None for o in tower_ev[r])
+        assert all(o.event.sector1_s is None for o in base_ev[r])
+
+    priors = scenario_tables["priors"]
+    base_proc, base_redis = _replay_all(model["scorer"], priors, base_ev)
+    tower_proc, tower_redis = _replay_all(model["scorer"], priors, tower_ev)
+    assert base_proc.decisions and base_proc.decisions == tower_proc.decisions
+    assert [a.to_dict() for a in base_proc.alerts] == [a.to_dict() for a in tower_proc.alerts]
+    for race in races:
+        assert base_redis.zrange(K.order_key(*race), 0, -1, withscores=True) == tower_redis.zrange(
+            K.order_key(*race), 0, -1, withscores=True
+        )
+        for d in {x.driver_id for x in scenario_tables["inputs"][race].laps}:
+            bh = base_redis.hgetall(K.driver_key(*race, d))
+            th = tower_redis.hgetall(K.driver_key(*race, d))
+            assert tuple(bh) == tuple(th) == K.DRIVER_FIELDS
+            assert {f: v for f, v in bh.items() if f != "updated_at"} == {
+                f: v for f, v in th.items() if f != "updated_at"
+            }
+            bt = base_redis.hgetall(K.timing_key(*race, d))
+            tt = tower_redis.hgetall(K.timing_key(*race, d))
+            assert tuple(bt) == tuple(tt) == K.TIMING_FIELDS
+            assert bt["sector1_s"] == "" and tt["sector3_s"] == "25.0"
+            assert bt["lap"] == tt["lap"] and bt["pit_stops"] == tt["pit_stops"] != ""
+            assert float(tt["pb_speed_trap_kph"]) == 300.0 + int(tt["lap"])
+
+
 def test_sample_lake_events_keep_the_synthetic_compounds(sample_tables: dict[str, Any]) -> None:
     for race, inputs in sample_tables["inputs"].items():
         assert {r.compound_source for r in inputs.laps} == {"v1_stints"}, race

@@ -11,6 +11,7 @@ Routes, all under ``/api`` (OpenAPI at ``/api/docs`` and ``/api/openapi.json``):
                                              post-race analysis views (display, Feature 2)
     GET  /api/races/{season}/{round}/analysis/compare?a=&b=  two drivers lap by lap
     GET  /api/races/{season}/{round}/engineer/{driverId}?lap=N  focus vs ahead/behind (display)
+    GET  /api/races/{season}/{round}/status?lap=N  race-status banner at lap N (display, Feature 5)
     GET  /api/races/{season}/{round}/events  Server-Sent Events from the race channel
     POST /api/races/{season}/{round}/replay  start the producer (ENABLE_REPLAY=1)
     POST /api/debug/latency                  UI render time per event (ENABLE_DEBUG=1)
@@ -43,6 +44,7 @@ from f1sa.api.routes import (
     health,
     races,
     replay,
+    status,
     whatif,
 )
 from f1sa.config import Settings, get_settings
@@ -55,6 +57,7 @@ ROUTERS = (
     entrants.router,
     analysis.router,
     engineer.router,
+    status.router,
     events.router,
     replay.router,
     debug.router,

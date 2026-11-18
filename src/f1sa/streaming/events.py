@@ -25,10 +25,21 @@ tyre_life_laps     ``lap`` only, display only: the real tyre life (TracingInsigh
                    the set including earlier use) at the end of the lap, or null when unknown
 tyre_life_at_start_laps  ``lap`` only, display only: laps already on the set when the stint began
                    (> 0: a used set), or null
+sector1_s .. sector3_s  ``lap`` only, display only (Feature 5): the lap's TracingInsights sector
+                   times (``clean/analysis_laps``), or null (no TI, e.g. the sample; lap 1 has
+                   no S1)
+speed_trap_kph     ``lap`` only, display only: the lap's speed-trap speed (TI ``SpeedST``), or null
+pb_sector1_s .. pb_sector3_s, pb_speed_trap_kph  ``lap`` only, display only: the driver's best
+                   sector times (minimum) and speed trap (maximum) over **its own laps <= this lap**
+                   (causal: computed by the producer from laps already sent), or null
+pit_stops          ``lap`` only, display only: the driver's Jolpica stops with in-lap <= this lap
+                   (the ``pit_in`` of lap L is sent before ``lap`` L), int >= 0
 =================  =========================================================================
 
-The two ``tyre_life_*`` fields are never read by the rule, the live features, the scorer or the
-what-if (``tyre_age`` stays the batch definition); they only reach the dashboard.
+The ``tyre_life_*`` fields and the Feature 5 timing fields (``TOWER_FIELDS``) are never read by
+the rule, the live features, the scorer or the what-if (``tyre_age`` stays the batch definition;
+``RaceState.apply`` copies only the model's fields into ``LapInput``); they only reach the
+dashboard (the lap payload and the additive ``race:{s}:{r}:timing:{driverId}`` hash).
 
 The last three fields are **replayed race context** (Step 12 decision): the batch values come
 from the Jolpica heuristic, which uses the whole race's green median, and from the winner's lap
@@ -57,9 +68,26 @@ INFRA_HEADER = ("test", b"infra")
 """Header of the Step 2 infrastructure test message, which must never reach the race logic."""
 CONTEXT_FIELDS: tuple[str, ...] = ("track_neutral", "track_red_flag", "race_laps")
 """Replayed race context: the only non-causal values in the stream (see the module docstring)."""
-DISPLAY_FIELDS: tuple[str, ...] = ("compound", "tyre_life_laps", "tyre_life_at_start_laps")
+TOWER_FIELDS: tuple[str, ...] = (
+    "sector1_s",
+    "sector2_s",
+    "sector3_s",
+    "speed_trap_kph",
+    "pb_sector1_s",
+    "pb_sector2_s",
+    "pb_sector3_s",
+    "pb_speed_trap_kph",
+    "pit_stops",
+)
+"""Feature 5 timing-tower fields of a lap event (display only), in field order."""
+DISPLAY_FIELDS: tuple[str, ...] = (
+    "compound",
+    "tyre_life_laps",
+    "tyre_life_at_start_laps",
+    *TOWER_FIELDS,
+)
 """Lap-event fields that no rule, live feature or scorer input reads. ``compound`` is also a
-what-if fallback (``sim.whatif._tyre_at``); the two ``tyre_life_*`` fields reach only the
+what-if fallback (``sim.whatif._tyre_at``); the ``tyre_life_*`` and tower fields reach only the
 dashboard."""
 
 
@@ -86,6 +114,15 @@ class RaceEvent:
     race_laps: int | None = None
     tyre_life_laps: int | None = None
     tyre_life_at_start_laps: int | None = None
+    sector1_s: float | None = None
+    sector2_s: float | None = None
+    sector3_s: float | None = None
+    speed_trap_kph: float | None = None
+    pb_sector1_s: float | None = None
+    pb_sector2_s: float | None = None
+    pb_sector3_s: float | None = None
+    pb_speed_trap_kph: float | None = None
+    pit_stops: int | None = None
 
     def __post_init__(self) -> None:
         validate(self)
@@ -158,6 +195,9 @@ def validate(e: RaceEvent) -> None:
     _int("race_laps", e.race_laps, 1)
     _int("tyre_life_laps", e.tyre_life_laps, 1)
     _int("tyre_life_at_start_laps", e.tyre_life_at_start_laps, 0)
+    for name in TOWER_FIELDS[:-1]:
+        _float(name, getattr(e, name), 0.0)
+    _int("pit_stops", e.pit_stops, 0)
     _bool("track_neutral", e.track_neutral)
     _bool("track_red_flag", e.track_red_flag)
     if e.compound is not None and e.compound not in COMPOUNDS:
@@ -178,6 +218,7 @@ def validate(e: RaceEvent) -> None:
             "tyre_age": e.tyre_age,
             "tyre_life_laps": e.tyre_life_laps,
             "tyre_life_at_start_laps": e.tyre_life_at_start_laps,
+            **{c: getattr(e, c) for c in TOWER_FIELDS},
             **{c: getattr(e, c) for c in CONTEXT_FIELDS},
         }
         set_fields = sorted(k for k, v in lap_only.items() if v is not None)
@@ -194,7 +235,7 @@ def from_dict(data: Mapping[str, Any]) -> RaceEvent:
         raise EventError(f"missing event fields: {missing}")
     values = dict(data)
     # JSON has one number type: an integral float for race_time_s / lap_time_s is fine.
-    for name in ("race_time_s", "lap_time_s"):
+    for name in ("race_time_s", "lap_time_s", *TOWER_FIELDS[:-1]):
         if isinstance(values.get(name), int) and not isinstance(values.get(name), bool):
             values[name] = float(values[name])
     try:
@@ -260,6 +301,8 @@ def spark_schema() -> StructType:
         "race_laps": IntegerType(),
         "tyre_life_laps": IntegerType(),
         "tyre_life_at_start_laps": IntegerType(),
+        **{name: DoubleType() for name in TOWER_FIELDS[:-1]},
+        "pit_stops": IntegerType(),
     }
     if tuple(types) != FIELD_NAMES:
         raise AssertionError("spark_schema is out of step with RaceEvent")

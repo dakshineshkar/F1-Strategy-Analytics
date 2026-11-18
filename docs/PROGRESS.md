@@ -1803,10 +1803,121 @@
     `make web-e2e`, then rebuilt and started with `--no-deps`. After the smoke test's replay finished, the api
     returned to `make api-up FULL=1 REPLAY=1`. A Docker/WSL restart afterwards (not caused by this step) left the
     stack down.
+- Feature 5 (2026-11-18): timing-tower extras for the live and post-race views (display only). **Done.**
+  - **Investigation** (read-only):
+    - Sector times and speed traps exist only in TracingInsights (`clean/analysis_laps`; S1 about 98%, S2/S3
+      and ST at least 99.6% per season). The sample has none.
+    - The producer's events, Redis and the lap log carried no sectors. Pit counts came only from the
+      reducer's `pit_in` count since connecting, which is wrong after a reload.
+    - The lap event's `track_neutral` is the batch heuristic (hindsight), so the banner does not use it.
+      Feature 3's `lake_neutral` / `estimated_neutral` are causal.
+    - Archive v1 had no sectors, no timing in its snapshots and no causal status.
+  - **Transport** (your choice): display-only lap-event fields plus an **additive** Redis hash
+    `race:{s}:{r}:timing:{driverId}` (CLAUDE.md line approved 2026-11-18).
+    - The 9-field hash, the order zset, the channel and the tyre hash are unchanged.
+    - `RaceState.apply` copies only the model's fields into `LapInput`, so no rule, live feature, scorer,
+      `state.json` or alert reads the new fields.
+    - The producer computes the running values from each driver's own laps <= L, so the sink stays
+      stateless (the `tyre_lives` pattern).
+    - The banner is a read-only API route that reuses the engineer's function.
+  - **Change**:
+    - `streaming/events.py`: `TOWER_FIELDS` (sectors, speed trap, the driver's bests so far, `pit_stops`) are
+      lap-only and in `DISPLAY_FIELDS`.
+    - `streaming/producer.py`: the optional `clean/analysis_laps` source and `running_timing`. Deleted laps
+      count, because a deletion is decided later.
+    - `streaming/parity.py` loads `analysis_laps` too.
+    - `serving/keys.py` `TIMING_FIELDS` / `timing_key`; `serving/redis_store.py` `TimingRow`,
+      `encode_timing` / `decode_timing`, `Batch.timings` (same pipeline, safety TTL, `session_end` EXPIRE);
+      `streaming/redis_sink.py` `timing_rows` and the payload fields.
+    - API: `RaceStateOut.timing` (`/state` and the SSE snapshot; a malformed hash is skipped).
+    - New `GET /api/races/{s}/{r}/status?lap=N` (`api/race_status.py`, `api/routes/status.py`):
+      `engineer.neutral_at`, laps <= N; 409 for a lap not reached yet; no key written.
+    - Archive **schema v2**: `snapshots[].timing` and `status[]`, from the same `race_status` over a `LapLog`
+      fed the bundle's own messages. The reader accepts v1 and v2; the equivalence compares timing.
+    - Dashboard:
+      - S1 / S2 / S3, Trap and Pits columns with "PB" / "OB" text tags (`--ok` / `--line-4`) and a "Best so
+        far" line;
+      - a pin per row (`aria-pressed`, one car, kept per browser, scrolled into view only while the tower is
+        on screen);
+      - a "Columns" disclosure with Minimal / Full / Custom and per-column checkboxes, kept per browser;
+      - the race-status banner (GREEN / SC / VSC / RED FLAG / SC / VSC est. / UNKNOWN, the latest key message
+        and its lap, the source), with a polite live region only on a status change (silent post-race);
+      - a `tower` glossary group; shared tokens only.
+  - **Evidence.**
+    - Stream parity 2021-2024 (`--out data/demo/parity_check8/stream_parity_full.csv`, with `analysis_laps`
+      loaded): 90 races, 157 labelled attempts, 34,608 eligible pairs, 0 mismatching races. `cmp` with
+      `results/stream_parity_full.csv`: identical (sha256 aad8df67…).
+    - Sample 2024 R5 alert check (deployed model, parity harness at batch 7 with partition 1 lagging):
+      113 / 19 / 9 = 141 alerts, 409 decisions, `check_alerts` and `compare_race` OK.
+      - The alerts-and-decisions dump has sha256 e0689163…, identical to the same script run on HEAD's
+        `src/` (exported with `git archive`).
+    - Redis cost (sample 2024 R5, app container, real Redis db 15 only, cleaned after; 3 alternating runs each):
+      - commands per batch: 62.2 → 75.1;
+      - `write_batch` p50: 1.18 → 1.35 ms; p95: 1.56 → 1.68 ms.
+    - Sample archive v2 (`make archive-sample`, approved):
+      - 2023 R5: 1,883,740 B JSON → 148,931 B gzip; 2024 R5: 1,700,600 → 132,069 B (v1 was 139,465 / 123,092 B).
+        Messages, alerts and decisions are unchanged (1,395 / 216 / 567 and 1,252 / 141 / 409).
+      - A second rebuild is byte-identical (`sha256sum -c` OK).
+      - 2024 R5 status, estimated from lap times: neutralised on laps 21-31.
+    - `make archive-equivalence SEASON=2024 ROUND=5 LAPS=5,22,45`: **EQUIVALENT**.
+      - Rebuild identical; 113 / 19 / 9 and 409 decisions equal to the parity run.
+      - Live Redis == bundle, timing hash included, at laps 5, 22, 45 and after `session_end`; all 1,252
+        messages equal.
+    - Full archive v2 (`make archive-full`, approved):
+      - 90 bundles, 0 failed, in 3 min 20 s; 161,067,831 B JSON → 15,755,709 B gzip (v1: 11,790,654 B). Per
+        race min 5,742 B, median 173,902 B, max 225,053 B. Only `/f1/archive/race_bundle/` was written.
+      - 2024 R1: 1,793,542 → 177,471 B, 125 alerts, 405 decisions.
+      - 2024 R5 status from track status: VSC on lap 22, then SC on laps 23-31, with the lap-26 "SAFETY CAR IN
+        THIS LAP" and the lap-27 redeployment as the messages; green from lap 32.
+      - 2024 R1 is green throughout, its PBs are monotone for every car, and 20 cars have sectors.
+    - `make archive-equivalence FULL=1 SEASON=2024 ROUND=1 LAPS=10,30,50`: **EQUIVALENT**.
+      - Rebuild identical; 93 / 13 / 19 (125) alerts, 405 decisions and 7 labelled attempts equal to the parity
+        run.
+      - Live Redis == bundle at laps 10, 30, 50 and the final lap 57.
+    - `make experiments-sample`: OK 7, OK (metadata differs) 1, DIFF 0, MISSING 0. The 2 NEW what-if files are
+      byte-identical to the Feature 4 run.
+    - Python: the full unit suite gave **2105 passed** in 972 s (once, after all code changes). Targeted runs:
+      events / keys / store / sink 174; producer 42; parity (tower and TI) 2; race status 10; state / app 33;
+      archive 70 + 3; engineer / docs / Makefile / traceability 105. ruff, format and mypy are clean;
+      `scripts/check_traceability.py`: OK 304, MISSING 0.
+    - Web: lint and typecheck clean; Vitest **300 passed** (35 new: `tower.test.ts`, `status.test.ts`, archive
+      v2). `make web-e2e`: 2 passed (the latency spec is skipped by design).
+      - The live smoke checks the S1 / S2 / S3 / Trap / Pits / Pin headers, the "no sector data" note, numeric
+        pit counts, and the banner labelled "estimated".
+      - It also checks the Minimal preset by keyboard (S1 hidden, Escape returns focus), one pin with
+        `aria-pressed`, both kept after a reload, and no overflow at 375 px.
+      - The post-race smoke checks the v2 banner at laps 1 and 21 and the pit counts.
+      - The first `web-e2e` run failed in the post-race test: the banner's parts ran together ("Lap 1not
+        enough laps…") for screen readers too. Hidden ". " separators were added (Vitest checks them) and the
+        rerun passed.
+    - `results/` is unchanged (sha256 of all 154 files before and after; `git status results/` clean).
+  - **Services** (user approved):
+    - the api was recreated in sample mode (`make api-up REPLAY=1`) for Playwright;
+    - web was stopped for `make web-e2e`, then rebuilt and started with `--no-deps`;
+    - after the smoke test's replays had finished, the api was returned to `make api-up FULL=1 REPLAY=1`.
+      It now serves `/status`, timing in `/state` and the 90 v2 bundles.
+    - The equivalence live replays wrote their races' Redis keys (sample 2024 R5 in db 0, full 2024 R1; 1 h
+      after `session_end`).
 ## Next
 - S18: report, docs and demo rehearsal (#44): `docs/report/`, `docs/demo_script.md`.
 - Push and watch the first CI run of the `e2e` job on GitHub (runner build time and disk are unmeasured).
 ## Known issues
+- Feature 5:
+  - The live banner is fetched when the leader starts a new lap. In the sample (estimated from lap times) only the
+    cars that have crossed by then count, while the archive's `status[]` is computed at the end of lap N, so the two
+    can differ on a lap, like Feature 4's snapshot moment. With race control (full mode) only the leader's lap-N
+    codes and messages with lap <= N are used, so both agree.
+  - Deleted laps (track limits) count for PB / OB, because the deletion is decided after the lap; the official
+    timing removes them later.
+  - The race-control message shown is the latest *key* message with lap <= N (SC, VSC, red flag, penalty), never
+    a message of the lap the leader is on, so it can lag by up to one lap.
+  - The sample has no TracingInsights: its sector and speed-trap columns are empty ("no sector data" note) and its
+    banner is the estimate (SC and VSC cannot be told apart: "SC / VSC est.").
+  - The pinned row is scrolled into view only while the tower is on screen, so a reader elsewhere on the page is
+    never moved.
+  - Post-race, the banner stays silent like the archive's alert feed.
+  - A browser with the old dashboard open against the new api ignores the new fields; the new dashboard reads v1
+    bundles with a note.
 - Feature 4:
   - The lap-N snapshot is Redis at the end of lap N (your choice). The live SSE `snapshot-N` is taken earlier, at
     the leader's lap-N crossing, so the two moments differ by design.

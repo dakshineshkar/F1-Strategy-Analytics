@@ -5,6 +5,7 @@ import { toCompare, toLapsDoc, toPitStopsDoc, toPositionsDoc, toRaceControlDoc, 
 import { API_URL } from "./config";
 import { toEntrants } from "./entrants";
 import { isBool, isDriverId, isFiniteNumber, isInt, isObj, isStr, nullable } from "./guard";
+import { type TimingHash, toTimingHash } from "./timing";
 
 export const COMPOUNDS = ["SOFT", "MEDIUM", "HARD", "INTERMEDIATE", "WET", "UNKNOWN"] as const;
 export type Compound = (typeof COMPOUNDS)[number];
@@ -47,6 +48,8 @@ export interface RaceSnapshot {
   order: { driver_id: string; position: number }[];
   /** Optional: missing in older API responses and for cars without a tyre hash. */
   tyres: Record<string, TyreLife>;
+  /** Feature 5, optional: the additive timing hash per car (missing in older APIs and v1 bundles). */
+  timing: Record<string, TimingHash>;
 }
 
 export interface Lake {
@@ -166,7 +169,14 @@ export function toSnapshot(v: unknown): RaceSnapshot | undefined {
       if (isDriverId(id) && t !== undefined) tyres[id] = t;
     }
   }
-  return { season: v.season, round: v.round, drivers, order, tyres };
+  const timing: Record<string, TimingHash> = {};
+  if (isObj(v.timing)) {
+    for (const [id, raw] of Object.entries(v.timing)) {
+      const t = toTimingHash(raw);
+      if (isDriverId(id) && t !== undefined) timing[id] = t;
+    }
+  }
+  return { season: v.season, round: v.round, drivers, order, tyres, timing };
 }
 
 export function toHealth(v: unknown): Health | undefined {

@@ -259,8 +259,8 @@ archive-equivalence: ## Stored bundle == live replay (Kafka -> stream job -> Red
 	@test -n "$(LAPS)" || { echo "LAPS is required, e.g. make archive-equivalence SEASON=2024 ROUND=5 LAPS=5,22,45" >&2; exit 2; }
 	$(if $(filter 1,$(FULL)),$(ARCHIVE_EXEC),$(ARCHIVE_SAMPLE_EXEC)) python -m f1sa.archive.equivalence --season $(SEASON) --round $(ROUND) --laps $(LAPS) --api http://api:8000$(if $(MODEL_DIR), --model-dir $(MODEL_DIR),)
 
-test-archive: ## Feature 4 unit tests (builder, schema, equivalence, API, Makefile)
-	$(UV) run pytest tests/unit/test_archive_memory_redis.py tests/unit/test_archive_schema.py tests/unit/test_archive_build.py tests/unit/test_archive_equivalence.py tests/unit/test_api_archive.py tests/unit/test_makefile_archive.py -q
+test-archive: ## Feature 4/5 unit tests (builder, schema v2, status, equivalence, API, Makefile)
+	$(UV) run pytest tests/unit/test_archive_memory_redis.py tests/unit/test_archive_schema.py tests/unit/test_archive_build.py tests/unit/test_archive_status.py tests/unit/test_archive_equivalence.py tests/unit/test_api_archive.py tests/unit/test_makefile_archive.py -q
 
 # Step 16 quiet-stack measurements (core profile only: kafka, redis, api, web; services are never
 # started, stopped or recreated by these targets). Sample lake on the host. Outputs in

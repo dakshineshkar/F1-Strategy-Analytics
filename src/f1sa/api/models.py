@@ -7,7 +7,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, StrictInt, model_validator
 
-from f1sa.serving.redis_store import StoredDriverState, StoredTyreLife
+from f1sa.serving.redis_store import StoredDriverState, StoredTiming, StoredTyreLife
 
 Compound = Literal["SOFT", "MEDIUM", "HARD", "INTERMEDIATE", "WET", "UNKNOWN"]
 UUID_PATTERN = r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
@@ -64,6 +64,41 @@ class TyreLifeOut(_Out):
         )
 
 
+class TimingOut(_Out):
+    """The additive, display-only timing hash ``race:{s}:{r}:timing:{driverId}`` (Feature 5): the
+    sector times and speed trap of the car's lap ``lap``, the driver's best so far over its laps
+    <= ``lap`` and its stop count. Never used by the model, the rule or the what-if."""
+
+    lap: int = Field(ge=1)
+    sector1_s: float | None = Field(default=None, gt=0)
+    sector2_s: float | None = Field(default=None, gt=0)
+    sector3_s: float | None = Field(default=None, gt=0)
+    speed_trap_kph: float | None = Field(default=None, gt=0)
+    pb_sector1_s: float | None = Field(default=None, gt=0)
+    pb_sector2_s: float | None = Field(default=None, gt=0)
+    pb_sector3_s: float | None = Field(default=None, gt=0)
+    pb_speed_trap_kph: float | None = Field(default=None, gt=0)
+    pit_stops: int | None = Field(default=None, ge=0)
+    updated_at: str
+
+    @classmethod
+    def from_stored(cls, stored: StoredTiming) -> TimingOut:
+        t = stored.timing
+        return cls(
+            lap=t.lap,
+            sector1_s=t.sector1_s,
+            sector2_s=t.sector2_s,
+            sector3_s=t.sector3_s,
+            speed_trap_kph=t.speed_trap_kph,
+            pb_sector1_s=t.pb_sector1_s,
+            pb_sector2_s=t.pb_sector2_s,
+            pb_sector3_s=t.pb_sector3_s,
+            pb_speed_trap_kph=t.pb_speed_trap_kph,
+            pit_stops=t.pit_stops,
+            updated_at=stored.updated_at,
+        )
+
+
 class OrderEntry(_Out):
     driver_id: str
     position: int
@@ -77,6 +112,11 @@ class RaceStateOut(_Out):
     tyres: dict[str, TyreLifeOut] = Field(
         default_factory=dict,
         description="additive, display only: real tyre life per driver (may be missing)",
+    )
+    timing: dict[str, TimingOut] = Field(
+        default_factory=dict,
+        description="additive, display only (Feature 5): sectors, speed trap, bests so far and "
+        "stop count per driver (may be missing)",
     )
 
 
@@ -509,6 +549,21 @@ class CompareOut(_AnalysisOut):
 
 # ------------------------------------------------------------------ engineer view (Feature 3)
 NeutralStatus = Literal["green", "sc", "vsc", "red", "neutralised", "unknown"]
+
+
+class RaceStatusOut(_Out):
+    """The race status at leader lap N (Feature 5 banner, display only), from information up to
+    lap N only: ``track_status`` (the lake's track-status codes of the leader's lap N and the latest
+    key race-control message with lap <= N) or ``estimated`` (the causal lap-time rule of the
+    engineer view; SC and VSC cannot be told apart: ``neutralised``)."""
+
+    season: int
+    round: int
+    lap: int = Field(ge=1)
+    status: NeutralStatus
+    source: Literal["track_status", "estimated", "none"]
+    message: str | None = Field(description="latest key race-control message with lap <= N")
+    message_lap: int | None
 
 
 class EngineerNeutralOut(_Out):

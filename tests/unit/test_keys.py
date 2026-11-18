@@ -139,3 +139,56 @@ def test_analysis_meta_key_validates_race_and_view(
 ) -> None:
     with pytest.raises(K.InvalidKeyError):
         K.analysis_meta_key(season, round_, view)  # type: ignore[arg-type]
+
+
+# --------------------------------------------- additive timing hash (display only; Feature 5)
+def test_timing_key_is_additive_and_exact() -> None:
+    assert K.timing_key(2024, 5, "max_verstappen") == "race:2024:5:timing:max_verstappen"
+    assert K.TIMING_FIELDS == (
+        "lap",
+        "sector1_s",
+        "sector2_s",
+        "sector3_s",
+        "speed_trap_kph",
+        "pb_sector1_s",
+        "pb_sector2_s",
+        "pb_sector3_s",
+        "pb_speed_trap_kph",
+        "pit_stops",
+        "updated_at",
+    )
+    # the 9-field driver hash and the tyre hash are unchanged
+    assert len(K.DRIVER_FIELDS) == 9 and len(K.TYRE_FIELDS) == 4
+    assert not set(K.TIMING_FIELDS) - {"updated_at"} & set(K.DRIVER_FIELDS)
+    # a race key: the SCAN pattern (TTL, session_end EXPIRE) matches it, other races do not
+    assert fnmatchcase(K.timing_key(2024, 5, "a"), K.race_pattern(2024, 5))
+    assert not fnmatchcase(K.timing_key(2024, 15, "a"), K.race_pattern(2024, 1))
+    # never mistaken for a driver or a tyre hash
+    for other in (K.driver_key(2024, 5, "a"), K.tyre_key(2024, 5, "a")):
+        assert not K.timing_key(2024, 5, "a").startswith(other[:-1])
+    assert "timing" not in K.EVENT_TYPES and len(K.EVENT_TYPES) == 5
+
+
+@pytest.mark.parametrize("driver_id", ["VER", "max-verstappen", "", "a:b", "x*", None, 44])
+def test_timing_key_validates_the_driver_id(driver_id: object) -> None:
+    with pytest.raises(K.InvalidKeyError, match="driverId"):
+        K.timing_key(2024, 5, driver_id)  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize(("season", "round_"), [(1949, 5), (2024, 0), (2024, 31), (True, 5)])
+def test_timing_key_validates_the_race(season: object, round_: object) -> None:
+    with pytest.raises(K.InvalidKeyError):
+        K.timing_key(season, round_, "a")  # type: ignore[arg-type]
+
+
+def test_claude_md_documents_the_timing_hash_exactly() -> None:
+    import re
+    from pathlib import Path
+
+    text = (Path(__file__).resolve().parents[2] / "CLAUDE.md").read_text()
+    pattern = r"HASH race:\{season\}:\{round\}:timing:\{driverId\} fields: (.*?) \("
+    m = re.search(pattern, text, re.S)
+    assert m is not None
+    fields = tuple(f.strip() for f in " ".join(m.group(1).split()).split(","))
+    assert fields == K.TIMING_FIELDS
+    assert "ADDITIVE, display only (Feature 5" in text

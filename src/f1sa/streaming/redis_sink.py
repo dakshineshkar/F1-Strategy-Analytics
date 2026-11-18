@@ -12,6 +12,10 @@ Per micro-batch and race, ``RedisSink.write`` queues every write in **one** ``Ba
   ``lap`` event in this batch that is its latest received lap: the event's real tyre life (null
   values written too, so a stint with unknown life clears the previous one). Nothing
   model-related reads it;
+* (additive, display only; Feature 5) the timing hash ``race:{s}:{r}:timing:{driverId}`` of the
+  same cars, from the same lap event: its sector times, speed trap, the driver's best so far and
+  its stop count (``events.TOWER_FIELDS``; computed causally by the producer, so the sink keeps no
+  state). Nothing model-related reads it;
 * one ``lap`` / ``pit_in`` / ``pit_out`` event per event received, and the ``undercut_alert``
   messages chosen by the alert policy (``streaming.alerts``; payload ``events.UndercutAlert``).
 
@@ -35,8 +39,8 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, Protocol
 
-from f1sa.serving.redis_store import COMPOUNDS, Batch, DriverState, Event, TyreLife
-from f1sa.streaming.events import RaceEvent, UndercutAlert
+from f1sa.serving.redis_store import COMPOUNDS, Batch, DriverState, Event, TimingRow, TyreLife
+from f1sa.streaming.events import TOWER_FIELDS, RaceEvent, UndercutAlert
 from f1sa.streaming.live_state import RaceState
 
 PUBLISHED_TYPES = ("lap", "pit_in", "pit_out")
@@ -103,6 +107,7 @@ def event_payload(ev: RaceEvent, received_ms: int, written_ms: int) -> dict[str,
             tyre_age=ev.tyre_age,
             tyre_life_laps=ev.tyre_life_laps,
             tyre_life_at_start_laps=ev.tyre_life_at_start_laps,
+            **{name: getattr(ev, name) for name in TOWER_FIELDS},
         )
     return out
 
@@ -155,6 +160,31 @@ def tyre_lives(state: RaceState, events: Sequence[RaceEvent]) -> dict[str, TyreL
     return out
 
 
+def _latest_lap_events(state: RaceState, events: Sequence[RaceEvent]) -> dict[str, RaceEvent]:
+    """The ``lap`` event in ``events`` of every driver whose latest received lap it is."""
+    latest = state.latest_laps()
+    out: dict[str, RaceEvent] = {}
+    for e in events:
+        if e.type != "lap" or e.driver_id is None or e.lap is None:
+            continue
+        row = latest.get(e.driver_id)
+        if row is None or row.lap != e.lap:
+            continue
+        out[e.driver_id] = e
+    return out
+
+
+def timing_rows(state: RaceState, events: Sequence[RaceEvent]) -> dict[str, TimingRow]:
+    """The timing hash (Feature 5, display only) of every driver whose latest received lap has a
+    ``lap`` event in ``events``: that event's tower values, null values included (an older or
+    duplicated lap event never overwrites a newer value)."""
+    return {
+        d: TimingRow(lap=e.lap, **{name: getattr(e, name) for name in TOWER_FIELDS})
+        for d, e in _latest_lap_events(state, events).items()
+        if e.lap is not None
+    }
+
+
 class RedisSink:
     def __init__(self, store: Store, *, clock_ms: Callable[[], int] = now_ms) -> None:
         self.store = store
@@ -175,6 +205,7 @@ class RedisSink:
             raise RuntimeError(f"race {state.season} R{state.round} has ended; refusing to write")
         states = driver_states(state)
         tyres: dict[str, TyreLife] = {}
+        timings: dict[str, TimingRow] = {}
         published = [e for e in events if e.type in PUBLISHED_TYPES]
         stamped = [e for e in events if e.produced_at_ms is not None]
         trigger = max(stamped, key=lambda e: e.produced_at_ms or 0) if stamped else None
@@ -182,10 +213,12 @@ class RedisSink:
         written = self.clock_ms()
         if states or published or alerts:
             tyres = tyre_lives(state, events)
+            timings = timing_rows(state, events)
             batch = Batch(
                 states=states,
                 order=state.live_order() if states else None,
                 tyres=tyres,
+                timings=timings,
                 events=(
                     *(
                         Event(

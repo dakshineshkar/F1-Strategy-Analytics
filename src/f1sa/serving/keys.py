@@ -10,6 +10,14 @@ Additive, display-only extension (approved 2026-11-15; the three items above are
   tyre life for the dashboard). Nothing model-related reads it. It matches ``race_pattern``, so it
   gets the same safety TTL on every write and the same EXPIRE at ``session_end``.
 
+Additive, display-only extension (Feature 5, approved 2026-11-18; the items above are unchanged):
+
+* HASH    ``race:{season}:{round}:timing:{driverId}`` with the 11 fields in ``TIMING_FIELDS``
+  (the timing-tower values of the car's latest lap: sectors, speed trap, the driver's best so far
+  and its stop count). Nothing model-related reads it. It matches ``race_pattern``, so it gets the
+  same safety TTL on every write and the same EXPIRE at ``session_end``; it is written in the
+  batch's one pipeline.
+
 Additive, display-only API cache (Feature 1; the race keys above are unchanged):
 
 * STRING  ``meta:entrants:{season}:{round}``: the JSON of ``GET /api/races/{s}/{r}/entrants``,
@@ -57,6 +65,21 @@ TYRE_FIELDS: tuple[str, ...] = (
 )
 """The 4 fields of the additive, display-only tyre hash, in order."""
 
+TIMING_FIELDS: tuple[str, ...] = (
+    "lap",
+    "sector1_s",
+    "sector2_s",
+    "sector3_s",
+    "speed_trap_kph",
+    "pb_sector1_s",
+    "pb_sector2_s",
+    "pb_sector3_s",
+    "pb_speed_trap_kph",
+    "pit_stops",
+    "updated_at",
+)
+"""The 11 fields of the additive, display-only timing hash (Feature 5), in order."""
+
 EVENT_TYPES: tuple[str, ...] = ("lap", "pit_in", "pit_out", "undercut_alert", "session_end")
 """The Pub/Sub message types."""
 
@@ -100,6 +123,11 @@ def driver_key(season: int, round_: int, driver_id: str) -> str:
 def tyre_key(season: int, round_: int, driver_id: str) -> str:
     """``race:{season}:{round}:tyre:{driverId}`` (additive, display only)."""
     return f"{race_prefix(season, round_)}:tyre:{validate_driver_id(driver_id)}"
+
+
+def timing_key(season: int, round_: int, driver_id: str) -> str:
+    """``race:{season}:{round}:timing:{driverId}`` (additive, display only; Feature 5)."""
+    return f"{race_prefix(season, round_)}:timing:{validate_driver_id(driver_id)}"
 
 
 def order_key(season: int, round_: int) -> str:

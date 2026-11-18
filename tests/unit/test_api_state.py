@@ -48,8 +48,9 @@ async def test_state_returns_every_hash_and_the_order(tmp_path: Path) -> None:
         resp = await c.get("/api/races/2024/5/state")
     assert resp.status_code == 200
     body = resp.json()
-    assert set(body) == {"season", "round", "drivers", "order", "tyres"}
+    assert set(body) == {"season", "round", "drivers", "order", "tyres", "timing"}
     assert body["tyres"] == {}  # no tyre hash written: the optional map is empty
+    assert body["timing"] == {}  # no timing hash written: the optional map is empty
     assert (body["season"], body["round"]) == (2024, 5)
     assert sorted(body["drivers"]) == ["leclerc", "max_verstappen", "norris"]
     for d in body["drivers"].values():
@@ -193,3 +194,60 @@ async def test_a_malformed_tyre_hash_is_skipped_never_a_500(tmp_path: Path) -> N
         resp = await c.get("/api/races/2024/5/state")
     assert resp.status_code == 200
     assert resp.json()["tyres"] == {} and len(resp.json()["drivers"]) == 3
+
+
+# ----------------------------------------------- additive timing hash (display only; Feature 5)
+async def test_state_adds_the_optional_timing_map_next_to_the_contract(tmp_path: Path) -> None:
+    from f1sa.api.models import TimingOut
+    from f1sa.serving.redis_store import TimingRow
+
+    api = make_api(make_settings(tmp_path))
+    await _seed(api)
+    store = AsyncRaceStore(api.redis, api.deps.settings, now=lambda: T0)  # type: ignore[attr-defined]
+    full = TimingRow(
+        lap=30,
+        sector1_s=28.512,
+        sector2_s=31.25,
+        sector3_s=24.003,
+        speed_trap_kph=321.4,
+        pb_sector1_s=28.1,
+        pb_sector2_s=31.25,
+        pb_sector3_s=23.9,
+        pb_speed_trap_kph=325.0,
+        pit_stops=1,
+    )
+    await store.write_batch(
+        2024, 5, Batch(timings={"max_verstappen": full, "norris": TimingRow(lap=29, pit_stops=0)})
+    )
+    async with api.client() as c:
+        body = (await c.get("/api/races/2024/5/state")).json()
+    assert tuple(TimingOut.model_fields) == K.TIMING_FIELDS
+    assert body["timing"]["max_verstappen"] == {
+        "lap": 30,
+        "sector1_s": 28.512,
+        "sector2_s": 31.25,
+        "sector3_s": 24.003,
+        "speed_trap_kph": 321.4,
+        "pb_sector1_s": 28.1,
+        "pb_sector2_s": 31.25,
+        "pb_sector3_s": 23.9,
+        "pb_speed_trap_kph": 325.0,
+        "pit_stops": 1,
+        "updated_at": "2024-05-05T20:14:03.125Z",
+    }
+    norris = body["timing"]["norris"]
+    assert norris["pit_stops"] == 0 and norris["sector1_s"] is None and norris["lap"] == 29
+    for d in body["drivers"].values():
+        assert tuple(d) == K.DRIVER_FIELDS  # the 9-field hash is untouched
+    assert sorted(body["drivers"]) == ["leclerc", "max_verstappen", "norris"]
+    assert body["tyres"] == {}
+
+
+async def test_a_malformed_timing_hash_is_skipped_never_a_500(tmp_path: Path) -> None:
+    api = make_api(make_settings(tmp_path))
+    await _seed(api)
+    await api.redis.hset(K.timing_key(2024, 5, "norris"), mapping={"lap": "x"})
+    async with api.client() as c:
+        resp = await c.get("/api/races/2024/5/state")
+    assert resp.status_code == 200
+    assert resp.json()["timing"] == {} and len(resp.json()["drivers"]) == 3

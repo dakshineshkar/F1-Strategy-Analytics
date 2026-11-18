@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import itertools
 from dataclasses import replace
 from typing import Any
 
@@ -477,4 +478,174 @@ def test_main_replays_the_sample_race(
     assert "(100.0% known)" in out
     assert f"tyre life: 0 of {len(laps)} laps known (0.0%), 0 on a used set" in out
     assert all(e.tyre_life_laps is None and e.tyre_life_at_start_laps is None for e in laps)
+    # Feature 5: the sample has no TracingInsights sectors; the stop count is real (Jolpica)
+    assert f"timing: sectors 0 of {len(laps)} laps, speed trap 0 of {len(laps)}" in out
+    assert all(e.sector1_s is None and e.pb_speed_trap_kph is None for e in laps)
+    assert all(e.pit_stops is not None and e.pit_stops >= 0 for e in laps)
+    n_pit_in = sum(e.type == "pit_in" for e in sent)
+    last = {e.driver_id: e.pit_stops for e in laps}  # laps are in race order
+    assert 0 < sum(v or 0 for v in last.values()) <= n_pit_in
     assert PR.main([*args, "--dry-run"], spark_factory=lambda: spark) == 0
+
+
+# ------------------------------------------------------------------ timing tower (Feature 5)
+def tlap(driver: str, n: int, s1: float | None, trap: float | None = None) -> PR.LapRecord:
+    """A lap with sector 1 = ``s1``, sectors 2/3 = 30 + n / 20 + n and speed trap ``trap``."""
+    return replace(
+        lap(driver, n, 1 if driver == "a" else 2, 90.0),
+        sector1_s=s1,
+        sector2_s=30.0 + n,
+        sector3_s=20.0 + n,
+        speed_trap_kph=trap,
+    )
+
+
+def tower_race() -> PR.RaceInputs:
+    laps = (
+        tlap("a", 1, None, 300.0),  # lap 1: no S1 (as in TracingInsights)
+        tlap("b", 1, None, None),
+        tlap("a", 2, 28.4, 310.0),
+        tlap("b", 2, 28.9, 305.0),
+        tlap("a", 3, 28.6, 308.0),
+        tlap("b", 3, 28.2, 312.0),
+        tlap("a", 4, 28.1, 315.0),
+        tlap("b", 4, 29.5, None),
+    )
+    stops = (PR.StopRecord("a", 2, 22.5), PR.StopRecord("b", 3, 23.0))
+    return PR.RaceInputs(2024, 5, laps, stops, race_laps=4)
+
+
+def test_running_timing_bests_and_stop_counts() -> None:
+    got = PR.running_timing(tower_race().laps, tower_race().stops)
+    a = [got[("a", n)] for n in range(1, 5)]
+    b = [got[("b", n)] for n in range(1, 5)]
+    assert [x.sector1_s for x in a] == [None, 28.4, 28.6, 28.1]
+    assert [x.pb_sector1_s for x in a] == [None, 28.4, 28.4, 28.1]  # the minimum so far
+    assert [x.pb_sector2_s for x in a] == [31.0] * 4  # 30 + n: lap 1 stays the best
+    assert [x.pb_speed_trap_kph for x in a] == [300.0, 310.0, 310.0, 315.0]  # the maximum
+    assert [x.pb_speed_trap_kph for x in b] == [None, 305.0, 312.0, 312.0]
+    assert [x.speed_trap_kph for x in b] == [None, 305.0, 312.0, None]
+    # stops with in-lap <= lap: a pits on lap 2 (the pit_in is sent before lap 2), b on lap 3
+    assert [x.pit_stops for x in a] == [0, 1, 1, 1]
+    assert [x.pit_stops for x in b] == [0, 0, 1, 1]
+    # every best is monotone and never better than a value that has not happened yet
+    for rows in (a, b):
+        for prev, cur in itertools.pairwise(rows):
+            for f in ("pb_sector1_s", "pb_sector2_s", "pb_sector3_s"):
+                p, c = getattr(prev, f), getattr(cur, f)
+                assert p is None or (c is not None and c <= p)
+            assert (prev.pb_speed_trap_kph or 0) <= (cur.pb_speed_trap_kph or 0)
+
+
+@pytest.mark.parametrize("n", [1, 2, 3])
+def test_running_timing_is_causal(n: int) -> None:
+    """The values of laps <= N do not change when later laps exist, whatever they hold."""
+    race = tower_race()
+    full = PR.running_timing(race.laps, race.stops)
+    cut = PR.running_timing(
+        [r for r in race.laps if r.lap <= n], [s for s in race.stops if s.lap <= n]
+    )
+
+    def scaled(r: PR.LapRecord) -> PR.LapRecord:
+        if r.lap <= n:
+            return r
+        return replace(
+            r,
+            sector1_s=None if r.sector1_s is None else r.sector1_s / 100,  # a much faster future
+            sector2_s=(r.sector2_s or 1.0) * 100,
+            sector3_s=(r.sector3_s or 1.0) / 100,
+            speed_trap_kph=(r.speed_trap_kph or 1.0) * 100,
+        )
+
+    future = PR.running_timing(
+        [scaled(r) for r in race.laps], [*race.stops, PR.StopRecord("a", n + 1, 30.0)]
+    )
+    for key, value in cut.items():
+        assert full[key] == value == future[key], key
+    assert {k for k in full if k[1] <= n} == set(cut)
+
+
+def test_timing_value_accepts_only_positive_finite_numbers() -> None:
+    assert PR.timing_value(28.5) == 28.5 and PR.timing_value(29) == 29.0
+    for bad in (None, 0, 0.0, -1.0, float("nan"), float("inf"), True, "28.5"):
+        assert PR.timing_value(bad) is None
+
+
+def test_build_events_carry_the_tower_values() -> None:
+    out = PR.build_events(tower_race(), 1)
+    timing = PR.running_timing(tower_race().laps, tower_race().stops)
+    seen_pit_in: dict[str, int] = {}
+    for o in out:
+        e = o.event
+        if e.type == "pit_in":
+            assert e.driver_id is not None
+            seen_pit_in[e.driver_id] = seen_pit_in.get(e.driver_id, 0) + 1
+            assert e.pit_stops is None and e.sector1_s is None
+        if e.type != "lap":
+            continue
+        assert e.driver_id is not None and e.lap is not None
+        t = timing[(e.driver_id, e.lap)]
+        assert (e.sector1_s, e.pb_sector1_s, e.speed_trap_kph, e.pb_speed_trap_kph) == (
+            t.sector1_s,
+            t.pb_sector1_s,
+            t.speed_trap_kph,
+            t.pb_speed_trap_kph,
+        )
+        # the count equals the pit_in events already sent for the car
+        assert e.pit_stops == seen_pit_in.get(e.driver_id, 0)
+    # inputs without sectors (the sample) give null sectors and still count the stops
+    plain = PR.build_events(tiny(), 1)
+    laps = [o.event for o in plain if o.event.type == "lap"]
+    assert all(e.sector1_s is None and e.pb_speed_trap_kph is None for e in laps)
+    assert {(e.driver_id, e.lap): e.pit_stops for e in laps}[("a", 2)] == 1
+
+
+def _analysis_laps(spark: SparkSession, rows: list[tuple[Any, ...]]) -> Any:
+    from pyspark.sql.types import DoubleType, IntegerType, StringType, StructField, StructType
+
+    schema = StructType(
+        [
+            StructField("season", IntegerType()),
+            StructField("round", IntegerType()),
+            StructField("driver_id", StringType()),
+            StructField("lap", IntegerType()),
+            StructField("sector1_s", DoubleType()),
+            StructField("sector2_s", DoubleType()),
+            StructField("sector3_s", DoubleType()),
+            StructField("speed_st_kph", DoubleType()),
+        ]
+    )
+    return spark.createDataFrame(rows, schema)
+
+
+def test_race_inputs_take_sectors_from_analysis_laps(
+    spark: SparkSession, scenario: dict[str, Any]
+) -> None:
+    base: PR.RaceInputs = scenario["inputs"]
+    s, r = SC.season, SC.round
+    rows = [
+        (s, r, "a", 2, 28.5, 31.0, 24.0, 320.0),
+        (s, r, "a", 3, float("nan"), 0.0, -1.0, None),  # unusable values become null
+        (s, r + 1, "a", 2, 1.0, 1.0, 1.0, 1.0),  # another race: ignored
+    ]
+    frames = {**scenario["clean"], PR.ANALYSIS_LAPS_TABLE: _analysis_laps(spark, rows)}
+    got = PR.race_inputs(frames, s, r)
+    by_key = {(x.driver_id, x.lap): x for x in got.laps}
+    a2 = by_key[("a", 2)]
+    assert (a2.sector1_s, a2.sector2_s, a2.sector3_s, a2.speed_trap_kph) == (
+        28.5,
+        31.0,
+        24.0,
+        320.0,
+    )
+    a3 = by_key[("a", 3)]
+    assert (a3.sector1_s, a3.sector2_s, a3.sector3_s, a3.speed_trap_kph) == (None,) * 4
+    # every other field is the v1 path, unchanged
+    for b, x in zip(base.laps, got.laps, strict=True):
+        assert replace(x, sector1_s=None, sector2_s=None, sector3_s=None, speed_trap_kph=None) == b
+    assert (got.stops, got.race_laps) == (base.stops, base.race_laps)
+    dup = [*rows, (s, r, "a", 2, 28.0, 31.0, 24.0, 320.0)]
+    with pytest.raises(PR.ProducerError, match="duplicate analysis_laps"):
+        PR.race_inputs(
+            {**scenario["clean"], PR.ANALYSIS_LAPS_TABLE: _analysis_laps(spark, dup)}, s, r
+        )

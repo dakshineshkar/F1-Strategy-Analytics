@@ -142,7 +142,9 @@ async def read_snapshot(memory: MemoryRedis, season: int, round_: int, lap: int)
     view = cast(Any, memory.async_view())
     ids = driver_ids_from_keys(await scan_race_keys(view, season, round_), season, round_)
     state = await read_race_state(view, season, round_, ids)
-    return SnapshotOut(lap=lap, drivers=state.drivers, order=state.order, tyres=state.tyres)
+    return SnapshotOut(
+        lap=lap, drivers=state.drivers, order=state.order, tyres=state.tyres, timing=state.timing
+    )
 
 
 @dataclass

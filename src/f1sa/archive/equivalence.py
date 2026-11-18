@@ -19,10 +19,10 @@ manifest):
    (``producer.KafkaSender``) up to the end of each lap given by ``--laps``. Once the Pub/Sub
    subscriber has received every lap / pit message sent so far (the sink writes a batch's hashes
    and order before its PUBLISH, in one pipeline), Redis is read with the API's
-   ``read_race_state``. Every driver hash (9 fields), tyre hash and the order must equal the
-   bundle's snapshot of that lap. ``updated_at`` is excluded because it is wall clock. After
-   ``session_end`` the final state and every published message (lap, pit, alerts, without ids and
-   timing fields) must equal the bundle's.
+   ``read_race_state``. Every driver hash (9 fields), tyre hash, timing hash (Feature 5) and the
+   order must equal the bundle's snapshot of that lap. ``updated_at`` is excluded because it is
+   wall clock. After ``session_end`` the final state and every published message (lap, pit,
+   alerts, without ids and timing fields) must equal the bundle's.
 
 The live check refuses while ``GET /api/replays`` lists a running replay (it would share the
 topic and the race keys), and when that answer cannot be read. Existing ``race:{s}:{r}:*`` keys of
@@ -146,7 +146,8 @@ def decision_keys(rows: Iterable[Any]) -> Counter[tuple[int, str, str, float, fl
 
 
 def comparable_state(state: SnapshotOut | RaceStateOut) -> dict[str, Any]:
-    """Drivers (9 fields), tyres and order without ``updated_at`` (wall clock when live)."""
+    """Drivers (9 fields), tyres, timing (Feature 5) and order without ``updated_at`` (wall
+    clock when live)."""
     return {
         "drivers": {
             d: s.model_dump(mode="json", exclude={"updated_at"})
@@ -156,6 +157,10 @@ def comparable_state(state: SnapshotOut | RaceStateOut) -> dict[str, Any]:
             d: t.model_dump(mode="json", exclude={"updated_at"})
             for d, t in sorted(state.tyres.items())
         },
+        "timing": {
+            d: t.model_dump(mode="json", exclude={"updated_at"})
+            for d, t in sorted(state.timing.items())
+        },
         "order": [o.model_dump(mode="json") for o in state.order],
     }
 
@@ -164,7 +169,7 @@ def state_diff(expected: SnapshotOut | RaceStateOut, got: SnapshotOut | RaceStat
     """Field-level differences (empty when equal)."""
     e, g = comparable_state(expected), comparable_state(got)
     out: list[str] = []
-    for part in ("drivers", "tyres"):
+    for part in ("drivers", "tyres", "timing"):
         for d in sorted(set(e[part]) | set(g[part])):
             if d not in g[part]:
                 out.append(f"{part}.{d}: missing")

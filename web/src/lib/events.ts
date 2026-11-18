@@ -10,6 +10,7 @@
 
 import { type Compound, isCompound, type RaceSnapshot, toSnapshot } from "./api";
 import { isDriverId, isFiniteNumber, isInt, isObj, isStr, nullable, type Obj, UUID } from "./guard";
+import { parseTimingValues, type TimingValues } from "./timing";
 
 export type AlertReason = "opportunity" | "attempt";
 export type AlertTrigger = "new_candidate" | "probability_crossed" | "pit_in";
@@ -33,6 +34,8 @@ export interface LapEvent extends Base {
   /** Real tyre life (display only); null when unknown or absent from the payload. */
   tyreLifeLaps: number | null;
   tyreLifeAtStartLaps: number | null;
+  /** Feature 5 tower values (display only); all null when absent from the payload. */
+  timing: TimingValues;
 }
 
 export interface PitEvent extends Base {
@@ -115,6 +118,7 @@ function lap(payload: Obj, base: Base): LapEvent | null {
     tyreAge,
     tyreLifeLaps: life !== undefined && life !== null && life >= 1 ? life : null,
     tyreLifeAtStartLaps: atStart !== undefined && atStart !== null && atStart >= 0 ? atStart : null,
+    timing: parseTimingValues(payload),
   };
 }
 

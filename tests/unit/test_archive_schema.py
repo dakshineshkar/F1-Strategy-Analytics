@@ -1,4 +1,5 @@
-"""``archive.schema``: bundle schema v1, the deterministic gzip JSON encoding and the manifest."""
+"""``archive.schema``: bundle schema v2 (v1 still read), the deterministic gzip JSON encoding and
+the manifest."""
 
 from __future__ import annotations
 
@@ -64,7 +65,11 @@ def test_the_manifest_describes_the_bytes(bundle: ArchiveBundle) -> None:
 @pytest.mark.parametrize(
     ("mutate", "match"),
     [
-        (lambda d: d.update(schema_version=2), "schema_version"),
+        (lambda d: d.update(schema_version=3), "schema_version"),
+        (lambda d: d.update(schema_version=1), "a v1 bundle has no status or timing"),
+        (lambda d: d["status"].pop(), "status laps"),
+        (lambda d: d["status"][0].update(status="yellow"), "status"),
+        (lambda d: d["snapshots"][-1]["timing"].update(x={"lap": 0}), "lap"),
         (lambda d: d["snapshots"].reverse(), "strictly increasing"),
         (lambda d: d["meta"].update(laps=d["meta"]["laps"] + 1), "meta.laps"),
         (lambda d: d["messages"][0]["message"].update(round=99), "another race"),
@@ -108,3 +113,26 @@ def test_decoding_refuses_non_finite_numbers_and_bad_bytes(bundle: ArchiveBundle
     with pytest.raises(ArchiveFormatError, match="beyond"):
         gunzip_limited(gz, limit=100)
     assert len(gunzip_limited(gz)) == len(raw) < MAX_RAW_BYTES
+
+
+# ------------------------------------------------------------------ v2 (Feature 5) and v1
+def test_v2_carries_timing_and_status_and_v1_still_reads(bundle: ArchiveBundle) -> None:
+    from f1sa.archive.schema import SCHEMA_VERSION, SCHEMA_VERSIONS
+
+    assert (SCHEMA_VERSION, SCHEMA_VERSIONS) == (2, (1, 2))
+    assert bundle.schema_version == 2
+    assert [x.lap for x in bundle.status] == [x.lap for x in bundle.snapshots]
+    assert any(snap.timing for snap in bundle.snapshots)
+    assert all(t.pit_stops is not None for snap in bundle.snapshots for t in snap.timing.values())
+    # a Feature 4 (v1) bundle: no timing and no status, still valid and decoded
+    doc = _doc(bundle)
+    doc["schema_version"] = 1
+    doc.pop("status")
+    for snap in doc["snapshots"]:
+        snap.pop("timing")
+    v1 = decode_bundle(_gz(doc))
+    assert v1.schema_version == 1 and v1.status == []
+    assert all(snap.timing == {} for snap in v1.snapshots)
+    raw, gz = encode_bundle(v1)
+    m = manifest_for(v1, raw, gz, "a" * 64)
+    assert m.schema_version == 1

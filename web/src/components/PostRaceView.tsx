@@ -7,6 +7,7 @@ import { analysisSearch } from "@/lib/analysis";
 import {
   type ArchiveBundle,
   archiveStep,
+  hasTowerExtras,
   type ArchiveView,
   initialArchiveView,
   lapDurationMs,
@@ -14,6 +15,7 @@ import {
   type PlaybackAction,
   raceControlUpTo,
   snapshotLaps,
+  statusAtLap,
 } from "@/lib/archive";
 import { indexEntrants } from "@/lib/entrants";
 import type { GlossaryGroup } from "@/lib/legend";
@@ -24,11 +26,17 @@ import { AlertFeed } from "./AlertFeed";
 import { ArchiveControls } from "./ArchiveControls";
 import { GapChart } from "./GapChart";
 import { Legend } from "./Legend";
-import { TimingTower } from "./TimingTower";
+import { RaceStatusBanner } from "./RaceStatusBanner";
+import { TowerPanel } from "./TowerPanel";
 import { TyrePanel } from "./TyrePanel";
 
 export const ARCHIVE_GROUPS: readonly GlossaryGroup[] = ["archive", "tower", "alerts"];
 const RC_SHOWN = 12;
+/** A Feature 4 bundle (schema v1) has no sector, speed-trap or race-status values (its pit counts
+ * still come from the replayed pit messages). */
+export const V1_NOTE =
+  "This archive bundle (schema v1) was built before the race status, sector and speed-trap columns; " +
+  "rebuild the archive to see them here (they are shown in live mode).";
 
 function Head({
   season,
@@ -138,6 +146,7 @@ function PostRaceBody({
   const marks = useMemo(() => markers(bundle, (id) => entrants[id]?.code ?? id), [bundle, entrants]);
   const rows = towerRows(view);
   const rc = raceControlUpTo(bundle, pb.lap);
+  const extras = hasTowerExtras(bundle);
   const shown = rc.slice(-RC_SHOWN).reverse();
   return (
     <>
@@ -157,11 +166,17 @@ function PostRaceBody({
         <div className="dash-main">
           <ArchiveControls laps={laps} total={bundle.meta.laps} state={pb} dispatch={dispatch} markers={marks} />
           <Legend groups={ARCHIVE_GROUPS} />
-          <TimingTower
+          <RaceStatusBanner
+            status={statusAtLap(bundle, pb.lap)}
+            unavailable={extras ? null : V1_NOTE}
+            announce={false}
+          />
+          <TowerPanel
             rows={rows}
             lapsDown={(id) => lapsDown(view, id)}
             entrants={entrants}
             captionNote={`gaps at the timing line at the end of lap ${pb.lap}, from the post-race archive`}
+            extrasNote={extras ? null : V1_NOTE}
           />
           <GapChart state={view} />
         </div>

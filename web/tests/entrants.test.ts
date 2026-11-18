@@ -21,6 +21,7 @@ import {
 } from "@/lib/entrants";
 import type { DriverRow } from "@/lib/reducer";
 import { contrastRatio, dark, light } from "@/lib/theme";
+import { NO_TIMING } from "@/lib/timing";
 
 const html = (el: Parameters<typeof renderToStaticMarkup>[0]) => renderToStaticMarkup(el);
 
@@ -184,6 +185,8 @@ const row = (id: string, position: number): DriverRow => ({
   tyreLifeLaps: null,
   tyreLifeAtStartLaps: null,
   tyreLifeLap: null,
+  timing: NO_TIMING,
+  timingLap: null,
   undercutFlag: false,
   undercutProb: null,
   lap: 3,

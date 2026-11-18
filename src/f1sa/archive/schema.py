@@ -1,4 +1,5 @@
-"""The post-race archive bundle (schema version 1) and its gzip JSON encoding.
+"""The post-race archive bundle (schema version 2; version 1 is still read) and its gzip JSON
+encoding.
 
 One bundle per race, ``{lake}/archive/race_bundle/season=S/round=R/bundle.json.gz`` next to a
 ``_manifest.json``. Pydantic only (no pyspark), so the API imports it.
@@ -6,7 +7,8 @@ One bundle per race, ``{lake}/archive/race_bundle/season=S/round=R/bundle.json.g
 * ``snapshots``: the race state at the **end of each leader lap** N, i.e. after every event before
   the leader's first lap-(N+1) crossing. Each one is exactly what ``GET /api/races/{s}/{r}/state``
   returns for the Redis the stream left at that point (``api.models.RaceStateOut``: the 9 driver
-  hash fields, the order zset and the additive tyre hash) plus ``lap``.
+  hash fields, the order zset, the additive tyre hash and, from v2, the additive timing hash of
+  Feature 5) plus ``lap``.
 * ``messages``: every message the stream published on ``race:{s}:{r}:events`` (lap, pit_in,
   pit_out, undercut_alert, session_end), verbatim, with the ``event_id`` the SSE stream would give
   it and the leader lap of the micro-batch that published it.
@@ -14,6 +16,12 @@ One bundle per race, ``{lake}/archive/race_bundle/season=S/round=R/bundle.json.g
   gap, calibrated probability), with the lap of the micro-batch that evaluated it.
 * ``track`` / ``race_control``: per-lap track status of the leader and the race-control messages
   (``clean/analysis_*``, Feature 2), for the slider's markers. Display only.
+* ``status`` (v2, Feature 5): the race-status banner at the end of each leader lap N, from the same
+  ``api.race_status.race_status`` the live ``GET …/status`` runs, fed by a ``LapLog`` replayed from
+  the bundle's own messages up to lap N (laps <= N and race control with lap <= N only).
+
+Version 2 adds ``snapshots[].timing`` and ``status``; everything else is unchanged. A v1 bundle (no
+timing, no status) still validates and is served as stored.
 """
 
 from __future__ import annotations
@@ -30,12 +38,17 @@ from f1sa.api.models import (
     AnalysisRaceControlOut,
     DriverStateOut,
     EntrantOut,
+    NeutralStatus,
     OrderEntry,
+    TimingOut,
     TyreLifeOut,
 )
 from f1sa.serving import keys as K
 
-SCHEMA_VERSION: Literal[1] = 1
+SCHEMA_VERSION: Literal[2] = 2
+"""The version the builder writes."""
+SCHEMA_VERSIONS: tuple[int, ...] = (1, 2)
+"""The versions the reader accepts (v1: Feature 4 bundles without the Feature 5 extras)."""
 ZONE = "archive"
 TABLE = "race_bundle"
 TABLES: tuple[str, ...] = (TABLE,)
@@ -101,6 +114,9 @@ class SnapshotOut(_Strict):
     drivers: dict[str, DriverStateOut]
     order: list[OrderEntry]
     tyres: dict[str, TyreLifeOut] = Field(default_factory=dict)
+    timing: dict[str, TimingOut] = Field(
+        default_factory=dict, description="v2: the additive timing hash (Feature 5)"
+    )
 
 
 class MessageOut(_Strict):
@@ -137,8 +153,18 @@ class TrackLapOut(_Strict):
     track_status: str | None
 
 
+class StatusLapOut(_Strict):
+    """The race-status banner at the end of leader lap ``lap`` (v2, Feature 5)."""
+
+    lap: int = Field(ge=1)
+    status: NeutralStatus
+    source: Literal["track_status", "estimated", "none"]
+    message: str | None
+    message_lap: int | None
+
+
 class ArchiveBundle(_Strict):
-    schema_version: Literal[1]
+    schema_version: Literal[1, 2]
     meta: BundleMeta
     entrants: list[EntrantOut]
     snapshots: list[SnapshotOut] = Field(min_length=1)
@@ -146,6 +172,7 @@ class ArchiveBundle(_Strict):
     decisions: list[DecisionOut]
     track: list[TrackLapOut]
     race_control: list[AnalysisRaceControlOut]
+    status: list[StatusLapOut] = Field(default_factory=list, description="v2 only")
 
     @model_validator(mode="after")
     def _check(self) -> ArchiveBundle:
@@ -173,13 +200,18 @@ class ArchiveBundle(_Strict):
         track_laps = [t.lap for t in self.track]
         if track_laps != sorted(set(track_laps)):
             raise ValueError("track laps must be strictly increasing")
+        if self.schema_version == 1:
+            if self.status or any(snap.timing for snap in self.snapshots):
+                raise ValueError("a v1 bundle has no status or timing")
+        elif [x.lap for x in self.status] != laps:
+            raise ValueError("v2 status laps must equal the snapshot laps")
         return self
 
 
 class ManifestOut(_Strict):
     """What ``_manifest.json`` records about the bundle (the sink adds its own fields)."""
 
-    schema_version: Literal[1]
+    schema_version: Literal[1, 2]
     season: int
     round: int
     race_name: str | None
@@ -247,13 +279,13 @@ def decode_bundle(data: bytes, *, limit: int = MAX_RAW_BYTES) -> ArchiveBundle:
     try:
         return ArchiveBundle.model_validate(doc)
     except ValidationError as exc:
-        raise ArchiveFormatError(f"bundle breaks schema v{SCHEMA_VERSION}: {exc}") from exc
+        raise ArchiveFormatError(f"bundle breaks the archive schema: {exc}") from exc
 
 
 def manifest_for(bundle: ArchiveBundle, raw: bytes, gz: bytes, sha256: str) -> ManifestOut:
     alerts = sum(1 for m in bundle.messages if m.message["type"] == "undercut_alert")
     return ManifestOut(
-        schema_version=SCHEMA_VERSION,
+        schema_version=bundle.schema_version,
         season=bundle.meta.season,
         round=bundle.meta.round,
         race_name=bundle.meta.race_name,

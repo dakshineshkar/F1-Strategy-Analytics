@@ -1,9 +1,10 @@
 /** Post-race archive (Feature 4, display only): the bundle guard and the pure helpers of the
  * post-race mode.
  *
- * A bundle (``GET /api/archive/{s}/{r}``, schema v1) holds, per leader lap N, the messages the stream
- * published in that lap's micro-batch and the Redis state at the end of lap N (the 9 driver-hash
- * fields, the order zset and the tyre hash). The view at lap N is built by the **unchanged** live
+ * A bundle (``GET /api/archive/{s}/{r}``, schema v1 or v2) holds, per leader lap N, the messages the
+ * stream published in that lap's micro-batch and the Redis state at the end of lap N (the 9
+ * driver-hash fields, the order zset, the tyre hash and, from v2, the Feature 5 timing hash), plus
+ * (v2) the race-status banner per lap. The view at lap N is built by the **unchanged** live
  * reducer: reset, then for each lap ≤ N its messages (exactly as the SSE stream frames them) and its
  * snapshot. So the tower, gaps, tyres and alert groups are what a live dashboard connected from the
  * start shows at the end of that lap; nothing is recomputed here. Announcements are cleared (the
@@ -13,9 +14,13 @@ import { type RaceControlMsg, toRaceControlMsg } from "./analysis";
 import { type DriverState, type RaceSnapshot, toDriverState, type TyreLife, toTyreLife } from "./api";
 import { type Entrant, toEntrant } from "./entrants";
 import { isBool, isDriverId, isFiniteNumber, isInt, isObj, isStr, nullable, UUID } from "./guard";
+import { type RaceStatus, toRaceStatus } from "./raceStatus";
 import { initialState, raceReducer, type RaceState } from "./reducer";
+import { type TimingHash, toTimingHash } from "./timing";
 
-export const ARCHIVE_SCHEMA_VERSION = 1;
+/** The versions this dashboard reads: v1 (Feature 4) and v2 (adds timing and status, Feature 5). */
+export const ARCHIVE_SCHEMA_VERSIONS = [1, 2] as const;
+export type ArchiveSchemaVersion = (typeof ARCHIVE_SCHEMA_VERSIONS)[number];
 export const PLAY_SPEEDS = [1, 10, 60] as const;
 export type PlaySpeed = (typeof PLAY_SPEEDS)[number];
 /** A lap's playback length when the leader's lap time is unknown (race seconds). */
@@ -28,6 +33,8 @@ export interface ArchiveSnapshot {
   drivers: Record<string, DriverState>;
   order: { driver_id: string; position: number }[];
   tyres: Record<string, TyreLife>;
+  /** v2 only (empty in v1). */
+  timing: Record<string, TimingHash>;
 }
 
 export interface ArchiveMessage {
@@ -62,12 +69,15 @@ export interface ArchiveMeta {
 }
 
 export interface ArchiveBundle {
+  schemaVersion: ArchiveSchemaVersion;
   meta: ArchiveMeta;
   entrants: Entrant[];
   snapshots: ArchiveSnapshot[];
   messages: ArchiveMessage[];
   track: ArchiveTrackLap[];
   raceControl: RaceControlMsg[];
+  /** v2: the race-status banner at the end of each snapshot lap (empty in v1). */
+  status: RaceStatus[];
 }
 
 export interface ArchiveRace {
@@ -101,7 +111,16 @@ function toArchiveSnapshot(v: unknown): ArchiveSnapshot | undefined {
     if (!isDriverId(id) || t === undefined) return undefined;
     tyres[id] = t;
   }
-  return { lap: v.lap, drivers, order, tyres };
+  const timing: Record<string, TimingHash> = {};
+  if (v.timing !== undefined) {
+    if (!isObj(v.timing)) return undefined;
+    for (const [id, raw] of Object.entries(v.timing)) {
+      const t = toTimingHash(raw);
+      if (!isDriverId(id) || t === undefined) return undefined;
+      timing[id] = t;
+    }
+  }
+  return { lap: v.lap, drivers, order, tyres, timing };
 }
 
 function toArchiveMessage(v: unknown, season: number, round: number): ArchiveMessage | undefined {
@@ -159,9 +178,10 @@ function all<T>(v: unknown, guard: (x: unknown) => T | undefined): T[] | undefin
   return out.includes(undefined) ? undefined : (out as T[]);
 }
 
-/** A whole bundle, or ``undefined`` if any part breaks schema v1 (one bad row rejects it). */
+/** A whole bundle, or ``undefined`` if any part breaks schema v1 / v2 (one bad row rejects it). */
 export function toArchiveBundle(v: unknown): ArchiveBundle | undefined {
-  if (!isObj(v) || v.schema_version !== ARCHIVE_SCHEMA_VERSION) return undefined;
+  if (!isObj(v) || (v.schema_version !== 1 && v.schema_version !== 2)) return undefined;
+  const schemaVersion: ArchiveSchemaVersion = v.schema_version;
   const meta = toMeta(v.meta);
   if (meta === undefined) return undefined;
   const snapshots = all(v.snapshots, toArchiveSnapshot);
@@ -176,7 +196,15 @@ export function toArchiveBundle(v: unknown): ArchiveBundle | undefined {
   if (messages.some((m, i) => !known.has(m.lap) || (i > 0 && m.lap < (messages[i - 1] as ArchiveMessage).lap))) {
     return undefined;
   }
-  return { meta, entrants, snapshots, messages, track, raceControl };
+  let status: RaceStatus[] = [];
+  if (schemaVersion === 2) {
+    const parsed = all(v.status, toRaceStatus);
+    if (!parsed || parsed.map((x) => x.lap).join() !== laps.join()) return undefined;
+    status = parsed;
+  } else if (v.status !== undefined || snapshots.some((x) => Object.keys(x.timing).length > 0)) {
+    return undefined;
+  }
+  return { schemaVersion, meta, entrants, snapshots, messages, track, raceControl, status };
 }
 
 export function toArchiveList(v: unknown): ArchiveRace[] | undefined {
@@ -211,7 +239,23 @@ export function clampLap(b: ArchiveBundle, lap: number): number {
 }
 
 function toSnapshotData(b: ArchiveBundle, s: ArchiveSnapshot): RaceSnapshot {
-  return { season: b.meta.season, round: b.meta.round, drivers: s.drivers, order: s.order, tyres: s.tyres };
+  return {
+    season: b.meta.season,
+    round: b.meta.round,
+    drivers: s.drivers,
+    order: s.order,
+    tyres: s.tyres,
+    timing: s.timing,
+  };
+}
+
+/** True when the bundle carries the Feature 5 extras (schema v2). */
+export const hasTowerExtras = (b: ArchiveBundle): boolean => b.schemaVersion >= 2;
+
+/** The race-status banner at the end of ``lap`` (v2), or null (a v1 bundle). */
+export function statusAtLap(b: ArchiveBundle, lap: number): RaceStatus | null {
+  const to = clampLap(b, lap);
+  return b.status.find((x) => x.lap === to) ?? null;
 }
 
 /** ``state`` (the view at the end of lap ``fromLap``, or a fresh state with ``fromLap`` 0) moved to

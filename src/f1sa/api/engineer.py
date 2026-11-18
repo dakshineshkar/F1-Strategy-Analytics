@@ -298,6 +298,31 @@ def lake_neutral(
     )
 
 
+def neutral_at(
+    laps: Laps,
+    lap: int,
+    laps_doc: AnalysisLapsOut | None,
+    rc_doc: AnalysisRaceControlsOut | None,
+) -> tuple[EngineerNeutralOut, set[int]]:
+    """The track status at lap ``lap`` and the neutralised laps <= ``lap``: the lake's track-status
+    codes and race control when the lake has them (``lake_neutral``), else the causal estimate over
+    ``laps`` (rows <= ``lap`` only, ``estimated_neutral``). Shared by the engineer view and the
+    Feature 5 race-status banner (live and archive)."""
+    neutral_lake = lake_neutral(laps_doc, rc_doc, lap)
+    if neutral_lake is not None:
+        return neutral_lake
+    status, neutral_laps = estimated_neutral(laps, lap)
+    return (
+        EngineerNeutralOut(
+            status=status,  # type: ignore[arg-type]
+            source="estimated" if status != "unknown" else "none",
+            message=None,
+            message_lap=None,
+        ),
+        neutral_laps,
+    )
+
+
 # ============================================================================== typical stint
 @dataclass(frozen=True)
 class StintSample:
@@ -594,17 +619,7 @@ def build(inp: EngineerInputs) -> EngineerOut:
         )
     laps = by_driver(all_rows, lap)
 
-    neutral_lake = lake_neutral(inp.laps_doc, inp.rc_doc, lap)
-    if neutral_lake is not None:
-        neutral_out, neutral_laps = neutral_lake
-    else:
-        status, neutral_laps = estimated_neutral(laps, lap)
-        neutral_out = EngineerNeutralOut(
-            status=status,  # type: ignore[arg-type]
-            source="estimated" if status != "unknown" else "none",
-            message=None,
-            message_lap=None,
-        )
+    neutral_out, neutral_laps = neutral_at(laps, lap, inp.laps_doc, inp.rc_doc)
 
     order, left_out = order_at(laps, lap)
     ids = [c.driver_id for c in order]

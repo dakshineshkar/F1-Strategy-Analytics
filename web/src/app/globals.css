@@ -465,3 +465,62 @@ input[type="search"], select {
   .ac-status { text-align: left; min-width: 0; }
   .ac-grid, .ac-lane { grid-template-columns: 2.8rem minmax(0, 1fr); }
 }
+
+/* ---------------------------------------------------------------- timing tower extras (Feature 5)
+   Shared tokens only. PB / OB always carry their text tag; the colour only repeats it. */
+.tower-block { display: grid; gap: 0.4rem; }
+.tower-tools { display: flex; justify-content: flex-end; margin-bottom: 0.4rem; }
+.tower-columns { position: relative; }
+.tower-columns-panel {
+  position: absolute; right: 0; z-index: 5; margin-top: 0.3rem; padding: 0.6rem 0.75rem; min-width: 16rem;
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+}
+.tower-columns-panel fieldset { display: flex; flex-wrap: wrap; gap: 0.3rem 0.9rem; margin: 0 0 0.5rem; padding: 0; border: 0; }
+.tower-columns-panel legend { margin-bottom: 0.3rem; font: 600 0.78rem/1.3 var(--font-ui); color: var(--muted); }
+.tower-columns-panel input:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+.tower-best { margin: 0; font: 600 0.8rem/1.4 var(--font-num); overflow-wrap: anywhere; }
+.tower-best-label { font: 700 0.7rem/1 var(--font-num); letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
+.tower { min-width: 76rem; }
+.tower .c-pin { width: 2.6rem; text-align: center; }
+.tower .c-sec { width: 6.4rem; text-align: right; font-family: var(--font-num); }
+.tower .c-trap { width: 5.8rem; text-align: right; font-family: var(--font-num); }
+.tower .c-pits { width: 4rem; text-align: right; font-family: var(--font-num); }
+.tower thead .c-sec, .tower thead .c-trap, .tower thead .c-pits { text-align: right; }
+.tag.mark { margin-left: 0.25rem; padding: 0 0.2rem; font-size: 0.6rem; }
+.mark-pb { border-color: var(--ok); color: var(--ok); }
+.mark-ob { border-color: var(--line-4); color: var(--line-4); border-width: 2px; }
+.pin-btn {
+  display: inline-grid; place-items: center; width: 1.6rem; height: 1.6rem; padding: 0;
+  background: transparent; color: var(--muted); border: 1px solid transparent; border-radius: var(--radius);
+  font: 700 0.95rem/1 var(--font-ui); cursor: pointer;
+}
+.pin-btn:hover { border-color: var(--border); color: var(--text); }
+.pin-btn:focus-visible { outline: 3px solid var(--focus); outline-offset: 1px; }
+.pin-btn[aria-pressed="true"] { color: var(--accent-ink); border-color: var(--accent-ink); }
+.pin-btn:disabled { cursor: default; }
+/* The pinned row: a thick bar on its left and a double rule under it (shapes, not only colour). */
+.tower tbody tr.is-pinned .c-pos { box-shadow: inset 6px 0 0 var(--focus); }
+.tower tbody tr.is-pinned > * { border-bottom: 3px double var(--focus); }
+.race-status {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem 0.75rem; margin-bottom: 0.6rem;
+  padding: 0.45rem 0.75rem; background: var(--surface); border: 1px solid var(--border); border-left-width: 6px;
+  border-radius: var(--radius);
+}
+.race-status-code { font: 800 0.95rem/1 var(--font-num); letter-spacing: 0.08em; min-width: 5.5rem; }
+.race-status-est { font: italic 600 0.72rem/1 var(--font-num); color: var(--muted); }
+.race-status-text { display: flex; flex-wrap: wrap; gap: 0.2rem 0.75rem; font-size: 0.85rem; flex: 1 1 14rem; min-width: 0; }
+.race-status-lap { font-family: var(--font-num); color: var(--muted); }
+.race-status-msg { font-weight: 600; overflow-wrap: anywhere; }
+.race-status-src { font-size: 0.75rem; }
+/* The status differs by its text code and by the left border style; the colour only repeats it. */
+.race-status-green { border-left-color: var(--ok); }
+.race-status-sc { border-left-color: var(--warn); }
+.race-status-vsc { border-left-color: var(--warn); border-left-style: dashed; }
+.race-status-neutralised { border-left-color: var(--warn); border-left-style: dotted; }
+.race-status-red { border-left-color: var(--danger); border-left-style: double; border-left-width: 9px; }
+.race-status-unknown { border-left-color: var(--border); }
+@media (max-width: 640px) {
+  .tower { min-width: 62rem; }
+  .tower .c-sec { width: 5.4rem; }
+  .tower-columns-panel { right: auto; left: 0; min-width: min(18rem, calc(100vw - 2rem)); }
+}

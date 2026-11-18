@@ -466,3 +466,139 @@ def test_async_store_writes_and_reads_tyres(server: fakeredis.FakeServer) -> Non
         assert await store.end_session(2025, 7) == 6
 
     asyncio.run(run())
+
+
+# ----------------------------------------------------- additive timing hash (Feature 5)
+TIMINGS = {
+    "max_verstappen": R.TimingRow(
+        lap=30,
+        sector1_s=28.512,
+        sector2_s=31.25,
+        sector3_s=24.003,
+        speed_trap_kph=321.4,
+        pb_sector1_s=28.1,
+        pb_sector2_s=31.25,
+        pb_sector3_s=23.9,
+        pb_speed_trap_kph=325.0,
+        pit_stops=1,
+    ),
+    "norris": R.TimingRow(lap=29, pit_stops=0),  # the sample: no sectors or speed trap
+}
+
+
+def _timing_batch() -> R.Batch:
+    return replace(_batch(), timings=TIMINGS)
+
+
+def test_timing_hash_round_trip_and_exact_fields(
+    store: R.RaceStore, client: fakeredis.FakeRedis
+) -> None:
+    store.write_batch(2024, 5, _timing_batch())
+    h = client.hgetall("race:2024:5:timing:max_verstappen")
+    assert tuple(h) == K.TIMING_FIELDS
+    assert (h["lap"], h["sector1_s"], h["pb_speed_trap_kph"], h["pit_stops"]) == (
+        "30",
+        "28.512",
+        "325.0",
+        "1",
+    )
+    assert ISO_MS.match(h["updated_at"])
+    unknown = client.hgetall("race:2024:5:timing:norris")
+    assert all(unknown[f] == "" for f in R.TIMING_VALUES) and unknown["pit_stops"] == "0"
+    for d, row in TIMINGS.items():
+        got = store.get_timing(2024, 5, d)
+        assert got is not None and got.timing == row
+    assert store.get_timing(2024, 5, "leclerc") is None
+    # the driver and tyre hashes are untouched
+    assert tuple(client.hgetall("race:2024:5:driver:max_verstappen")) == K.DRIVER_FIELDS
+    assert not client.exists("race:2024:5:tyre:max_verstappen")
+
+
+_GOOD_TIMING = {f: "" for f in K.TIMING_FIELDS} | {"lap": "3", "updated_at": "x"}
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        {k: v for k, v in _GOOD_TIMING.items() if k != "pit_stops"},  # a field missing
+        _GOOD_TIMING | {"extra": "1"},  # an extra field
+        _GOOD_TIMING | {"lap": ""},
+        _GOOD_TIMING | {"lap": "0"},
+        _GOOD_TIMING | {"sector1_s": "0.0"},
+        _GOOD_TIMING | {"sector2_s": "-1.5"},
+        _GOOD_TIMING | {"speed_trap_kph": "inf"},
+        _GOOD_TIMING | {"pb_sector3_s": "nan"},
+        _GOOD_TIMING | {"pit_stops": "-1"},
+        _GOOD_TIMING | {"pit_stops": "x"},
+    ],
+)
+def test_decode_timing_rejects_hashes_outside_its_fields(raw: dict[str, str]) -> None:
+    with pytest.raises((R.StoreError, ValueError)):
+        R.decode_timing(raw)
+
+
+def test_decode_timing_accepts_an_all_unknown_hash() -> None:
+    got = R.decode_timing(_GOOD_TIMING)
+    assert got is not None and got.timing == R.TimingRow(lap=3)
+    assert R.decode_timing({}) is None
+
+
+@pytest.mark.parametrize(
+    "kw",
+    [
+        {"lap": 0},
+        {"lap": 3, "sector1_s": 0.0},
+        {"lap": 3, "sector2_s": -1.0},
+        {"lap": 3, "speed_trap_kph": math.inf},
+        {"lap": 3, "pb_sector1_s": True},
+        {"lap": 3, "pit_stops": -1},
+        {"lap": 3, "pit_stops": 1.0},
+    ],
+)
+def test_invalid_timing_rows_rejected(kw: dict[str, Any]) -> None:
+    with pytest.raises(R.StoreError):
+        R.TimingRow(**kw)
+
+
+def test_timing_hash_gets_the_safety_ttl_and_the_session_end_expire(
+    store: R.RaceStore, client: fakeredis.FakeRedis
+) -> None:
+    store.write_batch(2024, 5, _timing_batch())
+    store.write_batch(2024, 6, _timing_batch())
+    keys = ["race:2024:5:timing:max_verstappen", "race:2024:5:timing:norris"]
+    assert set(keys) <= set(store.race_keys(2024, 5))
+    assert all(AFTER < client.ttl(k) <= SAFETY for k in keys)
+    assert store.end_session(2024, 5) == 6  # 3 driver hashes + order + 2 timing hashes
+    assert all(0 < client.ttl(k) <= AFTER for k in keys)
+    assert all(client.ttl(k) > AFTER for k in store.race_keys(2024, 6))  # other race untouched
+
+
+def test_timing_writes_share_the_batch_pipeline(client: fakeredis.FakeRedis) -> None:
+    spy = _Spy(client)
+    store = R.RaceStore(spy, _settings(), now=_clock())  # type: ignore[arg-type]
+    n = store.write_batch(2024, 5, replace(_timing_batch(), tyres=TYRES))
+    assert n == 3 * 2 + 2 + 2 + 2 * 2 + 2 * 2  # + HSET and EXPIRE per tyre and timing hash
+    assert spy.calls == [{"transaction": False}] and spy.executes == 1
+    # a batch of timing rows alone is not empty
+    assert store.write_batch(2024, 5, R.Batch(timings=TIMINGS)) == 4 and spy.executes == 2
+
+
+def test_invalid_timing_driver_id_sends_nothing(
+    store: R.RaceStore, client: fakeredis.FakeRedis
+) -> None:
+    bad = replace(_batch(), timings={"Max Verstappen": TIMINGS["norris"]})
+    with pytest.raises(K.InvalidKeyError):
+        store.write_batch(2024, 5, bad)
+    assert client.dbsize() == 0
+
+
+def test_async_store_writes_and_reads_timing(server: fakeredis.FakeServer) -> None:
+    async def run() -> None:
+        client = fakeredis.FakeAsyncRedis(server=server, decode_responses=True)
+        store = R.AsyncRaceStore(client, _settings(), now=_clock())
+        assert await store.write_batch(2025, 7, _timing_batch()) == 14
+        got = await store.get_timing(2025, 7, "max_verstappen")
+        assert got is not None and got.timing == TIMINGS["max_verstappen"]
+        assert await store.end_session(2025, 7) == 6
+
+    asyncio.run(run())

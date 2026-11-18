@@ -196,3 +196,80 @@ def test_time_helpers() -> None:
     assert RS.ms_to_datetime(None) is None
     assert RS.ms_to_datetime(0).isoformat() == "1970-01-01T00:00:00+00:00"  # type: ignore[union-attr]
     assert RS.now_ms() > 1_700_000_000_000
+
+
+# ------------------------------------------------------- additive timing hash (Feature 5)
+TOWER_A = {
+    "sector1_s": 28.5,
+    "sector2_s": 31.25,
+    "sector3_s": 24.0,
+    "speed_trap_kph": 321.4,
+    "pb_sector1_s": 28.5,
+    "pb_sector2_s": 31.25,
+    "pb_sector3_s": 24.0,
+    "pb_speed_trap_kph": 321.4,
+    "pit_stops": 0,
+}
+
+
+def test_timing_hash_follows_the_latest_lap_event_in_the_same_pipeline() -> None:
+    store = CountingStore()
+    sink = RS.RedisSink(store, clock_ms=lambda: 5_000)
+    a1 = lap_ev("a", 1, 1, 90.0, **TOWER_A)
+    b1 = lap_ev("b", 1, 2, 91.5, lap_time=91.5, pit_stops=0)  # the sample: no sectors
+    st = race(a1, b1)
+    pubsub = store.client.pubsub()
+    pubsub.subscribe(K.events_channel(S, R))
+    pubsub.get_message(timeout=0.1)
+    rec = sink.write(st, [a1, b1], [], received_ms=4_000)
+    assert rec is not None and len(store.batches) == 1  # one write_batch for everything
+    assert set(store.batches[0][2].timings) == {"a", "b"}
+    ta = store.client.hgetall(K.timing_key(S, R, "a"))
+    assert tuple(ta) == K.TIMING_FIELDS
+    assert (ta["lap"], ta["sector2_s"], ta["pb_speed_trap_kph"], ta["pit_stops"]) == (
+        "1",
+        "31.25",
+        "321.4",
+        "0",
+    )
+    tb = store.client.hgetall(K.timing_key(S, R, "b"))
+    assert (tb["sector1_s"], tb["speed_trap_kph"], tb["pit_stops"]) == ("", "", "0")
+    assert store.client.ttl(K.timing_key(S, R, "a")) > 0
+    payload = json.loads(pubsub.get_message(timeout=0.1)["data"])["payload"]
+    assert {f: payload[f] for f in TOWER_A} == TOWER_A
+    # the driver hash keeps exactly the 9 contract fields
+    assert tuple(store.client.hgetall(K.driver_key(S, R, "a"))) == DRIVER_FIELDS
+
+    # next batch: a slower lap keeps the best so far from the event; null values are written
+    a2 = lap_ev("a", 2, 1, 180.0, sector1_s=29.0, pb_sector1_s=28.5, pit_stops=1)
+    st.apply(a2, 0)
+    sink.write(st, [a2], [], received_ms=4_100)
+    ta = store.client.hgetall(K.timing_key(S, R, "a"))
+    assert (ta["lap"], ta["sector1_s"], ta["pb_sector1_s"], ta["sector2_s"]) == (
+        "2",
+        "29.0",
+        "28.5",
+        "",
+    )
+    assert ta["pit_stops"] == "1"
+
+
+def test_an_older_lap_event_never_overwrites_the_timing_hash() -> None:
+    store = CountingStore()
+    sink = RS.RedisSink(store, clock_ms=lambda: 5_000)
+    new = lap_ev("a", 5, 1, 450.0, sector1_s=28.0, pit_stops=1)
+    old = lap_ev("a", 4, 1, 360.0, sector1_s=29.0, pit_stops=1)
+    st = race(new, old)  # lap 5 arrived first
+    sink.write(st, [new, old], [], received_ms=4_000)
+    assert store.client.hget(K.timing_key(S, R, "a"), "lap") == "5"
+    assert RS.timing_rows(st, [old]) == {}
+    assert RS.timing_rows(st, [new])["a"].sector1_s == 28.0
+
+
+def test_pit_events_publish_no_tower_fields_and_write_no_timing() -> None:
+    a1 = lap_ev("a", 1, 1, 90.0, **TOWER_A)
+    st = race(a1)
+    pit = RaceEvent(new_event_id(), "pit_in", S, R, 170.0, driver_id="a", lap=2)
+    st.apply(pit, 0)
+    assert RS.timing_rows(st, [pit]) == {}
+    assert "pit_stops" not in RS.event_payload(pit, 1, 2)

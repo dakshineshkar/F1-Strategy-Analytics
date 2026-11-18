@@ -7,6 +7,7 @@ import {
   advance,
   archiveStep,
   clampLap,
+  hasTowerExtras,
   initialArchiveView,
   lapDurationMs,
   lapValueText,
@@ -19,6 +20,7 @@ import {
   raceSearch,
   seek,
   stateAtLap,
+  statusAtLap,
   toArchiveBundle,
   toArchiveList,
   type ArchiveBundle,
@@ -163,7 +165,9 @@ describe("toArchiveBundle", () => {
   });
 
   it.each([
-    ["another schema version", (d: Doc) => (d.schema_version = 2)],
+    ["another schema version", (d: Doc) => (d.schema_version = 3)],
+    ["a v2 bundle without status", (d: Doc) => (d.schema_version = 2)],
+    ["a v1 bundle with timing", (d: Doc) => (d.snapshots[0].timing = { max_verstappen: { lap: 1, pit_stops: 0 } })],
     ["unsorted snapshots", (d: Doc) => d.snapshots.reverse()],
     ["meta.laps is not the last lap", (d: Doc) => (d.meta.laps = 9)],
     ["a message of another race", (d: Doc) => (d.messages[0].message.round = 6)],
@@ -376,5 +380,53 @@ describe("ArchiveControls", () => {
     expect((html.match(/tabindex="0"/g) ?? []).length).toBe(1); // one tab stop for the markers
     expect(html).toContain('checked="" value="10"');
     expect(html).toContain(">Paused</p>");
+  });
+});
+
+describe("schema v2 (Feature 5): timing in the snapshots and the per-lap status", () => {
+  const v2 = (): Doc => {
+    const d = rawBundle();
+    d.schema_version = 2;
+    d.status = d.snapshots.map((s: Doc) => ({
+      lap: s.lap,
+      status: s.lap === 2 ? "sc" : "green",
+      source: "track_status",
+      message: s.lap >= 2 ? "SAFETY CAR DEPLOYED" : null,
+      message_lap: s.lap >= 2 ? 2 : null,
+    }));
+    for (const s of d.snapshots) {
+      s.timing = { max_verstappen: { lap: s.lap, sector1_s: 28 + s.lap / 10, pb_sector1_s: 28.1, pit_stops: 0, updated_at: "x" } };
+    }
+    return d;
+  };
+
+  it("is read with its status per lap; the view's tower gets the timing through the reducer", () => {
+    const b = toArchiveBundle(v2());
+    expect(b?.schemaVersion).toBe(2);
+    if (b === undefined) return;
+    expect(hasTowerExtras(b)).toBe(true);
+    expect(statusAtLap(b, 2)).toMatchObject({ lap: 2, status: "sc", message: "SAFETY CAR DEPLOYED" });
+    expect(statusAtLap(b, 99)?.lap).toBe(4); // clamped like the snapshot
+    const row = stateAtLap(b, 3).drivers.max_verstappen;
+    expect(row?.timingLap).toBe(3);
+    expect(row?.timing.sectors[0]).toBeCloseTo(28.3);
+  });
+
+  it("v1 bundles still load without the extras", () => {
+    const b = bundle();
+    expect(b.schemaVersion).toBe(1);
+    expect(hasTowerExtras(b)).toBe(false);
+    expect(statusAtLap(b, 2)).toBeNull();
+    expect(b.snapshots.every((s) => Object.keys(s.timing).length === 0)).toBe(true);
+  });
+
+  it.each([
+    ["status laps that differ from the snapshots", (d: Doc) => d.status.pop()],
+    ["a bad status", (d: Doc) => (d.status[0].status = "yellow")],
+    ["a timing entry without a lap", (d: Doc) => (d.snapshots[0].timing.max_verstappen.lap = 0)],
+  ])("rejects %s", (_name, mutate) => {
+    const d = v2();
+    mutate(d);
+    expect(toArchiveBundle(d)).toBeUndefined();
   });
 });

@@ -36,14 +36,19 @@ from f1sa.api import analysis as AN
 from f1sa.api import entrants as EN
 from f1sa.api.catalog import CatalogError, zone_reader
 from f1sa.api.health import ModelStatus
+from f1sa.api.lap_log import LapLog
 from f1sa.api.models import AnalysisLapsOut, AnalysisRaceControlsOut
+from f1sa.api.race_status import race_status
 from f1sa.archive.replay import N_PARTITIONS, ArchiveError, replay_race
 from f1sa.archive.schema import (
     BUNDLE_NAME,
+    SCHEMA_VERSION,
     ArchiveBundle,
     BuilderInfo,
     BundleMeta,
+    MessageOut,
     ModelInfo,
+    StatusLapOut,
     TrackLapOut,
     decode_bundle,
     encode_bundle,
@@ -193,6 +198,39 @@ class DisplayRows:
     track: list[TrackLapOut]
     race_control: list[Any]
     synthetic: bool
+    laps_doc: AnalysisLapsOut | None = None
+    rc_doc: AnalysisRaceControlsOut | None = None
+
+
+def status_laps(
+    season: int,
+    round_: int,
+    messages: Sequence[MessageOut],
+    laps: Sequence[int],
+    laps_doc: AnalysisLapsOut | None,
+    rc_doc: AnalysisRaceControlsOut | None,
+) -> list[StatusLapOut]:
+    """The race-status banner at the end of each leader lap in ``laps`` (Feature 5): the live
+    ``race_status`` over a ``LapLog`` fed the bundle's own messages of micro-batches <= N, so it
+    reads laps <= N and race control with lap <= N only, like the live ``GET …/status``."""
+    log_ = LapLog(season, round_)
+    out: list[StatusLapOut] = []
+    i = 0
+    for n in laps:
+        while i < len(messages) and messages[i].lap <= n:
+            log_.observe(messages[i].message)
+            i += 1
+        st = race_status(season, round_, n, log_.lap_rows(), laps_doc, rc_doc)
+        out.append(
+            StatusLapOut(
+                lap=n,
+                status=st.status,
+                source=st.source,
+                message=st.message,
+                message_lap=st.message_lap,
+            )
+        )
+    return out
 
 
 def display_rows(
@@ -243,7 +281,9 @@ def display_rows(
         raise ArchiveError(f"{season} R{round_}: {exc}") from exc
     if not isinstance(laps, AnalysisLapsOut) or not isinstance(rc, AnalysisRaceControlsOut):
         raise ArchiveError(f"{season} R{round_}: unexpected analysis models")
-    return DisplayRows(entrants, track_laps(laps), list(rc.rows), coverage.is_synthetic)
+    return DisplayRows(
+        entrants, track_laps(laps), list(rc.rows), coverage.is_synthetic, laps_doc=laps, rc_doc=rc
+    )
 
 
 def model_info(model_dir: Path) -> ModelInfo:
@@ -318,7 +358,7 @@ def build_bundle(
         allow_test_season=allow_test_season,
     )
     bundle = ArchiveBundle(
-        schema_version=1,
+        schema_version=SCHEMA_VERSION,
         meta=BundleMeta(
             season=season,
             round=round_,
@@ -339,6 +379,14 @@ def build_bundle(
         decisions=rep.decisions,
         track=shown.track,
         race_control=shown.race_control,
+        status=status_laps(
+            season,
+            round_,
+            rep.messages,
+            [snap.lap for snap in rep.snapshots],
+            shown.laps_doc,
+            shown.rc_doc,
+        ),
     )
     return bundle
 

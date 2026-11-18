@@ -38,6 +38,12 @@ Hadoop 3.4.3, FastF1 3.9.2, Next.js + TypeScript strict.
   (view = laps|stints|pitstops|race_control|positions) = JSON of GET /api/races/{s}/{r}/analysis/{view} tagged with
   the lake fingerprint, SET EX API_ANALYSIS_CACHE_S; outside race:*, never touches the driver hash; compare has no key.
   Tested in test_keys.py / test_api_analysis.py.
+- ADDITIVE, display only (Feature 5, approved 2026-11-18; the hash, zset and channel above are unchanged):
+  HASH race:{season}:{round}:timing:{driverId} fields: lap, sector1_s, sector2_s, sector3_s, speed_trap_kph,
+  pb_sector1_s, pb_sector2_s, pb_sector3_s, pb_speed_trap_kph, pit_stops, updated_at (the car's latest lap:
+  TracingInsights sectors/speed trap, its best so far over laps <= that lap, its stop count); same TTL rules;
+  written in the batch's one pipeline; never read by the model, the rule, the live features or the what-if.
+  Tested in test_keys.py / test_redis_store.py / test_redis_sink.py / test_stream_parity.py.
 
 ## Data rules
 - Undercut label = docs/label_definition.md. Features must use info available at end of lap L-1 only.

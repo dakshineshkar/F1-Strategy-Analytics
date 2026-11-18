@@ -77,6 +77,56 @@ export const GLOSSARY = [
     text: "“+n L”: the car is n laps behind the leader. “IN PIT”: the car is in the pit lane now.",
   },
   {
+    id: "sectors",
+    group: "tower",
+    term: "S1 S2 S3",
+    label: "the sector times",
+    text:
+      "Sector times of the car's last completed lap (TracingInsights timing; lap 1 has no S1). — means no data " +
+      "for that lap: the sample race has no sector or speed-trap data at all.",
+  },
+  {
+    id: "pbob",
+    group: "tower",
+    term: "PB, OB",
+    label: "PB and OB",
+    text:
+      "PB: the car's best so far in this race (it set or equalled it on its last lap). OB: the best of all cars " +
+      "so far. Both use only laps already completed, never later laps.",
+  },
+  {
+    id: "trap",
+    group: "tower",
+    term: "Trap (km/h)",
+    label: "the speed trap",
+    text: "Speed-trap speed of the car's last lap in km/h; the best so far of the race is in the summary line.",
+  },
+  {
+    id: "pits",
+    group: "tower",
+    term: "Pits",
+    label: "Pits",
+    text: "Pit stops the car has made so far in this race (pit-lane stops from the race timing).",
+  },
+  {
+    id: "pin",
+    group: "tower",
+    term: "Pin",
+    label: "the pin",
+    text:
+      "Pin one car: its row stays highlighted and scrolled into view as the order changes. The pin and the " +
+      "column choice are kept in this browser only.",
+  },
+  {
+    id: "racestatus",
+    group: "tower",
+    term: "Race status (GREEN, SC, VSC, RED FLAG)",
+    label: "the race status",
+    text:
+      "Track status at the leader's latest lap and the latest race-control message up to that lap. Without a " +
+      "race-control feed (the sample) it is estimated from lap times and cannot tell SC from VSC (“SC / VSC”).",
+  },
+  {
     id: "opportunity",
     group: "alerts",
     term: "Opportunity",

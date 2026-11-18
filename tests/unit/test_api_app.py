@@ -27,6 +27,7 @@ ROUTES = {
     "/api/races/{season}/{round}/analysis/positions": {"get"},
     "/api/races/{season}/{round}/analysis/compare": {"get"},
     "/api/races/{season}/{round}/engineer/{driver_id}": {"get"},
+    "/api/races/{season}/{round}/status": {"get"},
     "/api/races/{season}/{round}/events": {"get"},
     "/api/races/{season}/{round}/replay": {"post"},
     "/api/replays": {"get"},

@@ -14,6 +14,7 @@ from _undercut_fixtures import Scenario, standard_cars
 
 from f1sa.api.models import RaceStateOut
 from f1sa.api.state import driver_ids_from_keys, read_race_state, scan_race_keys
+from f1sa.archive.build import status_laps
 from f1sa.archive.replay import (
     N_PARTITIONS,
     RaceReplay,
@@ -21,7 +22,7 @@ from f1sa.archive.replay import (
     lap_batches,
     replay_race,
 )
-from f1sa.archive.schema import ArchiveBundle, BuilderInfo, BundleMeta, ModelInfo
+from f1sa.archive.schema import SCHEMA_VERSION, ArchiveBundle, BuilderInfo, BundleMeta, ModelInfo
 from f1sa.config import Settings
 from f1sa.features.undercut_rule import RuleParams
 from f1sa.model.lr_scorer import LRScorer
@@ -83,7 +84,7 @@ def bundle_of(rep: RaceReplay, **meta: Any) -> ArchiveBundle:
     }
     base.update(meta)
     return ArchiveBundle(
-        schema_version=1,
+        schema_version=SCHEMA_VERSION,
         meta=BundleMeta(**base),
         entrants=[],
         snapshots=rep.snapshots,
@@ -91,6 +92,9 @@ def bundle_of(rep: RaceReplay, **meta: Any) -> ArchiveBundle:
         decisions=rep.decisions,
         track=[],
         race_control=[],
+        status=status_laps(
+            rep.season, rep.round, rep.messages, [x.lap for x in rep.snapshots], None, None
+        ),
     )
 
 

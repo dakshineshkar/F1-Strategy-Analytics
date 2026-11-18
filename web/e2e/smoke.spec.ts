@@ -88,6 +88,45 @@ test("sample race: a 60× replay fills the tower and updates laps", async ({ pag
   const before = (await lapNow.textContent())?.trim() ?? "";
   await expect.poll(async () => (await lapNow.textContent())?.trim(), { timeout: 60_000 }).not.toBe(before);
 
+  // Feature 5 (display only): the new tower columns, the sample's "no sector data" note, real pit
+  // counts and the race-status banner (estimated in the sample: no race-control feed).
+  const towerHead = page.locator("table.tower thead");
+  for (const h of ["Pin", "S1", "S2", "S3", "Trap", "Pits"]) {
+    await expect(towerHead.getByRole("columnheader", { name: new RegExp(`^${h}\\b`) })).toBeVisible();
+  }
+  await expect(page.locator(".tower-best")).toContainText("No sector or speed-trap data for this race");
+  await expect(page.locator('table.tower td[data-col="pits"]').first()).toHaveText(/^\d+$/);
+  const banner = page.getByRole("region", { name: "Race status" });
+  await expect(banner.locator(".race-status-code")).toHaveText(/^(GREEN|SC \/ VSC|UNKNOWN)/);
+  await expect(banner).toContainText("estimated from lap times", { timeout: 30_000 });
+  await expect(banner).toContainText(/Lap \d+/);
+  await expect(page.getByRole("button", { name: "About the race status" })).toHaveAccessibleDescription(/race-control/);
+
+  // Columns, keyboard only: the Minimal preset hides S1; pin one car (one at a time).
+  const columnsBtn = page.getByRole("button", { name: /^Columns: / });
+  await expect(columnsBtn).toHaveText("Columns: Full");
+  await columnsBtn.focus();
+  await page.keyboard.press("Enter");
+  await expect(columnsBtn).toHaveAttribute("aria-expanded", "true");
+  const minimal = page.getByRole("radio", { name: "Minimal" });
+  await minimal.focus();
+  await page.keyboard.press("Space");
+  await expect(minimal).toBeChecked();
+  await expect(columnsBtn).toHaveText("Columns: Minimal");
+  await expect(towerHead.getByRole("columnheader", { name: /^S1\b/ })).toHaveCount(0);
+  await page.keyboard.press("Escape");
+  await expect(columnsBtn).toHaveAttribute("aria-expanded", "false");
+  await expect(columnsBtn).toBeFocused();
+  const pins = page.locator("table.tower tbody .pin-btn");
+  const pinRow = page.locator("table.tower tbody tr").nth(4);
+  const pinnedId = (await pinRow.getAttribute("data-driver")) ?? "";
+  expect(pinnedId).not.toBe("");
+  await pinRow.locator(".pin-btn").focus();
+  await page.keyboard.press("Enter");
+  await expect(page.locator(`table.tower tbody tr[data-driver="${pinnedId}"]`)).toHaveClass(/is-pinned/);
+  await expect(page.locator(`table.tower tbody tr[data-driver="${pinnedId}"] .pin-btn`)).toHaveAttribute("aria-pressed", "true");
+  await expect(pins.and(page.locator('[aria-pressed="true"]'))).toHaveCount(1);
+
   // What-if (S15), keyboard only: the defender defaults to the car ahead; run with Enter.
   const panel = page.getByRole("region", { name: "What-if: pit strategy" });
   const attacker = panel.getByLabel("Attacker");
@@ -136,6 +175,14 @@ test("sample race: a 60× replay fills the tower and updates laps", async ({ pag
   await expect(page.getByRole("region", { name: "Engineer view" }).getByLabel("Focus driver (kept in this browser)")).toHaveValue(focusId);
   await page.getByRole("tab", { name: "Race", exact: true }).click();
   await expect.poll(async () => page.locator("table.tower tbody tr").count(), { timeout: 30_000 }).toBeGreaterThanOrEqual(20);
+  // Feature 5: the preset and the pin are kept in this browser across the reload; then back to Full.
+  await expect(page.getByRole("button", { name: /^Columns: / })).toHaveText("Columns: Minimal");
+  await expect(page.locator("table.tower thead").getByRole("columnheader", { name: /^S1\b/ })).toHaveCount(0);
+  await expect(page.locator(`table.tower tbody tr[data-driver="${pinnedId}"] .pin-btn`)).toHaveAttribute("aria-pressed", "true");
+  await page.getByRole("button", { name: /^Columns: / }).click();
+  await page.getByRole("radio", { name: "Full" }).check();
+  await expect(page.getByRole("button", { name: /^Columns: / })).toHaveText("Columns: Full");
+  await page.keyboard.press("Escape");
 
   // 375 px: no horizontal page scroll (the tower scrolls inside its own region).
   await page.setViewportSize({ width: 375, height: 812 });
@@ -228,6 +275,11 @@ test("post-race archive: open the mode by keyboard and scrub the race", async ({
   await expect(page).toHaveURL(/\/race\/2024\/5\?mode=archive&lap=1$/);
   await expect(page.locator("table.tower tbody tr")).toHaveCount(20, { timeout: 15_000 });
   await expect(page.getByText(/SYNTHETIC tyre data/)).toBeVisible();
+  // Feature 5 (schema v2 bundle): the banner per lap from the bundle, and the pit counts.
+  const arcBanner = page.getByRole("region", { name: "Race status" });
+  await expect(arcBanner).toContainText(/Lap 1\b/);
+  await expect(arcBanner).not.toContainText("schema v1");
+  await expect(page.locator('table.tower td[data-col="pits"]').first()).toHaveText(/^\d+$/);
 
   // The slider: arrow keys step one lap, and its value is read as text.
   const slider = page.getByRole("slider", { name: "Lap" });
@@ -248,6 +300,7 @@ test("post-race archive: open the mode by keyboard and scrub the race", async ({
   await neutral.click();
   await expect(slider).toHaveAttribute("aria-valuetext", "Lap 21 of 56");
   await expect(page).toHaveURL(/lap=21$/);
+  await expect(arcBanner).toContainText(/Lap 21\b/);
   await expect(page.getByRole("toolbar", { name: "Race events: jump to a lap" })).toBeVisible();
   await page.keyboard.press("End");
   await expect(page.locator(".ac-marker").last()).toBeFocused();

@@ -10,6 +10,7 @@ import { initialState, raceReducer as reduce, type DriverRow } from "@/lib/reduc
 import { ESTIMATED_NOTE, tyreAgeView } from "@/lib/tyre";
 
 import { lap, snapshot } from "./helpers";
+import { NO_TIMING } from "@/lib/timing";
 
 const life = (tyreLifeLaps: number | null, tyreLifeAtStartLaps: number | null, tyreAgeLaps: number | null) => ({
   tyreLifeLaps,
@@ -118,6 +119,8 @@ const row = (id: string, more: Partial<DriverRow>): DriverRow => ({
   tyreLifeLaps: null,
   tyreLifeAtStartLaps: null,
   tyreLifeLap: null,
+  timing: NO_TIMING,
+  timingLap: null,
   undercutFlag: false,
   undercutProb: null,
   lap: 30,

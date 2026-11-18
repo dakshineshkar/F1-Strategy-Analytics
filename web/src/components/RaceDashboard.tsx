@@ -11,6 +11,7 @@ import { indexEntrants } from "@/lib/entrants";
 import { alertGroups, lapsDown, towerRows } from "@/lib/reducer";
 import { useArchiveAvailable } from "@/lib/useArchive";
 import { useEntrants } from "@/lib/useEntrants";
+import { useRaceStatus } from "@/lib/useRaceStatus";
 import { useRaceStream } from "@/lib/useRaceStream";
 import { useReplays } from "@/lib/useReplays";
 
@@ -20,8 +21,9 @@ import { EngineerPanel } from "./EngineerPanel";
 import { GapChart } from "./GapChart";
 import { Legend } from "./Legend";
 import { PostRaceView } from "./PostRaceView";
+import { RaceStatusBanner } from "./RaceStatusBanner";
 import { ReplayControl } from "./ReplayControl";
-import { TimingTower } from "./TimingTower";
+import { TowerPanel } from "./TowerPanel";
 import { TyrePanel } from "./TyrePanel";
 import { WhatIfPanel } from "./WhatIfPanel";
 
@@ -137,6 +139,7 @@ function LiveRaceView({ season, round }: { season: number; round: number }) {
   }, [season, round]);
 
   const rows = towerRows(state);
+  const raceStatus = useRaceStatus(season, round, state.maxLap);
   const leaderLap = rows[0]?.lap ?? null;
   const groups = alertGroups(state);
   const announcement = state.announcements[state.announcements.length - 1] ?? null;
@@ -195,7 +198,8 @@ function LiveRaceView({ season, round }: { season: number; round: number }) {
       <div className="dash">
         <div className="dash-main">
           <Legend />
-          <TimingTower rows={rows} lapsDown={(id) => lapsDown(state, id)} entrants={indexEntrants(entrants ?? [])} />
+          <RaceStatusBanner status={raceStatus} />
+          <TowerPanel rows={rows} lapsDown={(id) => lapsDown(state, id)} entrants={indexEntrants(entrants ?? [])} />
           <GapChart state={state} />
           <WhatIfPanel season={season} round={round} order={state.order} />
         </div>

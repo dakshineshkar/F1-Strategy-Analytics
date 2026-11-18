@@ -18,6 +18,11 @@
   same TracingInsights stint in progress: ``tyre_age_at_start + lap - start_lap + 1`` (FastF1
   TyreLife, which counts laps of earlier use), null when the stint's starting life is unknown
   (never assumed new) or the race is synthetic. ``tyre_age`` is never changed by it.
+* Timing-tower values (Feature 5; display only): the lap's sector times and speed trap come from
+  the additive ``clean/analysis_laps`` (TracingInsights, null without it, e.g. the sample); the
+  driver's best so far and its stop count come from ``running_timing`` over **its own laps and stops
+  up to this lap only** (no later lap is read, so a lap's values never depend on the future).
+  Deleted laps count: a deletion is decided after the lap.
 * Events, ordered by race time: ``pit_in`` (in-lap L) just before ``lap`` L at the line crossing,
   ``pit_out`` (lap L+1) at the crossing plus the stop time (never after the next crossing), then
   one ``session_end`` per topic partition.
@@ -33,9 +38,11 @@ from __future__ import annotations
 
 import argparse
 import logging
+import math
 import sys
 import time
 import zlib
+from bisect import bisect_right
 from collections import defaultdict
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
@@ -59,6 +66,9 @@ CLEAN_TABLES = ("laps", "pitstops", "stints", "results")
 TI_STINTS_TABLE = "stints_tracinginsights"
 """The optional, additive source of the lap events' compound (never of ``tyre_age``)."""
 COMPOUND_SOURCES: tuple[str, ...] = ("tracinginsights", "v1_stints", "none")
+ANALYSIS_LAPS_TABLE = "analysis_laps"
+"""The optional, additive source of the lap events' sector times and speed trap (display only)."""
+ANALYSIS_LAP_COLUMNS = ("driver_id", "lap", "sector1_s", "sector2_s", "sector3_s", "speed_st_kph")
 _KIND_ORDER = {"pit_in": 0, "lap": 1, "pit_out": 2}
 
 
@@ -87,6 +97,12 @@ class LapRecord:
     """Real tyre life at the end of the lap (TracingInsights; display only), or None."""
     tyre_life_at_start_laps: int | None = None
     """Laps already on the set when its stint began (> 0: a used set), or None."""
+    sector1_s: float | None = None
+    sector2_s: float | None = None
+    sector3_s: float | None = None
+    """The lap's TracingInsights sector times (display only), or None."""
+    speed_trap_kph: float | None = None
+    """The lap's speed-trap speed (TracingInsights ``SpeedST``; display only), or None."""
 
 
 @dataclass(frozen=True)
@@ -166,6 +182,77 @@ def resolve_compound(
     return (v1, "v1_stints") if v1 is not None else (None, "none")
 
 
+def timing_value(value: Any) -> float | None:
+    """A sector time or speed as the event schema accepts it: a finite number > 0, else None."""
+    if value is None or isinstance(value, bool) or not isinstance(value, int | float):
+        return None
+    v = float(value)
+    return v if math.isfinite(v) and v > 0 else None
+
+
+@dataclass(frozen=True)
+class LapTiming:
+    """The Feature 5 tower values of one lap event (``events.TOWER_FIELDS``)."""
+
+    sector1_s: float | None
+    sector2_s: float | None
+    sector3_s: float | None
+    speed_trap_kph: float | None
+    pb_sector1_s: float | None
+    pb_sector2_s: float | None
+    pb_sector3_s: float | None
+    pb_speed_trap_kph: float | None
+    pit_stops: int
+
+
+def running_timing(
+    laps: Sequence[LapRecord], stops: Sequence[StopRecord]
+) -> dict[tuple[str, int], LapTiming]:
+    """Per (driver, lap): the lap's sectors and speed trap, the driver's best so far (minimum
+    sector, maximum speed trap over its laps <= lap) and its stops with in-lap <= lap. Only the
+    driver's own earlier laps and the lap itself are read, so cutting the race after lap N leaves
+    every value of laps <= N unchanged."""
+    by_driver: dict[str, list[LapRecord]] = defaultdict(list)
+    for r in laps:
+        by_driver[r.driver_id].append(r)
+    stop_laps: dict[str, list[int]] = defaultdict(list)
+    for st in stops:
+        stop_laps[st.driver_id].append(st.lap)
+    out: dict[tuple[str, int], LapTiming] = {}
+    for d, rows in by_driver.items():
+        in_laps = sorted(stop_laps.get(d, []))
+        best: list[float | None] = [None, None, None]
+        best_trap: float | None = None
+        for r in sorted(rows, key=lambda x: x.lap):
+            sectors = (r.sector1_s, r.sector2_s, r.sector3_s)
+            for i, v in enumerate(sectors):
+                cur = best[i]
+                if v is not None and (cur is None or v < cur):
+                    best[i] = v
+            if r.speed_trap_kph is not None and (best_trap is None or r.speed_trap_kph > best_trap):
+                best_trap = r.speed_trap_kph
+            out[(d, r.lap)] = LapTiming(
+                sector1_s=sectors[0],
+                sector2_s=sectors[1],
+                sector3_s=sectors[2],
+                speed_trap_kph=r.speed_trap_kph,
+                pb_sector1_s=best[0],
+                pb_sector2_s=best[1],
+                pb_sector3_s=best[2],
+                pb_speed_trap_kph=best_trap,
+                pit_stops=bisect_right(in_laps, r.lap),
+            )
+    return out
+
+
+def timing_coverage(laps: Sequence[LapRecord]) -> dict[str, int]:
+    """Lap records with each tower value known (for the producer's summary line)."""
+    return {
+        "sectors": sum(1 for r in laps if None not in (r.sector1_s, r.sector2_s, r.sector3_s)),
+        "speed_trap": sum(1 for r in laps if r.speed_trap_kph is not None),
+    }
+
+
 def compound_coverage(laps: Sequence[LapRecord]) -> dict[str, int]:
     """Number of lap records per compound source (every ``COMPOUND_SOURCES`` key present)."""
     out = dict.fromkeys(COMPOUND_SOURCES, 0)
@@ -176,8 +263,9 @@ def compound_coverage(laps: Sequence[LapRecord]) -> dict[str, int]:
 
 def race_inputs(frames: Mapping[str, Any], season: int, round_: int) -> RaceInputs:
     """Collect one race from clean-zone DataFrames (``laps``, ``pitstops``, ``stints``,
-    ``results``, and optionally ``stints_tracinginsights`` for the compound; other races are
-    filtered out). Spark is imported here only."""
+    ``results``, and optionally ``stints_tracinginsights`` for the compound and ``analysis_laps``
+    for the sector times and speed trap; other races are filtered out). Spark is imported here
+    only."""
     from pyspark.sql import functions as F
 
     from f1sa.etl.df_jobs import race_distance, tyre_age
@@ -193,6 +281,17 @@ def race_inputs(frames: Mapping[str, Any], season: int, round_: int) -> RaceInpu
         else:
             ti_rows = race(frames[TI_STINTS_TABLE]).select(*STINT_START_COLUMNS).collect()
             ti_stints = stint_starts(r.asDict() for r in ti_rows)
+    sector_rows: dict[tuple[str, int], tuple[float | None, ...]] = {}
+    if frames.get(ANALYSIS_LAPS_TABLE) is not None:
+        for a in race(frames[ANALYSIS_LAPS_TABLE]).select(*ANALYSIS_LAP_COLUMNS).collect():
+            if a["driver_id"] is None or a["lap"] is None:
+                continue
+            key = (a["driver_id"], int(a["lap"]))
+            if key in sector_rows:
+                raise ProducerError(f"{season} R{round_}: duplicate analysis_laps row {key}")
+            sector_rows[key] = tuple(
+                timing_value(a[c]) for c in ("sector1_s", "sector2_s", "sector3_s", "speed_st_kph")
+            )
     results, stops = race(frames["results"]), race(frames["pitstops"])
     neutral = F.lit(False)
     for c in ("is_neutralised_lap", "is_sc_lap", "is_vsc_lap", "is_red_flag_lap"):
@@ -217,6 +316,7 @@ def race_inputs(frames: Mapping[str, Any], season: int, round_: int) -> RaceInpu
     def record(r: Any) -> LapRecord:
         compound, source = resolve_compound(ti_stints, r["driver_id"], int(r["lap"]), r["compound"])
         life, at_start = ti_tyre_life_at(ti_stints, r["driver_id"], int(r["lap"]))
+        s1, s2, s3, trap = sector_rows.get((r["driver_id"], int(r["lap"])), (None,) * 4)
         return LapRecord(
             driver_id=r["driver_id"],
             lap=int(r["lap"]),
@@ -229,6 +329,10 @@ def race_inputs(frames: Mapping[str, Any], season: int, round_: int) -> RaceInpu
             compound_source=source,
             tyre_life_laps=life,
             tyre_life_at_start_laps=at_start,
+            sector1_s=s1,
+            sector2_s=s2,
+            sector3_s=s3,
+            speed_trap_kph=trap,
         )
 
     lap_records = tuple(record(r) for r in rows)
@@ -264,9 +368,11 @@ def race_inputs(frames: Mapping[str, Any], season: int, round_: int) -> RaceInpu
 def load_race_inputs(spark: Any, lake_uri: str, season: int, round_: int) -> RaceInputs:
     """``race_inputs`` from the race's clean partitions under ``lake_uri`` (read only). The
     ``stints_tracinginsights`` table is optional: without it (the sample lake) the compound comes
-    from the v1 stints."""
+    from the v1 stints. ``analysis_laps`` (Feature 2) is optional too: without it the sector
+    times and speed traps are null (display only)."""
     from f1sa.etl.clean import spark_uri
     from f1sa.lake import schemas as S
+    from f1sa.lake import schemas_analysis as SA
     from f1sa.lake.schemas_tracinginsights import CLEAN_SCHEMAS_TI
     from f1sa.streaming.priors import PriorsError, read_race_partition
 
@@ -284,6 +390,12 @@ def load_race_inputs(spark: Any, lake_uri: str, season: int, round_: int) -> Rac
         )
     except PriorsError as exc:
         log.warning("%s; lap compounds come from the v1 stints only", exc)
+    try:
+        frames[ANALYSIS_LAPS_TABLE] = read_race_partition(
+            spark, clean, ANALYSIS_LAPS_TABLE, SA.SCHEMAS[ANALYSIS_LAPS_TABLE], season, round_
+        )
+    except PriorsError as exc:
+        log.warning("%s; no sector times or speed traps on the lap events", exc)
     return race_inputs(frames, season, round_)
 
 
@@ -337,10 +449,12 @@ def build_events(inputs: RaceInputs, n_partitions: int) -> list[Outgoing]:
     if n_partitions < 1:
         raise ValueError(f"n_partitions must be >= 1, got {n_partitions}")
     times = _race_times(inputs.laps)
+    tower = running_timing(inputs.laps, inputs.stops)
     s, r = inputs.season, inputs.round
     keyed: list[tuple[float, int, str, int, RaceEvent]] = []
     for lap in inputs.laps:
         t = times[(lap.driver_id, lap.lap)]
+        tw = tower[(lap.driver_id, lap.lap)]
         ev = RaceEvent(
             event_id=new_event_id(),
             type="lap",
@@ -358,6 +472,15 @@ def build_events(inputs: RaceInputs, n_partitions: int) -> list[Outgoing]:
             race_laps=inputs.race_laps,
             tyre_life_laps=lap.tyre_life_laps,
             tyre_life_at_start_laps=lap.tyre_life_at_start_laps,
+            sector1_s=tw.sector1_s,
+            sector2_s=tw.sector2_s,
+            sector3_s=tw.sector3_s,
+            speed_trap_kph=tw.speed_trap_kph,
+            pb_sector1_s=tw.pb_sector1_s,
+            pb_sector2_s=tw.pb_sector2_s,
+            pb_sector3_s=tw.pb_sector3_s,
+            pb_speed_trap_kph=tw.pb_speed_trap_kph,
+            pit_stops=tw.pit_stops,
         )
         keyed.append((t, _KIND_ORDER["lap"], lap.driver_id, lap.lap, ev))
     last_time: dict[str, float] = {}
@@ -561,6 +684,11 @@ def main(
     print(
         f"tyre life: {len(life)} of {n_laps} laps known ({100.0 * len(life) / n_laps:.1f}%), "
         f"{used} on a used set"
+    )
+    tc = timing_coverage(inputs.laps)
+    print(
+        f"timing: sectors {tc['sectors']} of {n_laps} laps, speed trap {tc['speed_trap']} "
+        f"of {n_laps} (display only)"
     )
     if args.dry_run:
         return 0

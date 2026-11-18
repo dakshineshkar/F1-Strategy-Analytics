@@ -517,6 +517,15 @@ The key contract in CLAUDE.md is the only key layout. `keys.py` builds the names
   the batch. The key matches `race:{s}:{r}:*`, so it gets the same safety TTL and the same `session_end`
   EXPIRE. Nothing model-related reads it (the stream job never reads Redis, and the what-if uses the driver
   hashes only).
+- **Timing hash (additive, display only; Feature 5, approved 2026-11-18)** `race:{s}:{r}:timing:{driverId}`.
+  The 9-field driver hash, the order zset, the channel and the tyre hash are unchanged. It holds 11 string
+  fields, `keys.TIMING_FIELDS`: `lap` (the car's latest received lap), `sector1_s` .. `sector3_s` and
+  `speed_trap_kph` of that lap, the driver's best so far over its own laps <= `lap` (`pb_sector1_s` ..
+  `pb_sector3_s` = minimum, `pb_speed_trap_kph` = maximum), `pit_stops` (Jolpica stops with in-lap <= `lap`) and
+  `updated_at`. Unknown values are `""` (the sample has no sectors or speed traps). `decode_timing` is the exact
+  inverse. It is written from the lap event alone (the producer computes the running values), in the batch's one
+  pipeline; it matches `race:{s}:{r}:*`, so it gets the safety TTL and the `session_end` EXPIRE. Nothing
+  model-related reads it.
 - **Entrants cache (additive, display only; Feature 1)** `meta:entrants:{s}:{r}`.
   - It is a STRING holding `{"lake": <fingerprint>, "entrants": <response>}`. The fingerprint is the first 16 hex
     digits of sha256(`DATA_LAKE_URI`); the URI itself is never stored.
@@ -594,6 +603,18 @@ clean zone (one race) --producer: race order x SPEED, key=driver_id, acks=all, i
   (`compound: … tracinginsights, … v1_stints, … unknown of N laps`). No rule, live feature, scorer input or alert
   reads the compound (`test_tracinginsights_compound_changes_no_model_input`), and `stream-parity-full` replays
   this path.
+- **Lap-event tower values** (Feature 5, display only; `events.TOWER_FIELDS`, the last nine `RaceEvent`
+  fields). The lap's `sector1_s` .. `sector3_s` and `speed_trap_kph` come from the additive
+  `clean/analysis_laps` (TracingInsights; optional: without the table, e.g. a lake without `make analysis-*`,
+  the producer warns and they are null; the sample has none). `producer.running_timing` adds, per driver in lap
+  order, the best so far over **its own laps <= L** (minimum sector, maximum speed trap) and `pit_stops`, the
+  number of Jolpica stops with in-lap <= L (the `pit_in` of lap L is sent just before lap L). Only laps that
+  have already been sent are read, so cutting the race after lap N leaves every value of laps <= N unchanged
+  (tested, also with later laps scaled x100). Deleted laps count, because a deletion is decided after the lap.
+  `RaceState.apply` copies only the model's fields into `LapInput`, so these values never reach the rule, the
+  live features, the scorer, `state.json` or the alert policy (`test_tower_timing_changes_no_model_input`:
+  decisions, alerts, the 9 hash fields and the order are identical with and without `analysis_laps`);
+  `stream-parity-full` loads `analysis_laps` too, so the full parity run sends them.
 - **Event schema** (`events.py`): `RaceEvent` with JSON (de)serialisation and the matching Spark `StructType`.
   - Besides the requested fields it carries `race_time_s` (pacing and watermark) and three **replayed context**
     fields: `track_neutral`, `track_red_flag` and `race_laps`.
@@ -668,7 +689,14 @@ or feature tables apart from the earlier-race priors and the entry list.
     - commands per batch: 50 → 63;
     - `write_ms` p50: 1.19 → 1.32 ms; p95: 1.57 → 1.87 ms;
     - `end_to_end_ms` p50: 705–712 → 703–710 ms, i.e. unchanged within noise;
-  - `lap` / `pit_in` / `pit_out` events (the lap payload also carries the two tyre-life fields), and the `undercut_alert` messages the alert policy selects (below).
+  - the additive timing hash (Feature 5) of the same cars, from the same lap event (null values written, an
+    older lap never overwrites). Cost, measured on sample 2024 R5 in the app container against the real Redis
+    (db 15 only), micro-batches of up to 7 events per partition over 3 partitions, three alternating runs each
+    with and without the timing hashes:
+    - commands per batch: 62.2 → 75.1 (one HSET and one EXPIRE per lap event);
+    - `write_batch` p50: 1.18 → 1.35 ms; p95: 1.56 → 1.68 ms;
+  - `lap` / `pit_in` / `pit_out` events (the lap payload also carries the two tyre-life fields and the nine
+    Feature 5 tower fields), and the `undercut_alert` messages the alert policy selects (below).
 - **Latency fields.** Every payload carries `produced_at_ms`, `batch_received_at_ms` and `redis_written_at_ms`.
   - A PUBLISH inside the pipeline cannot carry the time the pipeline finished, so `redis_written_at_ms` is the
     client time just before the batch is sent.
@@ -712,6 +740,7 @@ browser (http://localhost:3000) --CORS--> FastAPI (uvicorn, 127.0.0.1:8000)
   GET  /api/races/{s}/{r}/analysis/{view}  meta:analysis:{s}:{r}:{view} (SET EX) | clean/analysis_* (display only)
        view = laps | stints | pitstops | race-control | positions;  …/analysis/compare?a=CODE&b=CODE
   GET  /api/races/{s}/{r}/engineer/{id}?lap=N  lap log (laps <= N) + driver hashes (read only) + earlier-race priors
+  GET  /api/races/{s}/{r}/status?lap=N     race-status banner at leader lap N (Feature 5; lake laps/race control <= N | lap log)
   GET  /api/archive                        archive/race_bundle manifests (in-process TTL; HTTP ETag)
   GET  /api/archive/{s}/{r}                archive/race_bundle bundle.json.gz (stored gzip, ETag = sha256)
   GET  /api/races/{s}/{r}/events           SUBSCRIBE race:{s}:{r}:events -> text/event-stream
@@ -750,9 +779,10 @@ Docs: `/api/docs`, `/api/openapi.json`.
 | `GET …/entrants` | 200 `{season, round, entrants: [...]}` sorted by grid; 404 no entrants partition (or 2025 sealed); 422; 500 a stored row is malformed; 503 clean zone unavailable |
 | `GET …/analysis/{laps,stints,pitstops,race-control,positions}` | 200 `{season, round, coverage, rows: [...]}`; 404 no `analysis_race` row (or 2025 sealed); 422; 500 a stored row is malformed; 503 clean zone unavailable |
 | `GET …/analysis/compare?a=&b=` | 200 `{season, round, coverage, a, b, rows: [...]}` (deltas a − b); 404 no analysis or a code without laps; 422 a code not `[A-Z]{3}` or a = b; 500; 503 |
+| `GET …/status?lap=N` | 200 `RaceStatusOut` (`lap`, `status` green / sc / vsc / red / neutralised / unknown, `source` track_status / estimated / none, the latest key race-control `message` with lap <= N and its `message_lap`); N defaults to the leader's latest lap in the lap log; 404 race not in the lake (or 2025 sealed) or no live state; 409 no laps recorded yet, or lap N not reached yet (so the lake's later laps are never shown early); 422 bad lap; 503 Redis or lake unavailable. `engineer.neutral_at`, the engineer view's own function. Never writes Redis; not cached |
 | `GET …/engineer/{driverId}?lap=N` | 200 `EngineerOut` (cards ahead/focus/behind, pairs, rejoin, calls; laps <= N only); 404 race not in the lake (or 2025 sealed), no live state or no laps for the driver; 409 no laps recorded yet, or lap N outside the recorded laps; 422 bad driverId or lap; 503 Redis or lake unavailable. Never writes Redis; not cached |
 | `GET /api/archive` | 200 `{races: [{season, round, race_name, laps, synthetic, schema_version, model_version, scorer_sha256, sha256, size_bytes, raw_bytes}]}`; 304 on `If-None-Match`; 500 a stored manifest is malformed; 503 archive zone unavailable. 2025 only with `ALLOW_TEST_SEASON=1` |
-| `GET /api/archive/{s}/{r}` | 200 the bundle (schema v1; `Content-Encoding: gzip` when accepted, else JSON; `ETag` = sha256 of the stored gzip, `Cache-Control: no-cache`, `Vary: Accept-Encoding`); 304 on `If-None-Match`; 404 no bundle (or 2025 sealed); 422; 500 the bytes do not match the manifest or break the schema; 503 |
+| `GET /api/archive/{s}/{r}` | 200 the bundle (schema v1 or v2, served as stored; `Content-Encoding: gzip` when accepted, else JSON; `ETag` = sha256 of the stored gzip, `Cache-Control: no-cache`, `Vary: Accept-Encoding`); 304 on `If-None-Match`; 404 no bundle (or 2025 sealed); 422; 500 the bytes do not match the manifest or break the schema; 503 |
 | `GET …/events` | 200 `text/event-stream`; 422 bad season/round |
 | `POST …/replay` `{speed: 1\|10\|60}` | 202 (with `run_id`, `state`); 403 disabled or 2025; 404 not in the clean zone; 409 running / limit; 422; 500 launch failed; 503 |
 | `GET /api/replays` | 200 `{enabled, max_running, running, recent}` (state `starting/running/finished/failed`, error, exit codes) |
@@ -1027,6 +1057,25 @@ browser ── GET /api/races, /api/health ────────────�
     Styles use only the shared tokens.
 - **Synthetic data:** the banner strip shows **SYNTHETIC DEMO DATA** whenever `/api/health` reports
   `lake.mode = "sample"`, and the picker tags each synthetic race.
+- **Timing-tower extras (Feature 5, display only)** (`TowerPanel.tsx`, `TimingTower.tsx`, `RaceStatusBanner.tsx`,
+  `lib/tower.ts`, `lib/timing.ts`, `lib/raceStatus.ts`; live and post-race):
+  - columns S1, S2, S3, Trap and Pits. Each sector and the trap of the car's last lap carries a text tag "PB"
+    (the car's best so far, `--ok`) or "OB" (the race's best so far, `--line-4`, a thicker border) and a
+    screen-reader sentence. OB is the best personal best of the cars on the tower, so it uses completed laps only;
+  - a "Best so far" line (S1 / S2 / S3 / trap value and the car), or "No sector or speed-trap data for this race"
+    (the sample);
+  - Pits: the stream's count (lap payload / timing hash), else the `pit_in` events seen since connecting;
+  - a pin button per row (`aria-pressed`, "Pin VER"; one car), kept per browser (`f1sa.tower.pin`); the pinned row
+    has a left bar and a double rule and is scrolled into view (`block: nearest`, no smooth scroll under reduced
+    motion) when its place changes, only while the tower is on screen;
+  - a "Columns" disclosure: presets Minimal (Gap, Last lap, Tyre, Undercut) and Full (the default), "Custom"
+    otherwise, and one checkbox per column, kept per browser (`f1sa.tower.columns`). Pos, Pin and Driver are always
+    shown. Native radios and checkboxes; Escape closes the panel and returns focus;
+  - the race-status banner above the tower: GREEN / SC / VSC / RED FLAG / SC / VSC (estimated) / UNKNOWN, the latest
+    key race-control message with its lap, and the source. It is fetched from `GET …/status?lap=N` once per new
+    leader lap. A separate polite live region speaks only when the status changes (a race that starts green is
+    silent; "unknown" is never announced). Post-race it reads the bundle's `status` and stays silent, like the
+    archive's alert feed; a v1 bundle shows a note instead of the banner and the sector values.
 - **UI latency** (`lib/debugLatency.ts`, `NEXT_PUBLIC_DEBUG_LATENCY=1`):
   - every event id applied since the last paint is posted after two animation frames (after the paint)
     to `/api/debug/latency`;
@@ -1125,6 +1174,11 @@ clean + features (one race) --producer.build_events--> events --parity.kafka_bat
   lap-timestamp convention) stamps `produced_at_ms` and feeds the processor's, sink's and store's clocks. The rule,
   the live features, the scorer and the alert policy read neither. gzip `mtime=0` and sorted keys: a rebuild is
   byte-identical (tested; also checked on the sample lake by sha256).
+- **Schema v2 (Feature 5).** Each snapshot also holds the additive timing hash (`timing`, read by the same
+  `read_race_state`), and `status[]` holds the race-status banner at the end of every snapshot lap, from the live
+  `api.race_status.race_status` over an `api.lap_log.LapLog` fed the bundle's own messages of micro-batches <= N
+  (and, in lake mode, the same `analysis_laps` / `analysis_race_control` documents). The reader accepts v1 and v2;
+  a v1 bundle has neither field. The equivalence proof compares the timing hash too (`comparable_state`).
 - **Bundle (schema v1, `archive/schema.py`).** `meta` (race, laps, synthetic, model version and scorer sha256,
   model and builder git sha, micro-batch rule, clock note), `entrants` (the `GET …/entrants` rows), `snapshots`
   (per lap: the 9 driver-hash fields, the order and the tyre hash, exactly `GET /state`), `messages` (every

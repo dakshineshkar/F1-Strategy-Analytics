@@ -174,7 +174,7 @@ def test_state_diff_names_each_difference() -> None:
     snap = rep.snapshots[5]
     other = rep.snapshots[6]
     diff = state_diff(snap, other)
-    assert diff and all(d.startswith(("drivers.", "tyres.", "order")) for d in diff)
+    assert diff and all(d.startswith(("drivers.", "tyres.", "timing.", "order")) for d in diff)
     assert comparable_state(snap) == comparable_state(snap.model_copy())
     assert "updated_at" not in json.dumps(comparable_state(snap))
     assert state_diff(snap, snap.model_copy(update={"drivers": {}})) == [

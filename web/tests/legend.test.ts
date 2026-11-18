@@ -10,6 +10,7 @@ import { TyrePanel } from "@/components/TyrePanel";
 import { WhatIfPanel } from "@/components/WhatIfPanel";
 import { dismissesTip, GLOSSARY, glossary, THRESHOLD_PCT, tipId } from "@/lib/legend";
 import type { AlertGroup, DriverRow } from "@/lib/reducer";
+import { NO_TIMING } from "@/lib/timing";
 
 const html = (el: Parameters<typeof renderToStaticMarkup>[0]) => renderToStaticMarkup(el);
 /** React escapes text: compare against the escaped form of a glossary sentence. */
@@ -26,6 +27,8 @@ const row = (id: string, more: Partial<DriverRow> = {}): DriverRow => ({
   tyreLifeLaps: null,
   tyreLifeAtStartLaps: null,
   tyreLifeLap: null,
+  timing: NO_TIMING,
+  timingLap: null,
   undercutFlag: false,
   undercutProb: null,
   lap: 30,
@@ -154,18 +157,23 @@ describe("Legend: How to read this", () => {
 describe("timing tower", () => {
   const m = html(createElement(TimingTower, { rows: ROWS, lapsDown: (id: string) => (id === "sargeant" ? 1 : 0) }));
 
-  it("has a tooltip on the Pos, Driver (team badge and tags), Int, Gap, Age and Undercut headers", () => {
+  it("has a tooltip on the Pos, Pin, Driver (team badge and tags), Int, Gap, S1, S3, Trap, Pits, Age and Undercut headers", () => {
     expect(tipButtons(m).map((b) => b.label)).toEqual([
       "About the undercut flag",
+      "About the pin",
       "About the team badge",
       "About the driver tags",
       "About Int",
       "About Gap",
+      "About the sector times",
+      "About PB and OB",
+      "About the speed trap",
+      "About Pits",
       "About Age",
       "About Undercut",
     ]);
     const thead = m.slice(m.indexOf("<thead>"), m.indexOf("</thead>"));
-    for (const id of ["flag", "team", "lapsDown", "int", "gap", "age", "undercut"] as const) {
+    for (const id of ["flag", "pin", "team", "lapsDown", "int", "gap", "sectors", "pbob", "trap", "pits", "age", "undercut"] as const) {
       expect(thead).toContain(`role="tooltip" id="${tipId(id)}"`);
     }
   });

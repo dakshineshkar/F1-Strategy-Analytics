@@ -1,7 +1,8 @@
 /** The one race reducer: a pure function from (state, action) to state. Components only render it.
  *
  * Sources of truth:
- * - **Snapshot**: the 9 hash fields and the order sorted set from Redis. It is pushed by the API on
+ * - **Snapshot**: the 9 hash fields, the order sorted set and the additive tyre / timing hashes
+ *   from Redis. It is pushed by the API on
  *   the SSE stream (an ``event: snapshot`` after connect and once per leader lap, never polled),
  *   and loaded from ``GET /state`` on a reconnect. It replaces the tower values (stale
  *   ``undercut_flag`` / ``undercut_prob`` included) and the order, and keeps the client-built lap
@@ -22,6 +23,7 @@
 import { announcementFor } from "./announce";
 import type { Compound, RaceSnapshot } from "./api";
 import { type AlertEvent, type LapEvent, parseEvent, type PitEvent, type RaceEvent } from "./events";
+import { NO_TIMING, type TimingHash, type TimingValues } from "./timing";
 
 export const HISTORY_LAPS = 20;
 export const MAX_SEEN_IDS = 5000;
@@ -50,8 +52,13 @@ export interface DriverRow {
   raceTimeS: number | null;
   jolpicaPosition: number | null;
   inPit: boolean;
+  /** Pit stops so far: the stream's count (lap payload / timing hash) when known, else the
+   * ``pit_in`` events seen since the page connected. */
   stops: number;
   lastPitLap: number | null;
+  /** Feature 5 tower values of the car's lap ``timingLap`` (display only). */
+  timing: TimingValues;
+  timingLap: number | null;
   /** True once the driver appeared in a snapshot. */
   known: boolean;
 }
@@ -153,6 +160,8 @@ function emptyRow(driverId: string): DriverRow {
     inPit: false,
     stops: 0,
     lastPitLap: null,
+    timing: NO_TIMING,
+    timingLap: null,
     known: false,
   };
 }
@@ -246,6 +255,9 @@ function applyLap(state: RaceState, e: LapEvent): RaceState {
       tyreLifeLaps: e.tyreLifeLaps,
       tyreLifeAtStartLaps: e.tyreLifeAtStartLaps,
       tyreLifeLap: e.lap,
+      timing: e.timing,
+      timingLap: e.lap,
+      stops: e.timing.pitStops ?? row.stops,
     };
   } else {
     drivers[e.driverId] = row; // an older lap: history only, the tower never regresses
@@ -332,6 +344,11 @@ function applyAlert(state: RaceState, e: AlertEvent): RaceState {
   };
 }
 
+function timingValues(t: TimingHash): TimingValues {
+  const { sectors, pbSectors, speedTrapKph, pbSpeedTrapKph, pitStops } = t;
+  return { sectors, pbSectors, speedTrapKph, pbSpeedTrapKph, pitStops };
+}
+
 function applySnapshot(state: RaceState, data: RaceSnapshot): RaceState {
   if (data.season !== state.season || data.round !== state.round) {
     return { ...state, foreign: state.foreign + 1 };
@@ -345,9 +362,16 @@ function applySnapshot(state: RaceState, data: RaceSnapshot): RaceState {
       t !== undefined && (row.tyreLifeLap === null || t.lap >= row.tyreLifeLap)
         ? { tyreLifeLaps: t.tyre_life_laps, tyreLifeAtStartLaps: t.tyre_life_at_start_laps, tyreLifeLap: t.lap }
         : {};
+    // the timing hash likewise (Feature 5): its lap guards against an older value
+    const tm = data.timing[id];
+    const timing =
+      tm !== undefined && (row.timingLap === null || tm.lap >= row.timingLap)
+        ? { timing: timingValues(tm), timingLap: tm.lap, stops: tm.pitStops ?? row.stops }
+        : {};
     drivers[id] = {
       ...row,
       ...tyre,
+      ...timing,
       known: true,
       gapAheadS: h.gap_ahead_s,
       gapLeaderS: h.gap_leader_s,
