@@ -32,6 +32,10 @@ ROUTES = {
     "/api/races/{season}/{round}/status": {"get"},
     "/api/races/{season}/{round}/events": {"get"},
     "/api/races/{season}/{round}/replay": {"post"},
+    "/api/races/{season}/{round}/replay/stop": {"post"},
+    "/api/races/{season}/{round}/replay/pause": {"post"},
+    "/api/races/{season}/{round}/replay/resume": {"post"},
+    "/api/races/{season}/{round}/replay/speed": {"post"},
     "/api/replays": {"get"},
     "/api/debug/latency": {"post"},
     "/api/races/{season}/{round}/whatif": {"post"},
@@ -69,6 +73,9 @@ async def test_docs_and_exact_routes(tmp_path: Path) -> None:
     assert {"200", "304", "500", "503"} <= set(listing["responses"])
     replay = spec["paths"]["/api/races/{season}/{round}/replay"]["post"]
     assert {"202", "403", "404", "409", "422", "500"} <= set(replay["responses"])
+    for action in ("stop", "pause", "resume", "speed"):  # Feature 7 controls
+        control = spec["paths"][f"/api/races/{{season}}/{{round}}/replay/{action}"]["post"]
+        assert {"200", "403", "409", "422", "500"} <= set(control["responses"])
 
 
 @pytest.mark.parametrize("origin", ["http://localhost:3000", "http://127.0.0.1:3000"])

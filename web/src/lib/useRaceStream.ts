@@ -9,6 +9,8 @@
  *   idempotent). The API's own connect snapshot follows on the stream anyway.
  * - Errors retry with backoff 1, 2, 4, 8, 15 s. After ``session_end`` the stream closes for good:
  *   the race is over and its keys expire.
+ * - A new ``generation`` (a new replay of the race started, Feature 7) resets the state and opens
+ *   a fresh stream, as on a race change: the tower never keeps an earlier run's laps.
  */
 
 import { useEffect, useReducer, useRef, useState } from "react";
@@ -18,7 +20,11 @@ import { initialState, raceReducer, type RaceState } from "./reducer";
 
 const BACKOFF_S = [1, 2, 4, 8, 15] as const;
 
-export function useRaceStream(season: number, round: number): {
+export function useRaceStream(
+  season: number,
+  round: number,
+  generation = 0,
+): {
   state: RaceState;
   snapshotError: string | null;
 } {
@@ -109,7 +115,7 @@ export function useRaceStream(season: number, round: number): {
       if (timer) clearTimeout(timer);
       source?.close();
     };
-  }, [season, round]);
+  }, [season, round, generation]);
 
   return { state, snapshotError };
 }

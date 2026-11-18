@@ -563,6 +563,14 @@ The key contract in CLAUDE.md is the only key layout. `keys.py` builds the names
   `race:{s}:{r}:*` (COUNT 500, never KEYS) and sets `EXPIRE REDIS_TTL_AFTER_SESSION_S` on every key, the sorted
   set included. A write after `session_end` would refresh the safety TTL, so the stream job must stop writing a
   race after its `session_end` (S12). Channels are not keys and have no TTL.
+- **Lifecycle rule: fresh replay start (Feature 7, approved 2026-11-18).** When the API starts a replay of a
+  race, it first deletes every `race:{s}:{r}:*` key of that race (`RaceStore.delete_race` / `AsyncRaceStore.delete_race`:
+  the same SCAN as `expire_race`, then DEL in chunks of 500 in one pipeline). It does so only after the slot checks,
+  so only while no replay of that race runs, and before anything is launched. A Redis error refuses the start (503)
+  with nothing registered. It never reaches another race (the pattern's trailing colon) or `meta:*`. Keys and
+  fields are unchanged; the rule only guarantees that a new run never shows an earlier run's keys (a stopped run
+  keeps its safety TTL, a finished one its 1 h). Tested in `test_redis_store.py` (other rounds and seasons and the
+  entrants / analysis / telemetry caches untouched) and `test_api_replay_controls.py`.
 - The sync store serves the Spark `foreachBatch` sink (S12) and the benchmark. The async store (`redis.asyncio`)
   serves FastAPI (S13). Both queue the same commands through the same code and differ only in `await
   execute()`. The URL comes only from `Settings.redis_url`.
@@ -752,8 +760,10 @@ browser (http://localhost:3000) --CORS--> FastAPI (uvicorn, 127.0.0.1:8000)
   GET  /api/archive                        archive/race_bundle manifests (in-process TTL; HTTP ETag)
   GET  /api/archive/{s}/{r}                archive/race_bundle bundle.json.gz (stored gzip, ETag = sha256)
   GET  /api/races/{s}/{r}/events           SUBSCRIBE race:{s}:{r}:events -> text/event-stream
-  POST /api/races/{s}/{r}/replay           subprocesses: stream_job, then producer (ENABLE_REPLAY=1)
-  GET  /api/replays                        running replays + the last 20 with state / error
+  POST /api/races/{s}/{r}/replay           DEL race:{s}:{r}:*, then subprocesses: stream_job, producer (ENABLE_REPLAY=1)
+  POST /api/races/{s}/{r}/replay/stop      stop both processes (no session_end), state stopped (Feature 7)
+  POST /api/races/{s}/{r}/replay/pause     | resume | speed {speed}: data/demo/<run_id>/replay_control.json
+  GET  /api/replays                        replays holding a slot + the last 20 with state / speed / lap / error
   POST /api/debug/latency                  API_UI_LATENCY_CSV, default data/demo/ui_latency/ (ENABLE_DEBUG=1)
   POST /api/races/{s}/{r}/whatif           Redis state + recorded laps + priors -> sim/ (S15)
 ```
@@ -794,8 +804,10 @@ Docs: `/api/docs`, `/api/openapi.json`.
 | `GET /api/archive` | 200 `{races: [{season, round, race_name, laps, synthetic, schema_version, model_version, scorer_sha256, sha256, size_bytes, raw_bytes}]}`; 304 on `If-None-Match`; 500 a stored manifest is malformed; 503 archive zone unavailable. 2025 only with `ALLOW_TEST_SEASON=1` |
 | `GET /api/archive/{s}/{r}` | 200 the bundle (schema v1 or v2, served as stored; `Content-Encoding: gzip` when accepted, else JSON; `ETag` = sha256 of the stored gzip, `Cache-Control: no-cache`, `Vary: Accept-Encoding`); 304 on `If-None-Match`; 404 no bundle (or 2025 sealed); 422; 500 the bytes do not match the manifest or break the schema; 503 |
 | `GET …/events` | 200 `text/event-stream`; 422 bad season/round |
-| `POST …/replay` `{speed: 1\|10\|60}` | 202 (with `run_id`, `state`); 403 disabled or 2025; 404 not in the clean zone; 409 running / limit; 422; 500 launch failed; 503 |
-| `GET /api/replays` | 200 `{enabled, max_running, running, recent}` (state `starting/running/finished/failed`, error, exit codes) |
+| `POST …/replay` `{speed: 1\|10\|60}` | 202 (with `run_id`, `state`); 403 disabled or 2025; 404 not in the clean zone; 409 running / limit; 422; 500 launch failed; 503 clean zone unavailable, or the race's old keys could not be deleted |
+| `POST …/replay/stop`, `…/pause`, `…/resume` | 200 the replay (`stop` returns once both processes are gone); 403 disabled or 2025; 409 no replay of the race is running (or it is stopping); 422 bad path; 500 the control file could not be written |
+| `POST …/replay/speed` `{speed: 1\|10\|60}` | as above; 422 for any other body |
+| `GET /api/replays` | 200 `{enabled, max_running, running, recent}` (state `starting/running/paused/stopped/finished/failed`, `speed`, `paused`, `lap`, `events_sent`, error, `note`, `started_at` / `running_at` / `paused_at` / `updated_at` / `ended_at`, exit codes) |
 | `POST /api/debug/latency` `{event_id, ui_rendered_at_ms}` | 201; 403 disabled; 404 unknown id; 409 already recorded; 422 |
 | `POST …/whatif` `{attacker, defender, n?=500, seed?=42}` | 200 three strategies + sensitivity + model P; 404 race not in the lake, no live state or unknown driver; 409 the defender is not directly ahead, or no decision state; 422; 503 Redis, lake or tyre model unavailable |
 
@@ -867,6 +879,37 @@ Docs: `/api/docs`, `/api/openapi.json`.
   refused with the producer's `check_season` unless `ALLOW_TEST_SEASON=1`, which passes `--allow-test-season`
   to both. Child output is logged line by line, which also keeps the pipes drained. A replay writes only
   `data/checkpoints/api_<run_id>*` and `data/demo/<run_id>/`, never `results/`.
+
+  **Controls (Feature 7).** States: `starting` → `running` ⇄ `paused` → `finished` | `stopped` | `failed`
+  (a pause or a speed change is also accepted while `starting`; the producer then starts paused or at that speed).
+  - *Pacing only.* Pause, resume and speed write `data/demo/<run_id>/replay_control.json` (`{version, speed,
+    paused}`, tmp file + `os.replace`). The producer (`--control-file`, `replay_controlled`) re-reads it between
+    sleeps of at most 0.1 s and re-anchors its race clock where it stands (never past the next unsent event), so a
+    change applies before the next event. The events are built once before the first send (ids included) and
+    each is sent once, in order; only `produced_at_ms` differs. Without a control file the producer runs the
+    unchanged `replay()` (parity, archive and `make stream-demo` are untouched).
+  - *Lap reached.* The producer writes `replay_progress.json` (the highest lap of a lap event sent, events sent);
+    the API reports it as `lap` / `events_sent`.
+  - *Stop.* `POST …/replay/stop` takes the failure path's teardown (`_stop_processes`: SIGTERM each group, SIGKILL
+    after 10 s, group sweep), then records `stopped` with the lap reached. No `session_end` is published, so the
+    race keys keep the safety TTL of their last write; the partial outputs stay in `data/demo/<run_id>/`. A new
+    replay of the race starts fresh (the lifecycle rule above, a new checkpoint, `startingOffsets=latest`), and the
+    dashboard resets its live view when it sees the new run id.
+  - *Pause cap.* The total pause of a run is capped by `API_REPLAY_MAX_PAUSE_S` (1800 s); past it the run is
+    stopped with `note` "paused longer than 1800 s". The stream job's backstop is therefore `--timeout-s` =
+    ready + 7200 s (the race at 1×) + the cap + end, whatever the start speed. With a control file the producer
+    also exits (code 4) when its parent process is gone.
+  - *Decisions out.* Replays pass `--decisions-out data/demo/<run_id>/decisions.jsonl` to the stream job (every
+    eligible decision, written when it stops; an output only).
+  - *Proof.* `make replay-control-check SEASON=2024 ROUND=5 [EXPECT_TRIGGERS=113,19,9 EXPECT_DECISIONS=409]`
+    (`streaming/control_check.py`, in the api container, against the running api): an uninterrupted 60× run, then
+    1× switched to 60×, a 60× run with a pause, a stop (no process left, no `session_end`) and a fresh run after it.
+    Every finished run must equal the uninterrupted one in messages, alerts by trigger, decisions, final Redis
+    state and race keys.
+  - The replay guard is unchanged: a paused replay is in `running`, so `make up` / `api-up` refuse.
+  - `running` lists every replay that holds a slot, including one that has just ended (finished, stopped or
+    failed) while its processes are still being stopped; it moves to `recent` when the slot is free. Found live:
+    before, such a job was briefly in neither list while a new start still got 409.
 - **Demo outputs** (`demo_runs.py`). `make stream-demo` and API replays write to `data/demo/<run_id>/`
   (`DEMO_DIR`). `run_id` is `<season>_<round>_<UTC yyyymmddThhmmss.mmmZ>`. Only `make stream-demo RECORD=1`
   (`--record`, the Step 16 recorded run) writes to `results/`. `tests/unit/test_demo_outputs.py` checks with
@@ -944,6 +987,12 @@ browser ── GET /api/races, /api/health ────────────�
     - **0** page requests to `/state`.
   - The page still polls `GET /api/replays` (every 1 s while a replay runs, else every 5 s) for the replay
     control's status, as specified in Step 14. Replay status is not on the race channel.
+  - Replay controls (Feature 7, `components/ReplayControl.tsx`, `lib/replays.ts`): Start (disabled while a
+    replay is active), Pause/Resume (one button) and Stop (enabled only while this race's replay is active), and
+    the 1×/10×/60× radios, which choose the start speed and, during a run, show and change the API's speed. The
+    `role="status"` line (polite) states the state and speed ("Running at 10×.", "Paused at lap 23 (10×).",
+    "Stopped at lap 31."); the lap reached is shown next to it, not announced. A new run id of the race
+    (`trackRun`) resets the live stream and reloads `/state`.
 - **Reducer** (`lib/reducer.ts`, pure, 42 Vitest cases):
   - A snapshot (pushed `event: snapshot` or a reconnect's `/state`) replaces the 9 hash fields (stale
     undercut flags included) and the order zset. It keeps the client-built lap history (the last 20 laps)

@@ -109,7 +109,7 @@ describe("race picker and replay helpers", () => {
   });
 
   it("shows replay status and API errors as text", () => {
-    const failed = { season: 2024, round: 5, speed: 60, run_id: "r", state: "failed" as const, error: "stream job not ready within 60 s", started_at: null, ended_at: null };
+    const failed = { season: 2024, round: 5, speed: 60, run_id: "r", state: "failed" as const, error: "stream job not ready within 60 s", started_at: null, ended_at: null, paused: false, lap: null, note: null, paused_at: null };
     expect(replayStatusText(failed, false, true)).toBe("Failed: stream job not ready within 60 s");
     expect(replayStatusText({ ...failed, state: "running" }, true, true)).toBe("Running at 60×.");
     expect(replayStatusText(null, true, true)).toBe("Another race is replaying.");

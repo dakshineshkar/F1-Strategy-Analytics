@@ -271,3 +271,33 @@ def test_shutdown_removes_the_listener_before_stopping() -> None:
     )
     J.shutdown(spark, Q(), object())
     assert calls == ["remove", "stop", "spark"]
+
+
+# ------------------------------------------------------------------ decisions out (Feature 7)
+def test_write_decisions_round_trips_every_decision_in_order(tmp_path: Path) -> None:
+    proc = processor(CountingStore(), keep_decisions=True)
+    run(proc, kafka_batches(events(), 1, 10))
+    assert proc.decisions, "the scenario has eligible decisions"
+    path = tmp_path / "run" / "decisions.jsonl"
+    assert J.write_decisions(path, proc.decisions) == len(proc.decisions)
+    rows = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
+    assert rows == [J.decision_record(d) for d in proc.decisions]
+    first, d0 = rows[0], proc.decisions[0]
+    assert (first["decision_lap"], first["attacker_id"], first["defender_id"]) == (
+        d0.decision_lap,
+        d0.attacker_id,
+        d0.defender_id,
+    )
+    assert first["probability"] == d0.probability and first["inputs"] == dict(d0.inputs)
+    assert not list(path.parent.glob(".*.tmp"))
+
+
+def test_write_decisions_of_none_writes_an_empty_file(tmp_path: Path) -> None:
+    path = tmp_path / "decisions.jsonl"
+    assert J.write_decisions(path, []) == 0 and path.read_text(encoding="utf-8") == ""
+
+
+def test_decisions_out_is_optional_and_parsed() -> None:
+    assert J.parse_args([]).decisions_out is None
+    args = J.parse_args(["--decisions-out", "data/demo/x/decisions.jsonl"])
+    assert args.decisions_out == Path("data/demo/x/decisions.jsonl")

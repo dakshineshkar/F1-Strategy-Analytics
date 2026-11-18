@@ -64,17 +64,26 @@ export interface Health {
   lake: Lake;
 }
 
-export type ReplayState = "starting" | "running" | "finished" | "failed";
+export type ReplayState = "starting" | "running" | "paused" | "stopped" | "finished" | "failed";
+export type ReplaySpeed = 1 | 10 | 60;
 
 export interface Replay {
   season: number;
   round: number;
+  /** The speed in force (the latest one set). */
   speed: number;
   run_id: string;
   state: ReplayState;
   error: string | null;
   started_at: string | null;
   ended_at: string | null;
+  /** Feature 7 (an older API omits them: read as not paused, no lap, no note). */
+  paused: boolean;
+  /** The highest lap of a lap event the producer has sent. */
+  lap: number | null;
+  /** Why a replay was stopped without a request (the pause cap). */
+  note: string | null;
+  paused_at: string | null;
 }
 
 export interface ReplayStatus {
@@ -191,7 +200,13 @@ export function toHealth(v: unknown): Health | undefined {
   return { status: v.status, lake: { scheme, mode, synthetic } };
 }
 
-const REPLAY_STATES: readonly ReplayState[] = ["starting", "running", "finished", "failed"];
+const REPLAY_STATES: readonly ReplayState[] = ["starting", "running", "paused", "stopped", "finished", "failed"];
+
+/** An optional field: its default when absent, ``undefined`` (invalid) when present but wrong. */
+function optional<T>(v: unknown, fallback: T, check: (x: unknown) => x is T): T | undefined {
+  if (v === undefined) return fallback;
+  return check(v) ? v : undefined;
+}
 
 export function toReplay(v: unknown): Replay | undefined {
   if (!isObj(v) || !isInt(v.season) || !isInt(v.round) || !isInt(v.speed) || !isStr(v.run_id)) {
@@ -202,6 +217,13 @@ export function toReplay(v: unknown): Replay | undefined {
   const started = nullable(v.started_at, isStr);
   const ended = nullable(v.ended_at, isStr);
   if (error === undefined || started === undefined || ended === undefined) return undefined;
+  const paused = optional(v.paused, false, isBool);
+  const lap = v.lap === undefined ? null : nullable(v.lap, isInt);
+  const note = v.note === undefined ? null : nullable(v.note, isStr);
+  const pausedAt = v.paused_at === undefined ? null : nullable(v.paused_at, isStr);
+  if (paused === undefined || lap === undefined || note === undefined || pausedAt === undefined) {
+    return undefined;
+  }
   return {
     season: v.season,
     round: v.round,
@@ -211,6 +233,10 @@ export function toReplay(v: unknown): Replay | undefined {
     error,
     started_at: started,
     ended_at: ended,
+    paused,
+    lap,
+    note,
+    paused_at: pausedAt,
   };
 }
 
@@ -313,12 +339,25 @@ export const api = {
       signal ? { signal } : {},
     ),
   replays: (signal?: AbortSignal) => request("/api/replays", toReplayStatus, signal ? { signal } : {}),
-  startReplay: (season: number, round: number, speed: 1 | 10 | 60) =>
+  startReplay: (season: number, round: number, speed: ReplaySpeed) =>
     request(`${racePath(season, round)}/replay`, toReplay, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ speed }),
       okStatuses: [202],
+    }),
+  /** Replay controls (Feature 7); each is a 409 when no replay of the race is running. */
+  stopReplay: (season: number, round: number) =>
+    request(`${racePath(season, round)}/replay/stop`, toReplay, { method: "POST" }),
+  pauseReplay: (season: number, round: number) =>
+    request(`${racePath(season, round)}/replay/pause`, toReplay, { method: "POST" }),
+  resumeReplay: (season: number, round: number) =>
+    request(`${racePath(season, round)}/replay/resume`, toReplay, { method: "POST" }),
+  setReplaySpeed: (season: number, round: number, speed: ReplaySpeed) =>
+    request(`${racePath(season, round)}/replay/speed`, toReplay, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ speed }),
     }),
   postLatency: async (eventId: string, uiRenderedAtMs: number): Promise<number> => {
     try {

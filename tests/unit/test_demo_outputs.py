@@ -163,8 +163,12 @@ def test_run_ids() -> None:
 
 
 def test_api_replay_writes_only_under_data_demo() -> None:
-    """The replay argv sends the stream job's logs to data/demo; the producer writes no files."""
-    from f1sa.api.replay import stream_job_argv
+    """The replay argv sends the stream job's logs to data/demo. The producer writes one file
+    only (Feature 7: ``write_json_atomic`` of the progress file), at the path the API passes, which
+    is inside the run's data/demo/<run_id>/ like the control file."""
+    import ast
+
+    from f1sa.api.replay import CONTROL_FILE, PROGRESS_FILE, producer_argv, stream_job_argv
 
     argv = stream_job_argv(
         2024,
@@ -174,11 +178,31 @@ def test_api_replay_writes_only_under_data_demo() -> None:
         results_dir=run_dir(Path("data/demo"), RID),
         timeout_s=10,
         allow_test_season=False,
+        decisions_out=run_dir(Path("data/demo"), RID) / "decisions.jsonl",
     )
     assert argv[argv.index("--results-dir") + 1] == f"data/demo/{RID}"
+    assert argv[argv.index("--decisions-out") + 1] == f"data/demo/{RID}/decisions.jsonl"
+    run = run_dir(Path("data/demo"), RID)
+    prod = producer_argv(
+        2024, 5, 60, allow_test_season=False,
+        control_file=run / CONTROL_FILE, progress_file=run / PROGRESS_FILE,
+    )  # fmt: skip
+    for flag in ("--control-file", "--progress-file"):
+        assert prod[prod.index(flag) + 1].startswith(f"data/demo/{RID}/"), flag
     producer_src = (REPO / "src" / "f1sa" / "streaming" / "producer.py").read_text()
-    for writer in ("open(", "write_text", "write_bytes", "results/"):
-        assert writer not in producer_src, writer
+    assert "results/" not in producer_src
+    writers = {"open", "write_text", "write_bytes"}
+    tree = ast.parse(producer_src)
+    for fn in ast.walk(tree):
+        if not isinstance(fn, ast.FunctionDef):
+            continue
+        calls = {
+            n.func.attr if isinstance(n.func, ast.Attribute) else getattr(n.func, "id", "")
+            for n in ast.walk(fn)
+            if isinstance(n, ast.Call)
+        }
+        if calls & writers:
+            assert fn.name == "write_json_atomic", (fn.name, calls & writers)
 
 
 def test_stream_demo_make_targets() -> None:

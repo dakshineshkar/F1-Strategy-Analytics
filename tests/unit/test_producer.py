@@ -371,6 +371,230 @@ def test_replay_of_nothing_sends_nothing() -> None:
     assert PR.replay([], lambda o: None, 10.0) == 0
 
 
+# ------------------------------------------------------------------ replay controls (Feature 7)
+def _ids(outs: list[PR.Outgoing]) -> list[str]:
+    return [o.event.event_id for o in outs]
+
+
+def _timed_send(clock: FakeClock, log: list[tuple[float, PR.Outgoing]]) -> PR.Send:
+    return lambda o: log.append((clock.t, o))
+
+
+def test_controlled_replay_without_changes_keeps_the_schedule() -> None:
+    out = PR.build_events(tiny(), 2)
+    clock, log = FakeClock(), []
+    start = clock.t
+    n = PR.replay_controlled(
+        out,
+        _timed_send(clock, log),
+        lambda: PR.ReplayControl(10.0),
+        clock=clock.clock,
+        sleep=clock.sleep,
+        wall_ms=lambda: 7,
+    )
+    assert n == len(out) and _ids([o for _, o in log]) == _ids(out)
+    base = out[0].event.race_time_s
+    for t, o in log:  # every event at start + (t - t_first) / speed, as replay() sends it
+        assert t - start == pytest.approx((o.event.race_time_s - base) / 10.0)
+    assert all(o.event.produced_at_ms == 7 for _, o in log)
+    assert [o.partition for _, o in log] == [o.partition for o in out]
+    assert max(clock.sleeps) <= 0.1 + 1e-9  # sliced sleeps: a change is seen within poll_s
+
+
+def test_a_speed_change_re_anchors_and_never_skips_or_repeats() -> None:
+    out = PR.build_events(tiny(), 1)
+    base, span = out[0].event.race_time_s, out[-1].event.race_time_s - out[0].event.race_time_s
+    clock, log = FakeClock(), []
+    start, switch = clock.t, 100.0  # 100 wall-s at 1x, then 60x
+
+    def control() -> PR.ReplayControl:
+        fast = clock.t - start >= switch
+        return PR.ReplayControl(60.0 if fast else 1.0, False, 1 if fast else 0)
+
+    PR.replay_controlled(
+        out, _timed_send(clock, log), control, clock=clock.clock, sleep=clock.sleep
+    )
+    assert _ids([o for _, o in log]) == _ids(out)  # each event once, in order
+    for t, o in log:
+        rt = o.event.race_time_s - base
+        if rt < switch:  # before the switch: 1 race-s per wall-s
+            assert t - start == pytest.approx(rt)
+        else:  # after it: the race clock went on from where it stood, 60x faster
+            assert t - start == pytest.approx(switch + (rt - switch) / 60.0, abs=0.11)
+    assert clock.t - start == pytest.approx(switch + (span - switch) / 60.0, abs=0.11)
+
+
+def test_a_pause_sends_nothing_until_resume_then_shifts_the_rest() -> None:
+    out = PR.build_events(tiny(), 1)
+    base = out[0].event.race_time_s
+    clock, log = FakeClock(), []
+    start, p0, length = clock.t, 2.0, 30.0
+
+    def control() -> PR.ReplayControl:
+        paused = p0 <= clock.t - start < p0 + length
+        return PR.ReplayControl(60.0, paused, 1 if paused else (2 if clock.t - start >= p0 else 0))
+
+    PR.replay_controlled(
+        out, _timed_send(clock, log), control, clock=clock.clock, sleep=clock.sleep
+    )
+    assert _ids([o for _, o in log]) == _ids(out)
+    assert not [t for t, _ in log if p0 + 0.11 < t - start < p0 + length]  # nothing while paused
+    for t, o in log:
+        due = (o.event.race_time_s - base) / 60.0
+        if due < p0:
+            assert t - start == pytest.approx(due)
+        else:
+            assert t - start == pytest.approx(due + length, abs=0.11)
+
+
+def test_a_paused_replay_stays_put_and_reports_it() -> None:
+    out = PR.build_events(tiny(), 1)
+    clock, log, seen = FakeClock(), [], []
+    reads = iter(
+        [PR.ReplayControl(60.0, True, 1)] * 50 + [PR.ReplayControl(60.0, False, 2)] * 10**6
+    )
+    PR.replay_controlled(
+        out,
+        _timed_send(clock, log),
+        lambda: next(reads),
+        clock=clock.clock,
+        sleep=clock.sleep,
+        on_progress=seen.append,
+    )
+    assert seen[0].paused is True and seen[0].events_sent == 0 and seen[0].lap is None
+    assert any(not p.paused and p.version == 2 for p in seen)
+    assert log[0][0] - 1000.0 >= 49 * 0.1 - 1e-9  # the first event waited out the pause
+
+
+def test_progress_reports_laps_and_the_final_count() -> None:
+    out = PR.build_events(tiny(), 1)
+    clock, seen = FakeClock(), []
+    PR.replay_controlled(
+        out,
+        lambda o: None,
+        lambda: PR.ReplayControl(1e6),
+        clock=clock.clock,
+        sleep=clock.sleep,
+        on_progress=seen.append,
+    )
+    laps = [p.lap for p in seen if p.lap is not None]
+    assert laps == sorted(laps) and laps[-1] == 3
+    assert seen[-1].events_sent == len(out)
+    assert seen[-1].race_time_s == out[-1].event.race_time_s
+
+
+@pytest.mark.parametrize("k", [0, 1, 5])
+def test_a_stop_at_any_point_sends_exactly_what_was_sent(k: int) -> None:
+    out = PR.build_events(tiny(), 1)
+    sent: list[PR.Outgoing] = []
+
+    def send(o: PR.Outgoing) -> None:
+        if len(sent) == k:
+            raise KeyboardInterrupt  # what SIGTERM's default action stands for here
+        sent.append(o)
+
+    clock = FakeClock()
+    with pytest.raises(KeyboardInterrupt):
+        PR.replay_controlled(
+            out, send, lambda: PR.ReplayControl(60.0), clock=clock.clock, sleep=clock.sleep
+        )
+    assert _ids(sent) == _ids(out)[:k]
+
+
+def test_an_orphaned_replay_stops_before_the_next_event() -> None:
+    out = PR.build_events(tiny(), 1)
+    sent: list[PR.Outgoing] = []
+    alive = iter([True] * 3 + [False] * 10**6)
+    clock = FakeClock()
+    with pytest.raises(PR.OrphanedError):
+        PR.replay_controlled(
+            out,
+            sent.append,
+            lambda: PR.ReplayControl(1e6, True),  # paused: it would wait forever
+            clock=clock.clock,
+            sleep=clock.sleep,
+            alive=lambda: next(alive),
+        )
+    assert sent == []
+
+
+def test_controlled_replay_edge_cases() -> None:
+    assert PR.replay_controlled([], lambda o: None, lambda: PR.ReplayControl(1.0)) == 0
+    with pytest.raises(ValueError, match="poll_s"):
+        PR.replay_controlled([], lambda o: None, lambda: PR.ReplayControl(1.0), poll_s=0)
+
+
+@pytest.mark.parametrize("speed", [0.0, -1.0, float("inf"), float("nan"), True])
+def test_control_refuses_bad_speeds(speed: float) -> None:
+    with pytest.raises(ValueError, match="speed"):
+        PR.ReplayControl(speed)
+    with pytest.raises(ValueError, match="version"):
+        PR.ReplayControl(1.0, False, -1)
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "not json",
+        "[]",
+        '{"speed": "60", "paused": false, "version": 1}',
+        '{"speed": 60, "paused": "no", "version": 1}',
+        '{"speed": 60, "paused": false, "version": 1.5}',
+        '{"speed": 0, "paused": false, "version": 1}',
+        '{"speed": true, "paused": false, "version": 1}',
+        '{"paused": false, "version": 1}',
+    ],
+)
+def test_parse_control_refuses_anything_else(text: str) -> None:
+    with pytest.raises(ValueError):
+        PR.parse_control(text)
+
+
+def test_control_file_round_trip_and_last_good_value(
+    tmp_path: Any, caplog: pytest.LogCaptureFixture
+) -> None:
+    path = tmp_path / "replay_control.json"
+    reader = PR.ControlFile(path, PR.ReplayControl(60.0))
+    with caplog.at_level("WARNING", logger="f1sa.streaming.producer"):
+        assert reader() == PR.ReplayControl(60.0)  # missing: the initial value
+        assert reader() == PR.ReplayControl(60.0)
+        PR.write_control(path, PR.ReplayControl(10.0, True, 3))
+        assert reader() == PR.ReplayControl(10.0, True, 3)
+        path.write_text("{torn", encoding="utf-8")
+        assert reader() == PR.ReplayControl(10.0, True, 3)  # garbled: keeps the last good one
+        assert reader() == PR.ReplayControl(10.0, True, 3)
+    problems = [r.getMessage() for r in caplog.records]
+    assert len(problems) == 2  # once per distinct problem
+    assert "missing" in problems[0] and "unreadable" in problems[1]
+    assert not list(tmp_path.glob(".*.tmp"))
+
+
+def test_progress_round_trip_and_bad_files(tmp_path: Any) -> None:
+    path = tmp_path / "replay_progress.json"
+    assert PR.read_progress(path) is None
+    progress = PR.ReplayProgress(12, 240, 1100.5, True, 10.0, 4)
+    PR.write_json_atomic(path, progress.to_json())
+    assert PR.read_progress(path) == progress
+    for bad in ("x", "[]", '{"lap": -1, "events_sent": 0, "race_time_s": null, '
+                '"paused": false, "speed": 1, "version": 0}'):  # fmt: skip
+        path.write_text(bad, encoding="utf-8")
+        assert PR.read_progress(path) is None
+    with pytest.raises(ValueError, match="events_sent"):
+        PR.parse_progress(
+            '{"lap": null, "events_sent": -2, "race_time_s": null, "paused": false, '
+            '"speed": 1, "version": 0}'
+        )
+
+
+def test_parse_args_takes_the_control_files() -> None:
+    args = PR.parse_args(
+        ["--season", "2024", "--round", "5", "--control-file", "c.json", "--progress-file", "p"]
+    )
+    assert (str(args.control_file), str(args.progress_file)) == ("c.json", "p")
+    plain = PR.parse_args(["--season", "2024", "--round", "5"])
+    assert plain.control_file is None and plain.progress_file is None
+
+
 # ------------------------------------------------------------------ Kafka sending
 class FakeProducer:
     def __init__(self, *, fail: bool = False, full_once: bool = False, left: int = 0) -> None:
@@ -649,3 +873,51 @@ def test_race_inputs_take_sectors_from_analysis_laps(
         PR.race_inputs(
             {**scenario["clean"], PR.ANALYSIS_LAPS_TABLE: _analysis_laps(spark, dup)}, s, r
         )
+
+
+# ------------------------------------------------------------------ main with controls (Feature 7)
+def test_main_with_a_control_file_writes_progress_and_sends_everything(
+    spark: SparkSession,
+    sample_clean_lake: Any,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Any,
+) -> None:
+    monkeypatch.setenv("DATA_LAKE_URI", sample_clean_lake.settings().data_lake_uri)
+    control, progress = tmp_path / "replay_control.json", tmp_path / "replay_progress.json"
+    PR.write_control(control, PR.ReplayControl(1e9))
+    fakes: list[FakeProducer] = []
+
+    def make(conf: dict[str, Any]) -> FakeProducer:
+        fakes.append(FakeProducer())
+        return fakes[-1]
+
+    args = ["--season", "2024", "--round", "5", "--speed", "1"]
+    args += ["--control-file", str(control), "--progress-file", str(progress)]
+    rc = PR.main(args, make_producer=make, partitions=lambda b, t: 3, spark_factory=lambda: spark)
+    assert rc == 0
+    sent = [from_json(c["value"]) for c in fakes[0].calls]
+    done = PR.read_progress(progress)
+    assert done is not None and done.events_sent == len(sent) and done.speed == 1e9
+    assert done.lap == max(e.lap for e in sent if e.type == "lap" and e.lap is not None)
+    assert [e.type for e in sent[-3:]] == ["session_end"] * 3
+
+
+def test_main_exits_4_when_orphaned(
+    spark: SparkSession,
+    sample_clean_lake: Any,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Any,
+) -> None:
+    monkeypatch.setenv("DATA_LAKE_URI", sample_clean_lake.settings().data_lake_uri)
+    control = tmp_path / "replay_control.json"
+    PR.write_control(control, PR.ReplayControl(60.0, True))  # paused: only the parent check ends it
+    parents = iter([4242] + [1] * 10**6)
+    monkeypatch.setattr(PR.os, "getppid", lambda: next(parents))
+    args = ["--season", "2024", "--round", "5", "--control-file", str(control)]
+    rc = PR.main(
+        args,
+        make_producer=lambda conf: FakeProducer(),
+        partitions=lambda b, t: 1,
+        spark_factory=lambda: spark,
+    )
+    assert rc == 4

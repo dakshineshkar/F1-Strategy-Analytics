@@ -171,15 +171,29 @@ class ReplayIn(BaseModel):
     speed: Literal[1, 10, 60] = Field(description="race-seconds per wall-second")
 
 
+class ReplaySpeedIn(BaseModel):
+    """``POST /api/races/{s}/{r}/replay/speed`` (Feature 7)."""
+
+    model_config = ConfigDict(extra="forbid")
+    speed: Literal[1, 10, 60] = Field(description="the new race-seconds per wall-second")
+
+
 class ReplayOut(_Out):
     season: int
     round: int
-    speed: int
+    speed: int = Field(description="the speed in force (the latest one set)")
     run_id: str
     results_dir: str
-    state: Literal["starting", "running", "finished", "failed"]
+    state: Literal["starting", "running", "paused", "stopped", "finished", "failed"]
+    paused: bool = Field(description="paused by request (it can be set while still starting)")
+    lap: int | None = Field(description="the highest lap of a lap event the producer has sent")
+    events_sent: int | None = Field(description="events the producer has sent so far")
     error: str | None
+    note: str | None = Field(description="why a replay was stopped without a request")
     started_at: str | None
+    running_at: str | None = Field(description="when the producer was started")
+    paused_at: str | None = Field(description="when the current pause began")
+    updated_at: str | None = Field(description="the latest control change (start, speed, pause)")
     ended_at: str | None
     stream_returncode: int | None
     producer_returncode: int | None
@@ -189,7 +203,7 @@ class ReplayStatusOut(_Out):
     enabled: bool
     max_running: int
     running: list[ReplayOut]
-    recent: list[ReplayOut] = Field(description="finished or failed replays, newest first")
+    recent: list[ReplayOut] = Field(description="finished, stopped or failed replays, newest first")
 
 
 class LatencyIn(BaseModel):

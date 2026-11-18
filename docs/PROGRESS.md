@@ -1975,10 +1975,109 @@
     sample archive equivalence (wrote the sample 2024 R5 Redis keys, TTL); the api recreated in sample mode
     (`make api-up REPLAY=1`) for Playwright, web stopped for `make web-e2e` and rebuilt with `--no-deps`; after the
     smoke test's replay the api returned to `make api-up FULL=1 REPLAY=1` (it now serves the telemetry routes).
+- Feature 7 (2026-11-18): replay controls: stop, pause / resume and a speed change (1×/10×/60×) during an API
+  replay, from the API and the dashboard. Only the pacing changes. **Done.**
+  - **Investigation** (before the change):
+    - Start and supervision (`api/replay.py`): `start()` refuses a second job of the race or above the cap (409) and
+      makes `run_id` and `data/demo/<run_id>/`. The stream job starts in its own process group, then the producer
+      once the ready file exists. The stream job stops after `session_end` (within 180 s of the producer's exit).
+      States were starting / running / finished / failed. Every outcome ends with SIGTERM to each group, SIGKILL
+      after 10 s and a group sweep.
+    - Pacing (`producer.replay`): every event is built up front (ids included), then sent at
+      `start + (t - t_first) / speed`, with one speed for the whole run.
+    - When a run ends normally, `session_end` publishes and EXPIREs the race keys at 1 h. A failure sends no
+      `session_end`, so the keys keep the 6 h safety TTL. Either way the checkpoint `data/checkpoints/api_<run_id>`
+      (never reused) and `data/demo/<run_id>/` stay.
+  - **Change:**
+    - Producer:
+      - `replay_controlled` re-reads `data/demo/<run_id>/replay_control.json` (`ReplayControl`, written atomically
+        by the API) between sleeps of at most 0.1 s. It re-anchors the race clock where it stands, never past the
+        next unsent event.
+      - It writes `replay_progress.json` (the lap reached, events sent).
+      - New flags `--control-file` and `--progress-file`; exit 4 when orphaned.
+      - Without a control file the old `replay()` runs unchanged.
+    - API:
+      - `POST …/replay/{stop,pause,resume,speed}`: 200, 409 when the race has no active replay or it is stopping,
+        422, 403 when disabled or for 2025, 500 when the control file cannot be written.
+      - New states `paused` and `stopped`; `failed` keeps its name (your choice).
+      - New fields: `paused`, `lap`, `events_sent`, `note`, `running_at`, `paused_at`, `updated_at`.
+      - Stop uses the failure path's teardown, publishes no `session_end` and keeps the partial outputs.
+      - Pause cap `API_REPLAY_MAX_PAUSE_S` (1800 s, total per run; past it the run is stopped with a note).
+      - The stream job's backstop is now ready + 7200 s + the cap + end, whatever the speed.
+      - The stream job writes `decisions.jsonl` (`--decisions-out`, an output only).
+    - **Lifecycle rule (approved):** a replay start DELs `race:{s}:{r}:*` (`delete_race`), only after the slot checks
+      and before any launch. A Redis error gives 503 with nothing registered. Recorded in CLAUDE.md and
+      `docs/architecture.md`.
+    - **Found live and fixed:** between a run's final state and `_finish`, while its processes were still being
+      stopped, the job was in neither `running` nor `recent`, yet a new start already got 409 (pre-existing).
+      `running` now lists every replay that holds a slot.
+    - Dashboard (`ReplayControl.tsx`, `lib/replays.ts`, `useReplays.ts`):
+      - Start, Pause/Resume and Stop buttons, and the speed radios, usable during a run.
+      - A polite `role="status"` line gives the state and speed; the lap reached is shown, not announced.
+      - A new run id resets the live stream (`trackRun`).
+      - Shared tokens only.
+      - **Found by Playwright and fixed:** the controlled speed radio snapped back to the API's speed until the
+        next poll. It now shows the requested speed while the change is in flight.
+    - Proof tool `streaming/control_check.py` (`make replay-control-check`, api container).
+      - **Found live:** a 20 s pause let 4 messages through 1-10 s in. They were events sent before the pause and
+        published while the stream job drained them; the lap reached did not move.
+      - The check now requires that the producer sends nothing while paused (events sent and lap unchanged) and
+        that the channel is quiet over the pause's second half.
+  - **Evidence.**
+    - `make replay-control-check SEASON=2024 ROUND=5 EXPECT_TRIGGERS=113,19,9 EXPECT_DECISIONS=409`:
+      **EQUIVALENT** (sample lake, deployed model).
+      - baseline 60×, switch (1× to 60× at lap 2), pause (20 s at lap 10) and restart (a fresh 60× run right
+        after the stop) all have 1,030 lap, 40 / 40 pit, 141 alert (113 / 19 / 9) and 1 `session_end` messages;
+      - their messages are identical without ids and timing fields, and so are the 409 decisions, the final Redis
+        state (driver, tyre and timing hashes, order) and the 61 race keys;
+      - pause: events sent 199 -> 199, lap 10 -> 10, messages 238 at 1 s, 10 s and 20 s;
+      - stop at lap 15: state `stopped`, lap 15, no `session_end`, 6 replay processes seen and 0 left;
+      - summary: `data/demo/control_check_20261118T122856Z.json`.
+    - `make archive-equivalence SEASON=2024 ROUND=5 LAPS=5,22,45`: **EQUIVALENT** after the DEL change
+      (rebuild identical, 113 / 19 / 9 and 409 decisions equal to parity; Redis == bundle at laps 5, 22, 45 and after
+      `session_end`; every message equal).
+    - Live error codes: 409 for stop, pause and resume with nothing running, 422 for speed 5, 403 for 2025.
+    - Stream parity 2021-2024 (`--out data/demo/parity_check10/stream_parity_full.csv`): 90 races, 157 labelled
+      attempts, 34,608 eligible pairs, 0 mismatching races; `cmp` with `results/stream_parity_full.csv`:
+      identical (sha256 aad8df67…).
+    - `make experiments-sample`: OK 7, OK (metadata differs) 1, DIFF 0, MISSING 0. The 2 NEW what-if files are
+      byte-identical to the Feature 6 run.
+    - Python: the full unit suite (once, after all code changes) gave **2312 passed, 1 failed** in 915 s. The failure
+      was `test_demo_outputs.py::test_api_replay_writes_only_under_data_demo`, a guard that the producer writes no
+      file. It now writes the progress file the API passes, so the guard was tightened to the rule it protects:
+      the control, progress and decisions paths are inside `data/demo/<run_id>/`, and the producer's only file
+      write is `write_json_atomic`. That file then passed (6), as did the doc and traceability tests (17).
+      Targeted (producer, API replay and controls, store, stream job, guard, demo,
+      control check, Makefile, docs) 457 passed before the live fixes; the API, controls and checker tests were rerun
+      after them. ruff, format and mypy clean. `scripts/check_traceability.py`: OK 320, MISSING 0.
+    - Web: lint and typecheck clean; Vitest **336 passed** (14 new in `replays.test.ts`). `make web-e2e`: 4 passed,
+      1 skipped (latency, by design). The new spec starts at 1×, switches to 60×, pauses by keyboard (the lap stays
+      put for 4 s), resumes, stops by keyboard ("Stopped at lap N"; `/api/replays` shows `stopped`, none running).
+    - `results/` is unchanged (`git status results/` clean).
+  - **Services** (user approved):
+    - the parity run in the app container;
+    - the api recreated in sample mode (`make api-up REPLAY=1`), and a second time to load the status fix;
+    - the control check and the archive equivalence (they wrote the sample 2024 R5 Redis keys, `data/demo/` and
+      `data/checkpoints/`);
+    - web stopped for `make web-e2e`, then rebuilt and recreated with `--no-deps`;
+    - the api returned to `make api-up FULL=1 REPLAY=1`.
 ## Next
 - S18: report, docs and demo rehearsal (#44): `docs/report/`, `docs/demo_script.md`.
 - Push and watch the first CI run of the `e2e` job on GitHub (runner build time and disk are unmeasured).
 ## Known issues
+- Feature 7:
+  - A pause or a speed change applies before the producer's next event. Events already sent still reach the
+    dashboard for up to about 1 s (Kafka and the 500 ms trigger), and longer while the stream job catches up
+    (seen live: 4 messages up to 10 s into a pause).
+  - The lap shown is the highest lap the producer has sent, which can be a trigger ahead of what the stream job has
+    published.
+  - A stopped run has no `decisions.jsonl` (the stream job is ended with SIGTERM). Its alerts are on the channel.
+  - A stop requested after the producer has sent `session_end`, while the stream job drains, still records
+    `stopped`. The `session_end` published then is the real one, not a fake.
+  - The pause cap counts the total pause of a run. Its default (1800 s) adds to the stream job's backstop, so an
+    orphaned stream job (API process killed hard) could run up to about 2.5 h. With a control file the producer
+    exits when orphaned.
+  - `make stream-demo` has no controls; only API replays have them.
 - Feature 6:
   - Lap 1 starts at the grid slot (TI distance about 5,224 m at 2024 R5), so comparing it with a flying lap at
     the same lap fraction offsets the corners; the view notes it. Its trace time is not the official lap time.
@@ -2315,6 +2414,11 @@ Feature 6: `uv run pytest tests/unit/test_telemetry_resample.py tests/unit/test_
 `cd web && npx vitest run tests/telemetry.test.ts`; sample: `make etl-sample analysis-sample telemetry-trace-sample`, then
 `make api-up REPLAY=1` and `make web-e2e`; full (needs `make up-full`, `make analysis-full`): `make telemetry-trace-full`
 (writes only /f1/clean/telemetry_trace; expect 26,604 laps, 2 without a trace, unmapped 0).
+
+Feature 7: `uv run pytest tests/unit/test_producer.py tests/unit/test_api_replay.py tests/unit/test_api_replay_controls.py tests/unit/test_redis_store.py tests/unit/test_stream_job.py tests/unit/test_replay_guard.py tests/unit/test_demo_replay.py tests/unit/test_control_check.py tests/unit/test_api_app.py tests/unit/test_makefile_api.py -q`;
+`cd web && npx vitest run tests/replays.test.ts`; with `make api-up REPLAY=1` (sample): `make replay-control-check SEASON=2024 ROUND=5
+EXPECT_TRIGGERS=113,19,9 EXPECT_DECISIONS=409` (expect EQUIVALENT), `make archive-equivalence SEASON=2024 ROUND=5 LAPS=5,22,45`,
+then `docker compose stop web && make web-e2e`.
 
 ## 9f approval
 - 2026-11-13: label-definition-v1, model-spec-v1 and model-spec-v2 approved for the single 2025 test run by Parinith D. on behalf of the team (Data Wranglers). No further sign-off required.

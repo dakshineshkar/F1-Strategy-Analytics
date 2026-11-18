@@ -10,7 +10,8 @@ Runs in the app container against ``http://api:8000`` (stdlib only, no Spark):
    ``POST /api/races/{s}/{r}/replay {"speed": V}``;
 4. wait until ``/state`` holds at least ``--min-drivers`` cars (``--wait state``, the default), or
    also until the replay has ``finished`` (``--wait finished``, used by CI). A replay that
-   ``failed`` stops the wait with its error;
+   ``failed`` stops the wait with its error, and one that was ``stopped`` (Feature 7: from the
+   dashboard, or by the pause cap) with the lap it reached;
 5. print the dashboard URL.
 
 Exit codes: 0 ok, 1 a check failed or timed out (the message says which), 2 usage.
@@ -199,6 +200,9 @@ class Demo:
     def _check_not_failed(self, job: Mapping[str, Any] | None) -> None:
         if job is not None and job.get("state") == "failed":
             raise DemoError(f"replay {job.get('run_id')} failed: {job.get('error')}")
+        if job is not None and job.get("state") == "stopped":
+            why = f" ({job['note']})" if job.get("note") else ""
+            raise DemoError(f"replay {job.get('run_id')} was stopped at lap {job.get('lap')}{why}")
 
     def wait_for_state(self, run_id: str) -> int:
         """Poll ``/state`` until it holds ``min_drivers`` cars; returns the count."""

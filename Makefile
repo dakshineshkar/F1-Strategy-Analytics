@@ -431,6 +431,15 @@ demo-clean: ## Delete demo outputs data/demo/<run_id> and demo/replay checkpoint
 test-api: ## API unit tests (fakeredis, no infra)
 	$(UV) run pytest tests/unit/test_api_*.py tests/unit/test_makefile_api.py tests/unit/test_demo_outputs.py tests/unit/test_demo_clean.py -q
 
+# Feature 7: replay controls change only the pacing. Runs in the api container (where API replays
+# run, so it can see their processes) against the running api; refused while a replay runs; never
+# starts, stops or recreates a service. Writes what API replays write plus
+# data/demo/control_check_<stamp>.json.
+CONTROL_EXPECT = $(if $(EXPECT_TRIGGERS), --expect-triggers $(EXPECT_TRIGGERS),)$(if $(EXPECT_DECISIONS), --expect-decisions $(EXPECT_DECISIONS),)
+.PHONY: replay-control-check
+replay-control-check: ## Feature 7 proof: 1x->60x, pause, stop+restart == uninterrupted 60x (api container) SEASON ROUND [EXPECT_TRIGGERS=113,19,9 EXPECT_DECISIONS=409]
+	$(COMPOSE) exec -T api python -m f1sa.streaming.control_check --season $(SEASON) --round $(ROUND) --api http://127.0.0.1:8000$(CONTROL_EXPECT)
+
 # ---------------------------------------------------------------- dashboard (Step 14)
 # `make web` runs the Next.js dev server on 127.0.0.1:3000 (the API's CORS origin is
 # http://localhost:3000, so it must be port 3000: stop the compose `web` container first; the

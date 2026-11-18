@@ -45,6 +45,8 @@ class FakeApi:
     state_after: int = 2
     finish_after: int = 3
     fail: str | None = None
+    stopped: str | None = None
+    """A note for a ``stopped`` run ("" for one stopped by request); ``None``: not stopped."""
     calls: list[tuple[str, str, Any]] = field(default_factory=list)
     _state_polls: int = 0
     _replay_polls: int = 0
@@ -74,6 +76,9 @@ class FakeApi:
         self._replay_polls += 1
         if self.fail is not None:
             job = {"run_id": RID, "state": "failed", "error": self.fail}
+            return {"enabled": True, "running": [], "recent": [job]}
+        if self.stopped is not None:
+            job = {"run_id": RID, "state": "stopped", "lap": 12, "note": self.stopped or None}
             return {"enabled": True, "running": [], "recent": [job]}
         if self._replay_polls >= self.finish_after:
             job = {"run_id": RID, "state": "finished", "ended_at": "2026-11-14T12:02:00.000Z"}
@@ -191,6 +196,16 @@ def test_a_failed_replay_stops_the_wait_with_its_error() -> None:
     api = FakeApi(state_after=99, fail="stream job not ready within 60 s")
     demo, _lines = _demo(api)
     with pytest.raises(DR.DemoError, match="failed: stream job not ready"):
+        demo.run()
+
+
+@pytest.mark.parametrize(
+    ("note", "message"),
+    [("", "was stopped at lap 12$"), ("paused longer than 1800 s", r"lap 12 \(paused longer")],
+)
+def test_a_stopped_replay_stops_the_wait(note: str, message: str) -> None:
+    demo, _lines = _demo(FakeApi(state_after=99, stopped=note))
+    with pytest.raises(DR.DemoError, match=message):
         demo.run()
 
 

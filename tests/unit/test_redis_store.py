@@ -602,3 +602,78 @@ def test_async_store_writes_and_reads_timing(server: fakeredis.FakeServer) -> No
         assert await store.end_session(2025, 7) == 6
 
     asyncio.run(run())
+
+
+# ------------------------------------------------------------------ replay start (Feature 7)
+def _seed_two_races_and_meta(client: fakeredis.FakeRedis, store: R.RaceStore) -> list[str]:
+    """Race 2024 R5 with every key kind, plus keys that ``delete_race(2024, 5)`` must never
+    touch: 2024 R15 / R25 (same season), 2023 R5 (same round) and the meta caches."""
+    full = replace(_timing_batch(), tyres=TYRES)
+    for s, r in ((2024, 5), (2024, 15), (2024, 25), (2023, 5)):
+        store.write_batch(s, r, full)
+    meta = [
+        K.entrants_meta_key(2024, 5),
+        K.analysis_meta_key(2024, 5, "laps"),
+        K.telemetry_laps_meta_key(2024, 5, "VER"),
+        K.telemetry_trace_meta_key(2024, 5, "VER", 12),
+    ]
+    for key in meta:
+        client.set(key, "{}", ex=600)
+    return meta
+
+
+def test_delete_race_removes_every_key_of_the_race_only(
+    store: R.RaceStore, client: fakeredis.FakeRedis
+) -> None:
+    meta = _seed_two_races_and_meta(client, store)
+    own = store.race_keys(2024, 5)
+    assert {k.split(":")[3] for k in own} == {"driver", "tyre", "timing", "order"}
+    others = {(s, r): store.race_keys(s, r) for s, r in ((2024, 15), (2024, 25), (2023, 5))}
+    ttls = {k: client.ttl(k) for keys in others.values() for k in keys}
+    assert store.delete_race(2024, 5) == len(own) == 3 + 1 + 2 + 2
+    assert store.race_keys(2024, 5) == [] and not any(client.exists(k) for k in own)
+    for (s, r), keys in others.items():
+        assert store.race_keys(s, r) == keys  # other races untouched, TTL included
+    assert all(0 < client.ttl(k) <= ttls[k] for k in ttls)
+    assert all(client.get(k) == "{}" and client.ttl(k) > 0 for k in meta)
+
+
+def test_delete_race_of_an_empty_race_is_a_no_op(
+    store: R.RaceStore, client: fakeredis.FakeRedis
+) -> None:
+    meta = _seed_two_races_and_meta(client, store)
+    before = sorted(client.scan_iter("*"))
+    assert store.delete_race(2022, 1) == 0
+    assert sorted(client.scan_iter("*")) == before and all(client.exists(k) for k in meta)
+
+
+def test_delete_race_chunks_large_races(store: R.RaceStore, client: fakeredis.FakeRedis) -> None:
+    states = {f"d{i:04d}": state(i + 1) for i in range(1200)}
+    store.write_batch(2024, 5, R.Batch(states=states))
+    store.write_batch(2024, 6, R.Batch(states={"a": state(1)}))
+    spy = _Spy(client)
+    counted = R.RaceStore(spy, _settings(), now=_clock())  # type: ignore[arg-type]
+    assert counted.delete_race(2024, 5) == 1200
+    assert spy.calls == [{"transaction": False}] and spy.executes == 1
+    assert store.race_keys(2024, 5) == [] and store.race_keys(2024, 6) == ["race:2024:6:driver:a"]
+
+
+def test_async_delete_race_matches_the_sync_one(server: fakeredis.FakeServer) -> None:
+    sync = fakeredis.FakeRedis(server=server, decode_responses=True)
+    seeded = R.RaceStore(sync, _settings(), now=_clock())
+    meta = _seed_two_races_and_meta(sync, seeded)
+    own, other = seeded.race_keys(2024, 5), seeded.race_keys(2023, 5)
+
+    async def go() -> int:
+        client = fakeredis.FakeAsyncRedis(server=server, decode_responses=True)
+        try:
+            store = R.AsyncRaceStore(client, _settings(), now=_clock())
+            n = await store.delete_race(2024, 5)
+            assert await store.delete_race(2024, 5) == 0
+            return n
+        finally:
+            await client.aclose()
+
+    assert asyncio.run(go()) == len(own)
+    assert seeded.race_keys(2024, 5) == [] and seeded.race_keys(2023, 5) == other
+    assert all(sync.exists(k) for k in meta)

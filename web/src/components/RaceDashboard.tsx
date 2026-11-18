@@ -13,6 +13,7 @@ import { useArchiveAvailable } from "@/lib/useArchive";
 import { useEntrants } from "@/lib/useEntrants";
 import { useRaceStatus } from "@/lib/useRaceStatus";
 import { useRaceStream } from "@/lib/useRaceStream";
+import { INITIAL_RUN, type RunTracker, trackRun } from "@/lib/replays";
 import { useReplays } from "@/lib/useReplays";
 
 import { AlertFeed } from "./AlertFeed";
@@ -114,8 +115,12 @@ export function RaceDashboard({
 
 /** The live (SSE) dashboard, unchanged since Feature 3. */
 function LiveRaceView({ season, round }: { season: number; round: number }) {
-  const { state, snapshotError } = useRaceStream(season, round);
   const replays = useReplays(season, round);
+  // a new replay of this race (Feature 7) starts the live view afresh (state during render)
+  const [run, setRun] = useState<RunTracker>(INITIAL_RUN);
+  const nextRun = trackRun(run, replays.status !== null, replays.current?.run_id ?? null);
+  if (nextRun !== run) setRun(nextRun);
+  const { state, snapshotError } = useRaceStream(season, round, nextRun.generation);
   const { entrants } = useEntrants(season, round);
   const [race, setRace] = useState<Race | null>(null);
   const [view, setView] = useState<PageView>("race");
@@ -211,6 +216,10 @@ function LiveRaceView({ season, round }: { season: number; round: number }) {
             pending={replays.pending}
             error={replays.error}
             onStart={(speed) => void replays.start(speed)}
+            onStop={() => void replays.stop()}
+            onPause={() => void replays.pause()}
+            onResume={() => void replays.resume()}
+            onSpeed={(speed) => void replays.setSpeed(speed)}
           />
           <AlertFeed groups={groups} announcement={announcement} />
           <TyrePanel rows={rows} />

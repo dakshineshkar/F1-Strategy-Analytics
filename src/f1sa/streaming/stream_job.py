@@ -15,6 +15,10 @@
 * ``results/stream_progress.jsonl``: one ``StreamingQueryProgress`` JSON per trigger;
   ``results/stream_batches.jsonl``: per micro-batch counts and the Redis write time. Both are
   started fresh by each run of the job.
+* ``--decisions-out FILE`` (an output only; API replays pass
+  ``data/demo/<run_id>/decisions.jsonl``): every eligible decision as JSONL, written when the job
+  stops (Feature 7 compares them across replays paced differently). It never changes what the
+  processor decides or publishes.
 * Host mode adds the Kafka connector with ``spark.jars.packages`` (exact pinned coordinate, ivy
   cache ``data/cache/ivy``); in the app image the connector is already in ``$SPARK_HOME/jars``.
 """
@@ -37,6 +41,7 @@ from f1sa.features.undercut_rule import MIN_ATTEMPT_LAP, RuleParams
 from f1sa.lake.paths import is_within
 from f1sa.model.lr_scorer import LRScorer
 from f1sa.streaming.alerts import ALERT_THRESHOLD
+from f1sa.streaming.live_state import Decision
 from f1sa.streaming.processor import StreamProcessor
 from f1sa.streaming.redis_sink import RedisSink
 
@@ -183,6 +188,31 @@ def shutdown(spark: Any, query: Any, listener: Any) -> None:
 
 
 # ============================================================================== CLI
+def decision_record(d: Decision) -> dict[str, Any]:
+    """One eligible decision as a JSON object (``--decisions-out``)."""
+    return {
+        "season": d.season,
+        "round": d.round,
+        "decision_lap": d.decision_lap,
+        "attacker_id": d.attacker_id,
+        "defender_id": d.defender_id,
+        "gap_s": d.gap_s,
+        "probability": d.probability,
+        "inputs": dict(d.inputs),
+    }
+
+
+def write_decisions(path: Path, decisions: Iterable[Decision]) -> int:
+    """Write ``decisions`` as JSONL (in processing order) through a temporary file; returns the
+    count. Feature 7 compares them across replays paced differently."""
+    rows = [json.dumps(decision_record(d), sort_keys=True) for d in decisions]
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(f".{path.name}.tmp")
+    tmp.write_text("".join(f"{r}\n" for r in rows), encoding="utf-8")
+    tmp.replace(path)
+    return len(rows)
+
+
 def parse_race(text: str) -> tuple[int, int]:
     try:
         s, r = text.split(":")
@@ -200,6 +230,12 @@ def parse_args(argv: Iterable[str] | None) -> argparse.Namespace:
     p.add_argument("--stop-after-session-end", type=parse_race, default=None, metavar="S:R")
     p.add_argument("--ready-file", type=Path, default=None)
     p.add_argument("--timeout-s", type=float, default=None, help="stop and fail after this long")
+    p.add_argument(
+        "--decisions-out",
+        type=Path,
+        default=None,
+        help="write every eligible decision as JSONL when the job stops (an output only)",
+    )
     p.add_argument("--allow-test-season", action="store_true")
     p.add_argument("--master", default="local[2]")
     p.add_argument("--ivy-dir", type=Path, default=IVY_DIR, help="ivy cache (host mode)")
@@ -245,6 +281,7 @@ def main(argv: Iterable[str] | None = None) -> int:
         allow_test_season=args.allow_test_season,
         state_dir=checkpoint / "driver_state",
         batch_log=batch_log,
+        keep_decisions=args.decisions_out is not None,
         alert_threshold=float(meta.get("decision_threshold", ALERT_THRESHOLD)),
     )
     first_progress = threading.Event()
@@ -288,6 +325,8 @@ def main(argv: Iterable[str] | None = None) -> int:
             rc = 1
     finally:
         shutdown(spark, query, listener)
+        if args.decisions_out is not None:
+            write_decisions(args.decisions_out, processor.decisions)
     print(json.dumps({"processor": processor.counters.to_json()}), flush=True)
     return rc
 

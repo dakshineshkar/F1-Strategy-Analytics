@@ -107,6 +107,8 @@ class Settings(BaseSettings):
     """A replay's stream job must be ready (first trigger done) within this; else it is killed."""
     api_replay_end_timeout_s: float = Field(default=180.0, gt=0, le=3600)
     """After the producer exits, the stream job must stop (session_end processed) within this."""
+    api_replay_max_pause_s: float = Field(default=1800.0, gt=0, le=4 * 3600)
+    """The longest total pause of one replay (Feature 7); past it the replay is stopped."""
     demo_dir: Path = Path("data/demo")
     """Outputs of demo runs (``make stream-demo``, API replays): ``data/demo/<run_id>/``. Only
     ``RECORD=1`` writes to ``results/``."""

@@ -1,11 +1,12 @@
 "use client";
 
-/** Replay status from ``GET /api/replays`` (every 1 s while a replay runs, else every 5 s) and the
- * start action. Errors become one human-readable message. */
+/** Replay status from ``GET /api/replays`` (every 1 s while a replay is active, else every 5 s)
+ * and the actions: start, and (Feature 7) stop, pause, resume and a speed change. One action is
+ * in flight at a time (``pending``); errors become one human-readable message. */
 
 import { useCallback, useEffect, useState } from "react";
 
-import { api, type ReplayStatus } from "./api";
+import { api, type Replay, type ReplayStatus } from "./api";
 import { replayFor, replayMessage, type Speed } from "./replays";
 
 export type { Speed } from "./replays";
@@ -23,6 +24,7 @@ export function useReplays(season: number, round: number) {
     }
   }, []);
 
+  // ``running`` lists starting, running and paused replays: poll fast while any is there
   const running = (status?.running.length ?? 0) > 0;
   useEffect(() => {
     let alive = true;
@@ -44,12 +46,12 @@ export function useReplays(season: number, round: number) {
     };
   }, [running, pending]);
 
-  const start = useCallback(
-    async (speed: Speed) => {
+  const act = useCallback(
+    async (call: () => Promise<Replay>) => {
       setPending(true);
       setError(null);
       try {
-        await api.startReplay(season, round, speed);
+        await call();
       } catch (err) {
         setError(replayMessage(err));
       } finally {
@@ -57,8 +59,17 @@ export function useReplays(season: number, round: number) {
         setPending(false);
       }
     },
-    [season, round, refresh],
+    [refresh],
   );
 
-  return { status, error, pending, start, current: replayFor(status, season, round) };
+  const start = useCallback((speed: Speed) => act(() => api.startReplay(season, round, speed)), [act, season, round]);
+  const stop = useCallback(() => act(() => api.stopReplay(season, round)), [act, season, round]);
+  const pause = useCallback(() => act(() => api.pauseReplay(season, round)), [act, season, round]);
+  const resume = useCallback(() => act(() => api.resumeReplay(season, round)), [act, season, round]);
+  const setSpeed = useCallback(
+    (speed: Speed) => act(() => api.setReplaySpeed(season, round, speed)),
+    [act, season, round],
+  );
+
+  return { status, error, pending, start, stop, pause, resume, setSpeed, current: replayFor(status, season, round) };
 }

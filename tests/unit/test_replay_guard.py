@@ -82,6 +82,15 @@ def test_a_running_replay_is_refused_and_listed() -> None:
     assert "FORCE=1" in err
 
 
+def test_a_paused_replay_counts_as_running() -> None:
+    """Feature 7: a paused replay still holds both processes, so a recreate would cut it off."""
+    paused = json.loads(json.dumps(RUNNING))
+    paused["running"][0].update(state="paused", paused=True, lap=23, speed=10)
+    code, out, err = _check(paused)
+    assert code == G.EXIT_RUNNING and out == ""
+    assert "(2024 R5, 10x, paused, started 2026-11-15T16:44:46.116Z)" in err
+
+
 def test_force_passes_but_still_names_the_replay() -> None:
     code, _out, err = _check(RUNNING, force=True)
     assert code == 0

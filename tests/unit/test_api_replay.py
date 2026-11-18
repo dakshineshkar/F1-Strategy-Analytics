@@ -125,7 +125,8 @@ async def test_202_runs_stream_job_then_producer_and_finishes(tmp_path: Path) ->
         "--stop-after-session-end", "2024:5",
         "--ready-file", f"data/checkpoints/api_{RID}.ready",
         "--results-dir", f"data/demo/{RID}",
-        "--timeout-s", str(int(5 + 7200 / 60 + 5)),
+        "--timeout-s", str(int(5 + 7200 / 1 + 1800 + 5)),
+        "--decisions-out", f"data/demo/{RID}/decisions.jsonl",
         "--model-dir", str(api.deps.settings.api_model_dir),
     )  # fmt: skip
     for _ in range(100):
@@ -136,6 +137,8 @@ async def test_202_runs_stream_job_then_producer_and_finishes(tmp_path: Path) ->
     assert producer.argv == (
         sys.executable, "-m", "f1sa.streaming.producer",
         "--season", "2024", "--round", "5", "--speed", "60",
+        "--control-file", f"data/demo/{RID}/replay_control.json",
+        "--progress-file", f"data/demo/{RID}/replay_progress.json",
     )  # fmt: skip
     running = await _status(api)
     assert [j["state"] for j in running["running"]] == ["running"]

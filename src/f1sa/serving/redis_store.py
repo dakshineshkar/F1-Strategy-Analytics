@@ -36,6 +36,11 @@ set included) and sets ``EXPIRE settings.redis_ttl_after_session_s``. A write af
 ``session_end`` would refresh the safety TTL; the stream job stops writing a race after its
 ``session_end`` (S12). Channels are not keys and have no TTL.
 
+Replay start (lifecycle rule, approved 2026-11-18): ``delete_race`` SCANs ``race:{s}:{r}:*`` and
+DELs every match, so a new API replay of a race never shows the keys of an earlier (stopped,
+failed or finished) run of it. The API calls it only while no replay of that race runs. It never
+reaches another race's keys (the pattern's trailing colon) or ``meta:*``.
+
 Every write of one micro-batch goes through one ``pipeline(transaction=False)`` and one
 ``execute()`` (``write_batch``). The Redis URL comes only from ``Settings.redis_url``.
 """
@@ -57,6 +62,7 @@ from f1sa.serving import keys as K
 
 COMPOUNDS: tuple[str, ...] = ("SOFT", "MEDIUM", "HARD", "INTERMEDIATE", "WET", "UNKNOWN")
 SCAN_COUNT = 500
+DELETE_CHUNK = 500
 NULL = ""
 
 
@@ -447,6 +453,15 @@ class _Base:
             n += 1
         return n
 
+    @staticmethod
+    def _delete_all(pipe: Commands, keys: Sequence[str]) -> int:
+        """Queue one DEL per ``DELETE_CHUNK`` keys; returns the number of commands queued."""
+        n = 0
+        for i in range(0, len(keys), DELETE_CHUNK):
+            pipe.delete(*keys[i : i + DELETE_CHUNK])
+            n += 1
+        return n
+
 
 def _decode_order(rows: Iterable[Any]) -> list[tuple[str, int]]:
     """ZRANGE WITHSCORES rows ``(member, score)`` → ``(driverId, position)``."""
@@ -498,6 +513,15 @@ class RaceStore(_Base):
             self._expire_all(pipe, keys)
             pipe.execute()
         return len(keys)
+
+    def delete_race(self, season: int, round_: int) -> int:
+        """DEL every ``race:{s}:{r}:*`` key (replay start); returns the number deleted."""
+        keys = self.race_keys(season, round_)
+        if not keys:
+            return 0
+        pipe = self.client.pipeline(transaction=False)
+        self._delete_all(pipe, keys)
+        return sum(int(n) for n in pipe.execute())
 
     def end_session(self, season: int, round_: int, event_ts: datetime | None = None) -> int:
         """Publish ``session_end``, then ``expire_race``. Returns the number of keys expired."""
@@ -560,6 +584,15 @@ class AsyncRaceStore(_Base):
             self._expire_all(pipe, keys)
             await pipe.execute()
         return len(keys)
+
+    async def delete_race(self, season: int, round_: int) -> int:
+        """DEL every ``race:{s}:{r}:*`` key (replay start); returns the number deleted."""
+        keys = await self.race_keys(season, round_)
+        if not keys:
+            return 0
+        pipe = self.client.pipeline(transaction=False)
+        self._delete_all(pipe, keys)
+        return sum(int(n) for n in await pipe.execute())
 
     async def end_session(self, season: int, round_: int, event_ts: datetime | None = None) -> int:
         await self.write_batch(season, round_, Batch(events=(Event("session_end", {}, event_ts),)))

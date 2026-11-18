@@ -27,18 +27,29 @@
   ``pit_out`` (lap L+1) at the crossing plus the stop time (never after the next crossing), then
   one ``session_end`` per topic partition.
 * Pacing: an event at race time t is sent at wall time ``start + (t - t_first) / speed``.
+* Replay controls (Feature 7, ``--control-file``): the speed and a pause are read from a small JSON
+  file that only the API writes (``ReplayControl``; ``data/demo/<run_id>/replay_control.json``).
+  ``replay_controlled`` re-reads it between sleeps of at most ``poll_s``; a change re-anchors the
+  race clock where it stands (never past the next unsent event), so it applies before the next
+  event. Only the pacing changes: the events, their order, ids and content are built once, before
+  the first send, and each is sent exactly once. ``--progress-file`` receives the lap reached
+  (``ReplayProgress``). With a control file the producer exits (code 4) once its parent process is
+  gone, so an orphaned, paused replay cannot wait forever.
 * Kafka: ``acks=all``, idempotent, key = ``driver_id``; any delivery error fails the run.
 * Season 2025 (the sealed test season) is refused before anything is read unless
   ``--allow-test-season`` is given.
 
-Exit codes: 0 ok, 1 delivery failure, 2 refused or bad arguments, 3 race data missing or invalid.
+Exit codes: 0 ok, 1 delivery failure, 2 refused or bad arguments, 3 race data missing or invalid,
+4 orphaned (the parent of a controlled replay is gone).
 """
 
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import math
+import os
 import sys
 import time
 import zlib
@@ -46,6 +57,7 @@ from bisect import bisect_right
 from collections import defaultdict
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Protocol
 
 from f1sa.config import get_settings
@@ -556,6 +568,211 @@ def replay(
     return len(events)
 
 
+# ============================================================================== replay control
+@dataclass(frozen=True)
+class ReplayControl:
+    """The pacing of a controlled replay: ``speed`` race-seconds per wall-second, or paused.
+    ``version`` grows with every change the API writes."""
+
+    speed: float
+    paused: bool = False
+    version: int = 0
+
+    def __post_init__(self) -> None:
+        if isinstance(self.speed, bool) or not (0 < self.speed < float("inf")):
+            raise ValueError(f"speed must be a positive number, got {self.speed!r}")
+        if isinstance(self.version, bool) or self.version < 0:
+            raise ValueError(f"version must be >= 0, got {self.version!r}")
+
+    def to_json(self) -> dict[str, Any]:
+        return {"version": self.version, "speed": self.speed, "paused": self.paused}
+
+
+def parse_control(text: str) -> ReplayControl:
+    """The control file's JSON; ``ValueError`` for anything that is not a valid control."""
+    try:
+        doc = json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"control file is not JSON: {exc.msg}") from exc
+    if not isinstance(doc, dict):
+        raise ValueError("control file is not a JSON object")
+    speed, paused, version = doc.get("speed"), doc.get("paused"), doc.get("version")
+    if not isinstance(speed, int | float) or isinstance(speed, bool):
+        raise ValueError(f"control speed must be a number, got {speed!r}")
+    if not isinstance(paused, bool):
+        raise ValueError(f"control paused must be true or false, got {paused!r}")
+    if not isinstance(version, int) or isinstance(version, bool):
+        raise ValueError(f"control version must be an integer, got {version!r}")
+    return ReplayControl(float(speed), paused, version)
+
+
+def write_json_atomic(path: Path, doc: Mapping[str, Any]) -> None:
+    """Write ``doc`` to ``path`` through a temporary file and ``os.replace`` (a reader sees the old
+    file or the new one, never a torn one)."""
+    tmp = path.with_name(f".{path.name}.tmp")
+    tmp.write_text(json.dumps(doc, sort_keys=True) + "\n", encoding="utf-8")
+    os.replace(tmp, path)
+
+
+def write_control(path: Path, control: ReplayControl) -> None:
+    write_json_atomic(path, control.to_json())
+
+
+class ControlFile:
+    """Reads ``path`` on every call. A missing file or an invalid one keeps the last good control
+    (logged once per distinct problem), so a replay never stops because of a bad write."""
+
+    def __init__(self, path: Path, initial: ReplayControl) -> None:
+        self.path = path
+        self.last = initial
+        self._problem: str | None = None
+
+    def __call__(self) -> ReplayControl:
+        try:
+            control = parse_control(self.path.read_text(encoding="utf-8"))
+        except FileNotFoundError:
+            self._note(f"control file {self.path} is missing; keeping {self.last}")
+            return self.last
+        except (OSError, ValueError, UnicodeDecodeError) as exc:
+            self._note(f"control file {self.path} unreadable ({exc}); keeping {self.last}")
+            return self.last
+        self._problem = None
+        self.last = control
+        return control
+
+    def _note(self, problem: str) -> None:
+        if problem != self._problem:
+            self._problem = problem
+            log.warning(problem)
+
+
+@dataclass(frozen=True)
+class ReplayProgress:
+    """How far a controlled replay has got: the highest lap of a ``lap`` event sent, the events
+    sent, the race time of the last one, and the control in force."""
+
+    lap: int | None
+    events_sent: int
+    race_time_s: float | None
+    paused: bool
+    speed: float
+    version: int
+
+    def to_json(self) -> dict[str, Any]:
+        return {
+            "lap": self.lap,
+            "events_sent": self.events_sent,
+            "race_time_s": self.race_time_s,
+            "paused": self.paused,
+            "speed": self.speed,
+            "version": self.version,
+        }
+
+
+def parse_progress(text: str) -> ReplayProgress:
+    """The progress file's JSON; ``ValueError`` for anything else."""
+    try:
+        doc = json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"progress file is not JSON: {exc.msg}") from exc
+    if not isinstance(doc, dict):
+        raise ValueError("progress file is not a JSON object")
+    lap, sent, rt = doc.get("lap"), doc.get("events_sent"), doc.get("race_time_s")
+    paused, speed, version = doc.get("paused"), doc.get("speed"), doc.get("version")
+    if lap is not None and (not isinstance(lap, int) or isinstance(lap, bool) or lap < 0):
+        raise ValueError(f"progress lap must be a lap number or null, got {lap!r}")
+    if not isinstance(sent, int) or isinstance(sent, bool) or sent < 0:
+        raise ValueError(f"progress events_sent must be >= 0, got {sent!r}")
+    if rt is not None and (not isinstance(rt, int | float) or isinstance(rt, bool)):
+        raise ValueError(f"progress race_time_s must be a number or null, got {rt!r}")
+    if not isinstance(paused, bool):
+        raise ValueError(f"progress paused must be true or false, got {paused!r}")
+    if not isinstance(speed, int | float) or isinstance(speed, bool) or not speed > 0:
+        raise ValueError(f"progress speed must be a positive number, got {speed!r}")
+    if not isinstance(version, int) or isinstance(version, bool) or version < 0:
+        raise ValueError(f"progress version must be >= 0, got {version!r}")
+    return ReplayProgress(
+        lap, sent, None if rt is None else float(rt), paused, float(speed), version
+    )
+
+
+def read_progress(path: Path) -> ReplayProgress | None:
+    """The progress file, or ``None`` when it is missing or unreadable (not written yet)."""
+    try:
+        return parse_progress(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError, UnicodeDecodeError):
+        return None
+
+
+class OrphanedError(ProducerError):
+    """The parent of a controlled replay is gone (exit 4)."""
+
+
+def replay_controlled(
+    events: Sequence[Outgoing],
+    send: Send,
+    control: Callable[[], ReplayControl],
+    *,
+    clock: Callable[[], float] = time.monotonic,
+    sleep: Callable[[float], None] = time.sleep,
+    wall_ms: Callable[[], int] = now_ms,
+    poll_s: float = 0.1,
+    on_progress: Callable[[ReplayProgress], None] | None = None,
+    alive: Callable[[], bool] = lambda: True,
+) -> int:
+    """Send ``events`` like ``replay``, with the speed and pause read from ``control``.
+
+    The race clock is ``anchor_race + (clock() - anchor_wall) * speed`` (frozen while paused). When
+    ``control`` returns a new value it is re-anchored where it stands, capped at the next unsent
+    event, so time already spent is kept and nothing is skipped. ``control`` is read before each
+    event and between sleeps of at most ``poll_s``. Every event is sent exactly once, in order,
+    stamped ``produced_at_ms`` just before ``send``. ``on_progress`` gets the state at the start,
+    after each control change, after each new lap and at the end. ``OrphanedError`` once
+    ``alive()`` is false."""
+    if not (poll_s > 0 and poll_s < float("inf")):
+        raise ValueError(f"poll_s must be a positive number, got {poll_s}")
+    cur = control()
+    if not events:
+        return 0
+    anchor_wall, anchor_race = clock(), events[0].event.race_time_s
+    lap: int | None = None
+    sent = 0
+    last_t: float | None = None
+
+    def report() -> None:
+        if on_progress is not None:
+            on_progress(ReplayProgress(lap, sent, last_t, cur.paused, cur.speed, cur.version))
+
+    report()
+    for out in events:
+        t = out.event.race_time_s
+        while True:
+            if not alive():
+                raise OrphanedError("the parent process is gone; stopping the replay")
+            new = control()
+            if new != cur:
+                now = clock()
+                pos = anchor_race if cur.paused else anchor_race + (now - anchor_wall) * cur.speed
+                anchor_wall, anchor_race, cur = now, min(pos, t), new
+                report()
+            if cur.paused:
+                sleep(poll_s)
+                continue
+            delay = anchor_wall + (t - anchor_race) / cur.speed - clock()
+            if delay <= 0:
+                break
+            sleep(min(delay, poll_s))
+        send(Outgoing(out.event.stamped(wall_ms()), out.partition))
+        sent += 1
+        last_t = t
+        ev = out.event
+        if ev.type == "lap" and ev.lap is not None and (lap is None or ev.lap > lap):
+            lap = ev.lap
+            report()
+    report()
+    return sent
+
+
 class KafkaProducerLike(Protocol):
     def produce(self, topic: str, **kwargs: Any) -> None: ...
 
@@ -632,6 +849,15 @@ def parse_args(argv: Iterable[str] | None) -> argparse.Namespace:
     p.add_argument("--speed", type=float, default=10.0, help="race-seconds per wall-second")
     p.add_argument("--allow-test-season", action="store_true")
     p.add_argument("--dry-run", action="store_true", help="build the events, send nothing")
+    p.add_argument(
+        "--control-file",
+        type=Path,
+        default=None,
+        help="JSON {version, speed, paused} re-read during the replay (Feature 7)",
+    )
+    p.add_argument(
+        "--progress-file", type=Path, default=None, help="JSON progress written during the replay"
+    )
     return p.parse_args(list(argv) if argv is not None else None)
 
 
@@ -702,7 +928,30 @@ def main(
     sender = KafkaSender(
         make_producer(producer_config(settings.kafka_bootstrap)), settings.kafka_topic_events
     )
-    sent = replay(events, sender, args.speed)
+    if args.control_file is None:
+        sent = replay(events, sender, args.speed)
+    else:
+        parent = os.getppid()
+        progress_file: Path | None = args.progress_file
+
+        def on_progress(progress: ReplayProgress) -> None:
+            if progress_file is not None:
+                try:
+                    write_json_atomic(progress_file, progress.to_json())
+                except OSError as exc:
+                    log.warning("progress file %s not written: %s", progress_file, exc)
+
+        try:
+            sent = replay_controlled(
+                events,
+                sender,
+                ControlFile(args.control_file, ReplayControl(args.speed)),
+                on_progress=on_progress,
+                alive=lambda: os.getppid() == parent,
+            )
+        except OrphanedError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 4
     try:
         sender.close()
     except RuntimeError as exc:

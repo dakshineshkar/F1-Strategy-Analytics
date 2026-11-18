@@ -84,10 +84,11 @@ class ApiDeps:
             r = sim_factory()
             return r.clean, r.features
 
+        store = AsyncRaceStore(client, settings)
         return cls(
             settings=settings,
             redis=client,
-            store=AsyncRaceStore(client, settings),
+            store=store,
             model=model or ModelStatus.load(settings.api_model_dir),
             catalog=RaceCatalog(
                 reader_factory or (lambda: reader_for(settings, session=http_session)),
@@ -102,6 +103,8 @@ class ApiDeps:
                 ready_timeout_s=settings.api_replay_ready_timeout_s,
                 end_timeout_s=settings.api_replay_end_timeout_s,
                 model_dir=settings.api_model_dir,
+                max_pause_s=settings.api_replay_max_pause_s,
+                clear_race=store.delete_race,
             ),
             latency=LatencyRecorder(settings.api_ui_latency_csv, enabled=settings.enable_debug),
             kafka_check=kafka_check or kafka_check_for(settings),

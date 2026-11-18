@@ -139,3 +139,22 @@ def test_make_up_waits_for_the_api() -> None:
 def test_rw_mount_folders_are_created_first(target: str) -> None:
     lines = [ln for ln in _make(target).splitlines() if not ln.startswith("make")]
     assert lines[0] == "mkdir -p data/demo data/checkpoints models/undercut models/sim"
+
+
+def test_replay_control_check_runs_in_the_api_container_and_touches_no_service() -> None:
+    """Feature 7: the proof runs where API replays run (it checks their processes there)."""
+    out = _make("replay-control-check")
+    (line,) = [x for x in out.splitlines() if "f1sa.streaming.control_check" in x]
+    assert line == (
+        "docker compose exec -T api python -m f1sa.streaming.control_check --season 2024 "
+        "--round 5 --api http://127.0.0.1:8000"
+    )
+    expect = _make(
+        "replay-control-check", "SEASON=2023", "ROUND=3", "EXPECT_TRIGGERS=113,19,9",
+        "EXPECT_DECISIONS=409",
+    )  # fmt: skip
+    assert "--season 2023 --round 3 --api http://127.0.0.1:8000 --expect-triggers 113,19,9 " \
+        "--expect-decisions 409" in expect  # fmt: skip
+    assert "results/" not in out and "/f1/raw" not in out
+    for verb in (" up ", " down", " stop ", " restart", "--build", "--force-recreate"):
+        assert verb not in out

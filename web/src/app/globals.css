@@ -201,9 +201,15 @@ input[type="search"], select {
   color: #14110a; background: var(--accent-bg); border: 2px solid var(--accent-bg); border-radius: var(--radius); cursor: pointer;
 }
 .btn:disabled { cursor: not-allowed; background: transparent; color: var(--muted); border-color: var(--border); }
+.replay-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+.btn-secondary { color: var(--text); background: var(--surface-2); border-color: var(--border); }
+.btn:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
 .replay-status { margin: 0.6rem 0 0; min-height: 1.4rem; font: 600 0.85rem/1.4 var(--font-num); }
 .replay-status.state-failed { color: var(--danger); }
 .replay-status.state-running, .replay-status.state-starting { color: var(--ok); }
+.replay-status.state-paused { color: var(--warn); }
+.replay-status.state-stopped { color: var(--muted); }
+.replay-lap { margin: 0.15rem 0 0; min-height: 1.2rem; font: 600 0.8rem/1.4 var(--font-num); color: var(--muted); }
 .replay-error { margin: 0.25rem 0 0; min-height: 1.2rem; font-size: 0.82rem; color: var(--danger); }
 
 /* What-if: results area reserves its height, so a run never shifts the page; the table scrolls
