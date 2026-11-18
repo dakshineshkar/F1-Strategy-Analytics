@@ -44,6 +44,10 @@ Hadoop 3.4.3, FastF1 3.9.2, Next.js + TypeScript strict.
   TracingInsights sectors/speed trap, its best so far over laps <= that lap, its stop count); same TTL rules;
   written in the batch's one pipeline; never read by the model, the rule, the live features or the what-if.
   Tested in test_keys.py / test_redis_store.py / test_redis_sink.py / test_stream_parity.py.
+- ADDITIVE API cache, display only (Feature 6, 2026-11-18): STRING meta:telemetry:{season}:{round}:laps:{CODE} = JSON
+  of GET /api/races/2024/{r}/telemetry/laps?driver=CODE and STRING meta:telemetry:{season}:{round}:trace:{CODE}:{lap}
+  = one lap's resampled trace, both tagged with the lake fingerprint, SET EX API_TELEMETRY_CACHE_S; outside race:*,
+  never touches the driver hash; compare has no key. Tested in test_keys.py / test_api_telemetry.py.
 
 ## Data rules
 - Undercut label = docs/label_definition.md. Features must use info available at end of lap L-1 only.

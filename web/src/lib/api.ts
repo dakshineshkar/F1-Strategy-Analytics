@@ -2,6 +2,7 @@
  * ``ApiError`` instead of a crash. Types mirror ``src/f1sa/api/models.py``. */
 
 import { toCompare, toLapsDoc, toPitStopsDoc, toPositionsDoc, toRaceControlDoc, toStintsDoc } from "./analysis";
+import { toTelemetryCompare, toTelemetryLaps } from "./telemetry";
 import { API_URL } from "./config";
 import { toEntrants } from "./entrants";
 import { isBool, isDriverId, isFiniteNumber, isInt, isObj, isStr, nullable } from "./guard";
@@ -285,6 +286,30 @@ export const api = {
     request(
       `${racePath(season, round)}/analysis/compare?${new URLSearchParams({ a, b }).toString()}`,
       toCompare,
+      signal ? { signal } : {},
+    ),
+  /** Display-only telemetry traces (Feature 6, 2024 only; any other season is a 404). */
+  telemetryLaps: (season: number, round: number, driver: string, signal?: AbortSignal) =>
+    request(
+      `${racePath(season, round)}/telemetry/laps?${new URLSearchParams({ driver }).toString()}`,
+      toTelemetryLaps,
+      signal ? { signal } : {},
+    ),
+  telemetryCompare: (
+    season: number,
+    round: number,
+    a: { code: string; lap: number },
+    b: { code: string; lap: number },
+    signal?: AbortSignal,
+  ) =>
+    request(
+      `${racePath(season, round)}/telemetry/compare?${new URLSearchParams({
+        a: a.code,
+        alap: String(a.lap),
+        b: b.code,
+        blap: String(b.lap),
+      }).toString()}`,
+      toTelemetryCompare,
       signal ? { signal } : {},
     ),
   replays: (signal?: AbortSignal) => request("/api/replays", toReplayStatus, signal ? { signal } : {}),

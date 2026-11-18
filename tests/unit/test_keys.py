@@ -192,3 +192,52 @@ def test_claude_md_documents_the_timing_hash_exactly() -> None:
     fields = tuple(f.strip() for f in " ".join(m.group(1).split()).split(","))
     assert fields == K.TIMING_FIELDS
     assert "ADDITIVE, display only (Feature 5" in text
+
+
+# ------------------------------------- additive telemetry cache (display only; Feature 6)
+def test_telemetry_meta_keys_are_outside_the_race_namespace() -> None:
+    laps = K.telemetry_laps_meta_key(2024, 5, "VER")
+    trace = K.telemetry_trace_meta_key(2024, 5, "VER", 12)
+    assert laps == "meta:telemetry:2024:5:laps:VER"
+    assert trace == "meta:telemetry:2024:5:trace:VER:12"
+    for key in (laps, trace):
+        assert not fnmatchcase(key, K.race_pattern(2024, 5)) and not key.startswith("race:")
+        assert not key.startswith(("meta:analysis:", "meta:entrants:"))
+    assert K.telemetry_trace_meta_key(2024, 1, "VER", 1) != K.telemetry_trace_meta_key(
+        2024, 1, "VER", 10
+    )
+    # the 9-field driver hash is unchanged
+    assert len(K.DRIVER_FIELDS) == 9
+
+
+@pytest.mark.parametrize(
+    ("season", "round_", "code", "lap"),
+    [
+        (1949, 5, "VER", 1),
+        (2024, 31, "VER", 1),
+        (2024, 5, "ver", 1),
+        (2024, 5, "VE*", 1),
+        (2024, 5, None, 1),
+        (2024, 5, "VER", 0),
+        (2024, 5, "VER", 201),
+        (2024, 5, "VER", True),
+    ],
+)
+def test_telemetry_meta_keys_validate(
+    season: object, round_: object, code: object, lap: object
+) -> None:
+    with pytest.raises(K.InvalidKeyError):
+        K.telemetry_trace_meta_key(season, round_, code, lap)  # type: ignore[arg-type]
+    if type(lap) is int and lap == 1:  # the laps key has no lap; True is not a lap
+        with pytest.raises(K.InvalidKeyError):
+            K.telemetry_laps_meta_key(season, round_, code)  # type: ignore[arg-type]
+
+
+def test_claude_md_documents_the_telemetry_cache() -> None:
+    from pathlib import Path
+
+    text = " ".join((Path(__file__).resolve().parents[2] / "CLAUDE.md").read_text().split())
+    assert "ADDITIVE API cache, display only (Feature 6" in text
+    assert "STRING meta:telemetry:{season}:{round}:laps:{CODE}" in text
+    assert "meta:telemetry:{season}:{round}:trace:{CODE}:{lap}" in text
+    assert "API_TELEMETRY_CACHE_S" in text

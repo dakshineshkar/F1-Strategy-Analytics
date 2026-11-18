@@ -544,6 +544,12 @@ The key contract in CLAUDE.md is the only key layout. `keys.py` builds the names
     from the cached `laps` document and has no key of its own.
   - Outside `race:*` for the same reasons as the entrants key; the 9-field driver hash is never touched; a Redis
     error falls back to the lake; negative results are not cached.
+- **Telemetry cache (additive, display only; Feature 6)** `meta:telemetry:{s}:{r}:laps:{CODE}` (a driver's laps
+  with a trace) and `meta:telemetry:{s}:{r}:trace:{CODE}:{lap}` (one lap's resampled trace, about 60-80 KB).
+  - The same `{"lake": <fingerprint>, "data": <response>}` STRING, written by `api/telemetry.py` with
+    `SET … EX API_TELEMETRY_CACHE_S` (default 3600 s). The compare is computed from two cached traces and has no
+    key, so the number of keys is bounded by the laps actually viewed.
+  - Outside `race:*`, never the driver hash; a Redis error falls back to the lake; 404s are not cached.
 - **Order** `race:{s}:{r}:order`: ZADD, member = driverId, score = position (unique ints ≥ 1). Drivers stay in
   the set for the whole session (a DNF keeps its classified position), so the upsert is the complete update.
 - **Events** on the channel `race:{s}:{r}:events`: JSON with `type` (lap, pit_in, pit_out, undercut_alert,
@@ -739,6 +745,8 @@ browser (http://localhost:3000) --CORS--> FastAPI (uvicorn, 127.0.0.1:8000)
   GET  /api/races/{s}/{r}/entrants         meta:entrants:{s}:{r} (SET EX) | clean/entrants partition (display only)
   GET  /api/races/{s}/{r}/analysis/{view}  meta:analysis:{s}:{r}:{view} (SET EX) | clean/analysis_* (display only)
        view = laps | stints | pitstops | race-control | positions;  …/analysis/compare?a=CODE&b=CODE
+  GET  /api/races/{s}/{r}/telemetry/laps?driver=CODE  meta:telemetry:…:laps:CODE | clean/telemetry_trace driver partition
+       …/telemetry/compare?a=&alap=&b=&blap=  two cached traces -> one distance axis + delta lane (2024 only; Feature 6)
   GET  /api/races/{s}/{r}/engineer/{id}?lap=N  lap log (laps <= N) + driver hashes (read only) + earlier-race priors
   GET  /api/races/{s}/{r}/status?lap=N     race-status banner at leader lap N (Feature 5; lake laps/race control <= N | lap log)
   GET  /api/archive                        archive/race_bundle manifests (in-process TTL; HTTP ETag)
@@ -779,6 +787,8 @@ Docs: `/api/docs`, `/api/openapi.json`.
 | `GET …/entrants` | 200 `{season, round, entrants: [...]}` sorted by grid; 404 no entrants partition (or 2025 sealed); 422; 500 a stored row is malformed; 503 clean zone unavailable |
 | `GET …/analysis/{laps,stints,pitstops,race-control,positions}` | 200 `{season, round, coverage, rows: [...]}`; 404 no `analysis_race` row (or 2025 sealed); 422; 500 a stored row is malformed; 503 clean zone unavailable |
 | `GET …/analysis/compare?a=&b=` | 200 `{season, round, coverage, a, b, rows: [...]}` (deltas a − b); 404 no analysis or a code without laps; 422 a code not `[A-Z]{3}` or a = b; 500; 503 |
+| `GET …/telemetry/laps?driver=CODE` | 200 `TelemetryLapsOut` (`driver_id`, `is_synthetic`, `source`, `grid_step_m`, `fastest_lap`, one summary row per lap); **404 `telemetry traces are available for 2024 only`** for any other season (checked first: no cache read, no lake read, so 2025 is never opened); 404 no traces for the race (`… (run make telemetry-trace-full)`) or none for the driver; 422 a driver not `[A-Z]{3}`; 500 a stored row is malformed; 503 clean zone unavailable |
+| `GET …/telemetry/compare?a=&alap=&b=&blap=` | 200 `TelemetryCompareOut` (`distance_m` = A's grid, `a` / `b` on it, `delta_s`, 25 `segments`, `final_delta_s`, `lap_time_delta_s`); the same driver with two laps is allowed; 404 as above, or a lap without a trace; 422 a bad code, a lap outside 1..200, or the same driver and lap twice; 500; 503 |
 | `GET …/status?lap=N` | 200 `RaceStatusOut` (`lap`, `status` green / sc / vsc / red / neutralised / unknown, `source` track_status / estimated / none, the latest key race-control `message` with lap <= N and its `message_lap`); N defaults to the leader's latest lap in the lap log; 404 race not in the lake (or 2025 sealed) or no live state; 409 no laps recorded yet, or lap N not reached yet (so the lake's later laps are never shown early); 422 bad lap; 503 Redis or lake unavailable. `engineer.neutral_at`, the engineer view's own function. Never writes Redis; not cached |
 | `GET …/engineer/{driverId}?lap=N` | 200 `EngineerOut` (cards ahead/focus/behind, pairs, rejoin, calls; laps <= N only); 404 race not in the lake (or 2025 sealed), no live state or no laps for the driver; 409 no laps recorded yet, or lap N outside the recorded laps; 422 bad driverId or lap; 503 Redis or lake unavailable. Never writes Redis; not cached |
 | `GET /api/archive` | 200 `{races: [{season, round, race_name, laps, synthetic, schema_version, model_version, scorer_sha256, sha256, size_bytes, raw_bytes}]}`; 304 on `If-None-Match`; 500 a stored manifest is malformed; 503 archive zone unavailable. 2025 only with `ALLOW_TEST_SEASON=1` |
@@ -1150,6 +1160,52 @@ request:  Redis hashes (api/state)  +  lap log (race channel)  +  features/pit_l
   the expected gap and interval as text. The sensitivity rows are a labelled row group, and the model P is text.
   Reserved height, bar transition only without reduced motion, and the table scrolls inside the panel at 375 px.
 
+
+## Telemetry lap overlay (`etl/telemetry_trace.py`, `api/telemetry.py`, Feature 6, display only, 2024 only)
+```
+raw/tracinginsights/telemetry/season=2024/round=R/driver=CODE/telemetry.parquet  (kept raw samples, read-only)
+  + clean/analysis_laps (driver_id, lap time, pit / deleted / neutralised, compound; read-only)
+  --groupBy(season, round, driver_code, lap).applyInPandas(telemetry_resample.resample_group)-->
+clean/telemetry_trace/season=2024/round=R/driver_code=CODE/   (one row per lap: arrays on a 5 m grid + summary)
+  --api.telemetry (one driver partition, HttpFS LISTSTATUS/OPEN; meta:telemetry:* cache)--> /api/races/2024/{r}/telemetry/*
+  --> TelemetryView (Race analysis tab "Telemetry")
+```
+- **Only 2024.** The lake keeps raw samples for 2024 only (Step 4C). The job accepts no other season
+  (`--seasons 2024`), and the API answers any other season with 404 `telemetry traces are available for 2024 only`
+  before touching Redis or the lake; the dashboard shows the same note and sends no request.
+- **Writes only `clean/telemetry_trace`** (and its `_quality.json` inside the table directory). `output_path`
+  refuses any other location, `raw` included; `/f1/raw` is never written (checked by size and file count around
+  the run). The schema lives in `lake/schemas_telemetry_trace.py`, outside every other table list.
+- **Resampling** (`etl/telemetry_resample.py`, pure numpy, unit-tested): samples sorted by time; distance made
+  monotone (`cummax(max(d, 0))`, corrections counted); a standstill collapses to the time the car leaves; grid
+  `0, 5, … ⌊L/5⌋·5` plus `L`; time, speed, throttle and RPM linear in distance; gear, brake and DRS held. Summary:
+  top speed (raw samples), distance shares on the grid (full throttle ≥ 98%, brake, DRS), braking zones (brake runs
+  ≥ 10 m, merged over gaps ≤ 10 m) with their apex (lowest speed up to 200 m after the zone) and the slowest one.
+  Coverage `partial` when a sample gap exceeds 2.0 s or the trace covers < 90% of the lap time (the Step 4C
+  thresholds).
+- **Delta time** (`api.telemetry.compare_traces`): the axis is A's grid `x_k`; B is read at the same **fraction of
+  its own lap**, `t_B(x_k) = interp(x_k / L_A · L_B, g_B, t_B)`, because TracingInsights integrates each lap's
+  distance from speed and lap lengths differ by up to about 0.3% (some 16 m, about 0.2 s at 300 km/h): comparing at
+  equal metres would move the finish line. `delta_k = t_A(x_k) − t_B(x_k)`: positive = A behind at that point
+  (it needed longer to get there), negative = A ahead; where the curve rises A loses time, where it falls A gains.
+  At the line it equals `trace_time_A − trace_time_B`, the lap-time difference from lap 2 on (lap 1 starts at the
+  grid slot). 25 equal mini-sectors carry `delta(end) − delta(start)`; they add up to `delta[-1] − delta[0]`
+  exactly (a telescoping sum, tested), and the summary names the largest gains and losses.
+- **Dashboard** (`TelemetryView.tsx`, `lib/telemetry.ts`, `lib/useTelemetry.ts`): driver + lap pickers for A and B
+  (each driver's fastest clean lap by default, marked "(fastest)"; picks in the URL as `ta`, `talap`, `tb`,
+  `tblap`); seven stacked SVG lanes (speed, throttle, brake, gear, RPM, DRS, delta) on one distance axis; A solid,
+  B dashed, both in team colours over a border halo, so teammates or one driver on two laps stay apart; the brake
+  and DRS lanes have one row per car (A filled, B outlined). One crosshair: a focusable `role="slider"` (pointer,
+  arrows ±5 m, Shift ±50 m, Page Up/Down ±250 m, Home/End) whose `aria-valuetext` names the distance, both speeds
+  and the delta; a readout table of every channel at the crosshair; a text summary and a mini-sector table behind
+  "Show table"; notes for SYNTHETIC data, partial traces, pit laps and lap 1; a `telemetry` glossary group. Shared
+  theme tokens only.
+- **Sample mode:** the sample has no telemetry. `make telemetry-trace-sample` writes a SYNTHETIC 2024 R5 fixture
+  (`ingest/synthetic_telemetry.py`, seeded, from the sample's real lap times) under `data/lake/fixtures/` and builds
+  the table from it with `is_synthetic = true`; it is for tests and the Playwright smoke only (`make demo` does not
+  run it), and the dashboard labels it SYNTHETIC.
+- **Isolation:** no feature, model input, rule, alert, stream, what-if, archive bundle or `results/` file reads the
+  table or imports the code (a source test checks the packages).
 
 ## Post-race archive (`archive/`, `api/archive.py`, Feature 4, display only)
 ```

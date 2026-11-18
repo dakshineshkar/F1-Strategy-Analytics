@@ -2,7 +2,7 @@
 SHELL := /bin/bash
 UV ?= uv
 
-.PHONY: help setup lint typecheck test test-int sample-data etl-sample entrants-sample analysis-sample features-sample model-eval-sample model-eval-rehearsal
+.PHONY: help setup lint typecheck test test-int sample-data etl-sample entrants-sample analysis-sample telemetry-trace-sample features-sample model-eval-sample model-eval-rehearsal
 
 help: ## List available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2}'
@@ -31,6 +31,13 @@ entrants-sample: ## Display-only per-race entrants (clean/entrants) in data/lake
 
 analysis-sample: ## Display-only race-analysis tables (clean/analysis_*) in data/lake (run etl-sample first)
 	DATA_LAKE_URI=file://$(CURDIR)/data/lake $(UV) run python -m f1sa.etl.analysis --source sample
+
+# The sample has no telemetry: this writes a SYNTHETIC 2024 R5 fixture (data/lake/fixtures, never
+# data/sample) and builds clean/telemetry_trace from it (is_synthetic). Tests and Playwright only;
+# make demo does not run it.
+telemetry-trace-sample: ## SYNTHETIC 2024 R5 telemetry fixture + clean/telemetry_trace in data/lake (tests only; run analysis-sample first)
+	DATA_LAKE_URI=file://$(CURDIR)/data/lake $(UV) run python -m f1sa.ingest.synthetic_telemetry
+	DATA_LAKE_URI=file://$(CURDIR)/data/lake $(UV) run python -m f1sa.etl.telemetry_trace --source sample
 
 features-sample: ## Feature tables from data/lake/clean into data/lake/features (run etl-sample first)
 	DATA_LAKE_URI=file://$(CURDIR)/data/lake $(UV) run python -m f1sa.features.build --source sample
@@ -105,7 +112,7 @@ pipeline-full: etl-full features-full report-full ## etl-full, features-full, th
 # ingest-ti-full runs on the HOST: files go through HttpFS (HDFS_HTTPFS_URL) as in Step 4A, and the
 # per-lap telemetry aggregates are computed with a local Spark session before upload. Resumable
 # (data/manifest_tracinginsights.json); SKIP_RAW_TELEMETRY=1 keeps no raw samples (default: 2024).
-.PHONY: ingest-ti-full etl-ti-full entrants-full analysis-full reconcile-ti-full test-ti
+.PHONY: ingest-ti-full etl-ti-full entrants-full analysis-full telemetry-trace-full reconcile-ti-full test-ti
 ingest-ti-full: ## TracingInsights tables + telemetry aggregates for 2021-2025 into /f1/raw (host -> HttpFS)
 	DATA_LAKE_URI=$(HDFS_LAKE) uv run f1sa-ingest-ti --seasons 2021-2025 --sink hdfs$(if $(SKIP_RAW_TELEMETRY), --skip-raw-telemetry,)
 
@@ -117,6 +124,12 @@ entrants-full: hdfs-dirs ## Display-only per-race entrants: /f1/clean/entrants (
 
 analysis-full: hdfs-dirs ## Display-only race-analysis tables: /f1/clean/analysis_* (reads clean + raw TI laps.parquet; never writes /f1/raw)
 	$(APP_EXEC) python -m f1sa.etl.analysis --source lake
+
+# Feature 6: reads the kept 2024 raw telemetry samples and clean/analysis_laps (run analysis-full
+# first); writes only /f1/clean/telemetry_trace. TRACE_ROUNDS=5 or 1-24 limits the rounds.
+TRACE_PARTITIONS ?= 48
+telemetry-trace-full: hdfs-dirs ## Display-only 2024 telemetry traces: /f1/clean/telemetry_trace (reads the kept 2024 raw telemetry; never writes /f1/raw) [TRACE_ROUNDS=]
+	$(APP_EXEC) python -m f1sa.etl.telemetry_trace --source lake --shuffle-partitions $(TRACE_PARTITIONS)$(if $(TRACE_ROUNDS), --rounds $(TRACE_ROUNDS),)
 
 reconcile-ti-full: ## Read-only TracingInsights vs Jolpica lap reconciliation (counts only, writes nothing)
 	$(APP_EXEC) python -m f1sa.etl.reconcile_ti

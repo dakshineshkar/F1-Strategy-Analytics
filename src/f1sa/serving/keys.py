@@ -31,6 +31,14 @@ Additive, display-only API cache (Feature 2; the race keys above are unchanged):
   of ``GET /api/races/{s}/{r}/analysis/{view}``, written with ``SET … EX API_ANALYSIS_CACHE_S``.
   Outside ``race:*`` for the same reasons as the entrants key.
 
+Additive, display-only API cache (Feature 6; the race keys above are unchanged):
+
+* STRING  ``meta:telemetry:{season}:{round}:laps:{CODE}``: the JSON of
+  ``GET /api/races/{s}/{r}/telemetry/laps?driver=CODE``, and
+  ``meta:telemetry:{season}:{round}:trace:{CODE}:{lap}``: one lap's resampled trace, both written
+  with ``SET … EX API_TELEMETRY_CACHE_S``. The compare response is derived from two traces and has
+  no key. Outside ``race:*`` for the same reasons as the entrants key.
+
 Every function is pure and validates its inputs (season 1950-2100, round 1-30, driverId
 ``[a-z0-9_]+``, the Jolpica ``driverId`` form). Invalid input raises ``InvalidKeyError``, so a
 malformed key never reaches Redis.
@@ -160,3 +168,29 @@ def analysis_meta_key(season: int, round_: int, view: str) -> str:
     if not isinstance(view, str) or view not in ANALYSIS_VIEWS:
         raise InvalidKeyError(f"unknown analysis view: {view!r}")
     return f"meta:analysis:{validate_season(season)}:{validate_round(round_)}:{view}"
+
+
+DRIVER_CODE_RE = re.compile(r"[A-Z]{3}")
+LAP_MIN, LAP_MAX = 1, 200
+
+
+def validate_driver_code(code: object) -> str:
+    if not isinstance(code, str) or DRIVER_CODE_RE.fullmatch(code) is None:
+        raise InvalidKeyError(f"driver code must be three capital letters, got {code!r}")
+    return code
+
+
+def validate_lap(lap: object) -> int:
+    return _int_in("lap", lap, LAP_MIN, LAP_MAX)
+
+
+def telemetry_laps_meta_key(season: int, round_: int, driver_code: str) -> str:
+    """``meta:telemetry:{season}:{round}:laps:{CODE}`` (additive API cache, outside ``race:*``)."""
+    s, r = validate_season(season), validate_round(round_)
+    return f"meta:telemetry:{s}:{r}:laps:{validate_driver_code(driver_code)}"
+
+
+def telemetry_trace_meta_key(season: int, round_: int, driver_code: str, lap: int) -> str:
+    """``meta:telemetry:{season}:{round}:trace:{CODE}:{lap}`` (additive API cache)."""
+    s, r = validate_season(season), validate_round(round_)
+    return f"meta:telemetry:{s}:{r}:trace:{validate_driver_code(driver_code)}:{validate_lap(lap)}"

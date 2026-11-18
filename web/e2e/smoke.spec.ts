@@ -219,7 +219,7 @@ test("sample race: a 60× replay fills the tower and updates laps", async ({ pag
   await page.getByRole("navigation", { name: "Race views" }).getByRole("link", { name: "Race analysis" }).click();
   await expect(page).toHaveURL(/\/race\/2024\/5\/analysis/);
   const tabs = page.getByRole("tablist", { name: "Race analysis views" }).getByRole("tab");
-  await expect(tabs).toHaveCount(7);
+  await expect(tabs).toHaveCount(8);
   const strategy = page.getByRole("tab", { name: "Tyre strategy" });
   await expect(strategy).toHaveAttribute("aria-selected", "true");
   const panelA = page.getByRole("tabpanel");
@@ -237,6 +237,8 @@ test("sample race: a 60× replay fills the tower and updates laps", async ({ pag
   await expect(panelA).toContainText("A lap-time proxy, not tyre wear");
   await expect(panelA).toContainText(/s\/lap|no fit/);
   await page.keyboard.press("End");
+  await expect(page.getByRole("tab", { name: "Telemetry" })).toHaveAttribute("aria-selected", "true");
+  await page.keyboard.press("ArrowLeft");
   await expect(page.getByRole("tab", { name: "Race control" })).toHaveAttribute("aria-selected", "true");
   await expect(panelA).toContainText("No race-control messages in this lake for this race.");
   await page.getByRole("tab", { name: "Compare" }).click();
@@ -252,6 +254,65 @@ test("sample race: a 60× replay fills the tower and updates laps", async ({ pag
   await page.setViewportSize({ width: 375, height: 812 });
   const overflow3 = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
   expect(overflow3).toBeLessThanOrEqual(0);
+});
+
+test("telemetry: two laps overlaid, crosshair by keyboard, 2024 only", async ({ page, request }) => {
+  // Feature 6 (display only). The sample has no telemetry: `make telemetry-trace-sample` builds a
+  // SYNTHETIC 2024 R5 fixture table, which the sample-mode API serves.
+  const probe = await request.get(`${API}/api/races/2024/5/telemetry/laps?driver=VER`);
+  test.skip(probe.status() !== 200, "no telemetry traces in this lake: run 'make telemetry-trace-sample' first");
+  const other = await request.get(`${API}/api/races/2023/5/telemetry/laps?driver=VER`);
+  expect(other.status()).toBe(404);
+  expect(((await other.json()) as { detail: string }).detail).toBe("telemetry traces are available for 2024 only");
+
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto("/race/2024/5/analysis");
+  await page.getByRole("tab", { name: "Tyre strategy" }).focus();
+  await page.keyboard.press("End");
+  const tab = page.getByRole("tab", { name: "Telemetry" });
+  await expect(tab).toHaveAttribute("aria-selected", "true");
+  await expect(tab).toBeFocused();
+  await expect(page).toHaveURL(/view=telemetry/);
+  const panel = page.getByRole("tabpanel");
+  for (const name of ["Lap A (solid line)", "Lap B (dashed line)"]) {
+    const lap = panel.getByRole("group", { name }).getByRole("combobox", { name: "Lap" });
+    await expect(lap.locator("option:checked")).toContainText("(fastest)");
+  }
+  await expect(panel.locator(".analysis-notes")).toContainText("SYNTHETIC");
+  await expect(panel.locator(".telemetry-summary")).toContainText("At the line");
+  await expect(panel.locator(".telemetry-summary")).toContainText("Top speed:");
+  await expect(panel.locator(".telemetry-lane")).toHaveCount(7);
+  const slider = panel.getByRole("slider", { name: "Crosshair along the lap" });
+  await expect(slider).toHaveAttribute("aria-valuenow", "0");
+  const caption = panel.getByRole("table").first().locator("caption");
+  await expect(caption).toContainText("Values at 0 m");
+  await slider.focus();
+  await page.keyboard.press("ArrowRight");
+  await expect(slider).toHaveAttribute("aria-valuenow", "5");
+  await expect(caption).toContainText("Values at 5 m");
+  await page.keyboard.press("Shift+ArrowRight");
+  await expect(slider).toHaveAttribute("aria-valuenow", "55");
+  await page.keyboard.press("End");
+  const max = await slider.getAttribute("aria-valuemax");
+  await expect(slider).toHaveAttribute("aria-valuenow", max ?? "");
+  await expect(slider).toHaveAttribute("aria-valuetext", /m: [A-Z]{3} \d+\.\d km\/h, [A-Z]{3} \d+\.\d km\/h, delta [+−±]\d\.\d{3} s/);
+  // pick another lap for B: the URL keeps it and the comparison reloads
+  const bLap = panel.getByRole("group", { name: "Lap B (dashed line)" }).getByRole("combobox", { name: "Lap" });
+  await bLap.selectOption({ index: 1 });
+  await expect(page).toHaveURL(/tblap=\d+/);
+  await expect(panel.locator(".telemetry-summary")).toContainText("At the line", { timeout: 15_000 });
+  await page.setViewportSize({ width: 375, height: 812 });
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+  expect(overflow).toBeLessThanOrEqual(0);
+
+  // another season: the note, and no telemetry request at all
+  const asked: string[] = [];
+  page.on("request", (r) => {
+    if (r.url().includes("/telemetry/")) asked.push(r.url());
+  });
+  await page.goto("/race/2023/5/analysis?view=telemetry");
+  await expect(page.getByRole("tabpanel")).toContainText("Telemetry traces are available for 2024 races only");
+  expect(asked).toEqual([]);
 });
 
 test("post-race archive: open the mode by keyboard and scrub the race", async ({ page, request }) => {

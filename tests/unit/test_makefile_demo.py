@@ -98,6 +98,21 @@ def test_analysis_sample_writes_only_the_local_lake() -> None:
     assert "results" not in line and "hdfs" not in line
 
 
+def test_telemetry_trace_sample_writes_only_the_local_lake() -> None:
+    lines = [x for x in _make("telemetry-trace-sample").splitlines() if "python -m" in x]
+    assert [x.split("python -m ")[1] for x in lines] == [
+        "f1sa.ingest.synthetic_telemetry",
+        "f1sa.etl.telemetry_trace --source sample",
+    ]
+    assert all(x.startswith(f"DATA_LAKE_URI=file://{REPO}/data/lake ") for x in lines)
+    assert not any("results" in x or "hdfs" in x or "data/sample" in x for x in lines)
+
+
+def test_demo_does_not_build_the_synthetic_telemetry_fixture() -> None:
+    out = _make("demo")
+    assert "synthetic_telemetry" not in out and "telemetry_trace" not in out
+
+
 def test_demo_options() -> None:
     out = _make("demo-replay", "DEMO_WAIT=finished", "DEMO_SPEED=10", "DEMO_ROUND=6")
     assert "--round 6 --speed 10 --wait finished" in out

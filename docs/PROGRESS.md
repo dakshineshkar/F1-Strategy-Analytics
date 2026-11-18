@@ -1898,10 +1898,98 @@
       It now serves `/status`, timing in `/state` and the 90 v2 bundles.
     - The equivalence live replays wrote their races' Redis keys (sample 2024 R5 in db 0, full 2024 R1; 1 h
       after `session_end`).
+- Feature 6 (2026-11-18): telemetry lap overlay for 2024 races, Race analysis tab "Telemetry" (display only). **Done.**
+  - **Investigation** (read-only, HttpFS LISTSTATUS/OPEN streamed into memory; nothing downloaded or saved):
+    - The kept raw telemetry is `raw/tracinginsights/telemetry/season=2024/round=R/driver=CODE/` (Parquet +
+      manifest): 1.94 GB, 956 files, 24 rounds, 478 driver-races, 18,998,812 samples in 26,606 lap files (= the TI
+      2024 lap rows). Channels: speed, RPM, gear, throttle, brake (bool), DRS (0/1, binarised by TI), distance, rel.
+      distance, x/y/z, accelerations, car ahead, time in lap, session time.
+    - About 7.7 Hz (median Δt 0.129 s). One file per lap; distance restarts at about 0 every lap (TI integrates
+      it; lap ends differ by up to about 16 m). The maximum time in lap equals the TI lap time from lap 2 on; lap 1
+      starts at the grid slot. Details and the table are in `docs/data_dictionary.md` ("Telemetry traces").
+  - **Change** (additive; no streaming, serving store, feature, model, sim or archive file changed):
+    - `etl/telemetry_trace.py` (`make telemetry-trace-full`, app container; `--seasons` accepts 2024 only) and
+      `etl/telemetry_resample.py` (pure numpy, `applyInPandas` per driver-lap) write only `clean/telemetry_trace`
+      (`partitionBy(season, round, driver_code)`, zstd) and its `_quality.json`; `output_path` refuses anything
+      else. Schema: `lake/schemas_telemetry_trace.py`, outside every other table list.
+      - One row per lap: 5 m distance grid (plus the finish point) arrays for distance, elapsed time, speed,
+        throttle, RPM (linear), brake, gear, DRS (held), and a summary (top speed and where, slowest braking-zone
+        apex, full-throttle / brake / DRS distance shares, braking zones, coverage at the Step 4C thresholds).
+      - `driver_id` comes from `analysis_laps`, else the race's clean `drivers.code`. **Found on the first full
+        run:** mapping through `analysis_laps` only dropped 13 lap files of drivers without a completed Jolpica lap
+        (lap-1 retirements, e.g. Monaco HUL, MAG, OCO, PER). They now map through `drivers`; a code mapped to two
+        ids fails the job (tested).
+    - Sample mode: `make telemetry-trace-sample` writes a SYNTHETIC 2024 R5 fixture (`ingest/synthetic_telemetry.py`,
+      seeded, scaled to the sample's real lap times) under `data/lake/fixtures/` and builds the table with
+      `is_synthetic = true`. Tests and Playwright only; `make demo` does not run it (tested).
+    - API (`api/telemetry.py`, `api/routes/telemetry.py`): `GET /api/races/{s}/{r}/telemetry/laps?driver=CODE`
+      and `…/telemetry/compare?a=&alap=&b=&blap=`. Any season but 2024 is **404 "telemetry traces are available for
+      2024 only"**, checked before Redis or the lake. Other errors: 404 race, driver or lap; 422; 500; 503, as the
+      other routes. Cache `meta:telemetry:{s}:{r}:laps:{CODE}` and `…:trace:{CODE}:{lap}` (`SET EX
+      API_TELEMETRY_CACHE_S`, lake fingerprint, outside `race:*`); compare has no key. The new catalog method
+      `read_driver_rows` opens only `clean/telemetry_trace/…/driver_code=XXX/` (LISTSTATUS/OPEN). CLAUDE.md has
+      the additive line. The API still imports no pyspark.
+    - Delta time: both laps on A's grid, B read at the same fraction of its own lap (TI lap lengths differ by up
+      to about 0.3%, so equal metres would move the finish line); `delta = elapsed A − elapsed B`, positive = A
+      behind; 25 mini-sectors whose changes add up to the delta's change (telescoping, tested).
+    - Dashboard: an eighth "Telemetry" tab (`TelemetryView.tsx`, `lib/telemetry.ts`, `lib/useTelemetry.ts`):
+      - driver + lap pickers for A and B (fastest clean lap by default, marked "(fastest)"; URL `ta/talap/tb/tblap`);
+      - seven stacked lanes on one distance axis, A solid and B dashed in team colours with a halo, brake and DRS as
+        one row per car;
+      - one crosshair (`role="slider"`; pointer, arrows 5 m, Shift 50 m, Page 250 m, Home/End) with a readout table
+        of every channel and the delta;
+      - a text summary (lap times, top speeds, slowest corner, full throttle, where A gains and loses, the line),
+        a mini-sector table, notes (SYNTHETIC, gaps, pit lap, lap 1), and a `telemetry` glossary group;
+      - other seasons show the 2024-only note and send no request. Shared theme tokens only.
+  - **Evidence.**
+    - `make telemetry-trace-full` (4 min 41 s): 24 races, **26,604 laps** of 476 driver-races; 2 laps without a
+      trace (GAS R12 and STR R21 lap 1: speed and distance 0 in every sample); unmapped 0; 30 rows without lap
+      info; coverage full 26,570 / partial 34; 405,419 samples moved forward (in 4,600 laps); **209,217,336 B**
+      on HDFS (replication 1, about 0.48 MB per driver partition). `/f1/raw` before and after: 2,024,360,565 B and
+      3,542 files. Only `/f1/clean/telemetry_trace` was written.
+    - Real data through the API (in-process, read-only): 2024 R5 VER lap 33 (1:38.406) vs NOR lap 33 (1:38.751):
+      final delta −0.345 s = the lap-time delta; 1,080 points, 101 KB; cached compare 10 ms. 2023 and 2025: the
+      2024-only 404.
+    - Stream parity 2021-2024 (`--out data/demo/parity_check9/stream_parity_full.csv`): 90 races, 157 labelled
+      attempts, 34,608 eligible pairs, 0 mismatching races; `cmp` with `results/stream_parity_full.csv`:
+      identical (sha256 aad8df67…).
+    - Sample 2024 R5 alert check (the Feature 5 script): 113 / 19 / 9 = 141 alerts, 409 decisions, `check_alerts`
+      and `compare_race` OK; dump sha256 e0689163…, identical to Feature 5.
+    - `make archive-equivalence SEASON=2024 ROUND=5 LAPS=5,22,45`: **EQUIVALENT** (rebuild identical; 113 / 19 / 9
+      and 409 decisions equal to parity; live Redis == bundle at laps 5, 22, 45 and after `session_end`; all
+      1,252 messages equal). No bundle was rebuilt in the lake.
+    - `make experiments-sample`: OK 7, OK (metadata differs) 1, DIFF 0, MISSING 0; the 2 NEW what-if files are
+      byte-identical to the Feature 4 / 5 runs.
+    - Python: the full unit suite gave **2209 passed** in 953 s (once, after all code changes; the doc tests were rerun
+      after the last doc edits). Targeted: resample 19, job 18, synthetic fixture 8, compare maths 10, API 34,
+      keys / app / Makefile 145+. ruff, format and mypy clean; `scripts/check_traceability.py`: OK 304, MISSING 0.
+    - Web: lint and typecheck clean; Vitest **322 passed** (22 new in `telemetry.test.ts`; the tab-count, query
+      and legend expectations updated for the eighth tab). `make web-e2e`: 3 passed, 1 skipped (latency, by design);
+      the new test opens Telemetry by keyboard, checks both "(fastest)" defaults, the SYNTHETIC note, 7 lanes,
+      ArrowRight / Shift+ArrowRight / End on the crosshair, a lap change in the URL, no overflow at 375 px, and
+      2023 R5 showing the note with no telemetry request.
+      - Visual check (screenshots, dark 1280 px and light 375 px) found the readout table inside the tower's
+        tall wrapper and tick labels over the lines; fixed (own wrapper, right-margin ticks) and Playwright rerun.
+    - `results/` is unchanged (sha256 of all 154 files before and after; `git status results/` clean).
+  - **Services** (user approved): `make telemetry-trace-full` and the parity run in the app container; the
+    sample archive equivalence (wrote the sample 2024 R5 Redis keys, TTL); the api recreated in sample mode
+    (`make api-up REPLAY=1`) for Playwright, web stopped for `make web-e2e` and rebuilt with `--no-deps`; after the
+    smoke test's replay the api returned to `make api-up FULL=1 REPLAY=1` (it now serves the telemetry routes).
 ## Next
 - S18: report, docs and demo rehearsal (#44): `docs/report/`, `docs/demo_script.md`.
 - Push and watch the first CI run of the `e2e` job on GitHub (runner build time and disk are unmeasured).
 ## Known issues
+- Feature 6:
+  - Lap 1 starts at the grid slot (TI distance about 5,224 m at 2024 R5), so comparing it with a flying lap at
+    the same lap fraction offsets the corners; the view notes it. Its trace time is not the official lap time.
+  - TI distance is integrated speed, not the racing line: normalising by lap fraction aligns the finish lines,
+    but a corner can sit a few metres apart on two laps.
+  - Pit laps include the pit lane, so their slowest corner is the pit-lane speed (flagged, not hidden).
+  - The 5 m grid smooths short spikes (samples are about 5 m apart on average, up to 16 m at p95 at top speed).
+  - `full_throttle_share` is a share of distance; `telemetry_lap_real.pct_full_throttle` is a share of samples.
+  - The sample's telemetry is a SYNTHETIC fixture (only after `make telemetry-trace-sample`); without it, the
+    sample shows "no telemetry traces for 2024 R5 in the lake".
+  - The compare is computed per request from two cached traces (about 100 KB of JSON, no gzip).
 - Feature 5:
   - The live banner is fetched when the leader starts a new lap. In the sample (estimated from lap times) only the
     cars that have crossed by then count, while the archive's `status[]` is computed at the end of lap N, so the two
@@ -2222,6 +2310,11 @@ Clean clone: `docs/reproduce.md` §4.
 Step 16: `uv run pytest tests/unit/test_ablation.py tests/unit/test_oracle_dev.py tests/unit/test_experiments_runner.py tests/unit/test_streaming_runs.py tests/unit/test_demo.py tests/unit/test_latency.py tests/unit/test_latency_bench.py tests/unit/test_model_test_summary.py tests/unit/test_makefile_api.py -q`;
 `make experiments-sample` (expect exit 0); with `make up-full`: `make experiments` (expect 66 OK, the 2 what-if DIFFs).
 Measurements (core profile only): `make stream-latency-suite`, `make redis-latency` (no RECORD: data/ only).
+
+Feature 6: `uv run pytest tests/unit/test_telemetry_resample.py tests/unit/test_telemetry_trace.py tests/unit/test_synthetic_telemetry.py tests/unit/test_telemetry_compare.py tests/unit/test_api_telemetry.py tests/unit/test_keys.py -q`;
+`cd web && npx vitest run tests/telemetry.test.ts`; sample: `make etl-sample analysis-sample telemetry-trace-sample`, then
+`make api-up REPLAY=1` and `make web-e2e`; full (needs `make up-full`, `make analysis-full`): `make telemetry-trace-full`
+(writes only /f1/clean/telemetry_trace; expect 26,604 laps, 2 without a trace, unmapped 0).
 
 ## 9f approval
 - 2026-11-13: label-definition-v1, model-spec-v1 and model-spec-v2 approved for the single 2025 test run by Parinith D. on behalf of the team (Data Wranglers). No further sign-off required.

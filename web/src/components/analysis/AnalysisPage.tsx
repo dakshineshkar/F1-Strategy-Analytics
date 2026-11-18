@@ -30,13 +30,15 @@ import { PitStopsTable } from "./PitStopsTable";
 import { PositionsChart } from "./PositionsChart";
 import { RaceControlList } from "./RaceControlList";
 import { StrategyChart } from "./StrategyChart";
+import { TelemetryView } from "./TelemetryView";
 
 const tabId = (v: ViewId) => `analysis-tab-${v}`;
 const panelId = (v: ViewId) => `analysis-panel-${v}`;
 
 /** The "Race analysis" tab of a finished race (display only): seven views of the lake's
- * ``clean/analysis_*`` tables behind WAI-ARIA tabs (arrow keys, Home, End). The view, the marked lap
- * and the chosen drivers live in the URL, so a lap link is a real link. */
+ * ``clean/analysis_*`` tables plus the Telemetry overlay (``clean/telemetry_trace``, 2024 only)
+ * behind WAI-ARIA tabs (arrow keys, Home, End). The view, the marked lap and the chosen drivers
+ * and laps live in the URL, so a lap link is a real link. */
 export function AnalysisPage({ season, round, initial }: { season: number; round: number; initial: AnalysisQuery }) {
   const { data, error, status } = useAnalysis(season, round);
   const { entrants } = useEntrants(season, round);
@@ -182,6 +184,18 @@ export function AnalysisPage({ season, round, initial }: { season: number; round
     case "control":
       panel = <RaceControlList rows={data.raceControl.rows} names={names} onLap={onLap} />;
       break;
+    case "telemetry":
+      panel = (
+        <TelemetryView
+          season={season}
+          round={round}
+          order={order}
+          names={names}
+          pick={{ ta: query.ta, talap: query.talap, tb: query.tb, tblap: query.tblap }}
+          onPick={(next) => update(next)}
+        />
+      );
+      break;
   }
 
   return (
@@ -208,7 +222,7 @@ export function AnalysisPage({ season, round, initial }: { season: number; round
       <div role="tabpanel" id={panelId(view)} aria-labelledby={tabId(view)} tabIndex={0} className="panel analysis-panel">
         {panel}
       </div>
-      <Legend groups={["analysis"]} />
+      <Legend groups={view === "telemetry" ? ["analysis", "telemetry"] : ["analysis"]} />
     </>
   );
 }

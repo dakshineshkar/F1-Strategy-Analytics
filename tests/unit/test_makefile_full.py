@@ -21,6 +21,7 @@ TARGETS = (
     "model-save-full",
     "entrants-full",
     "analysis-full",
+    "telemetry-trace-full",
 )
 
 
@@ -51,6 +52,7 @@ def test_target_never_rebuilds_deletes_or_touches_raw(target: str) -> None:
         ("report-full", "f1sa.etl.full_report"),
         ("entrants-full", "f1sa.etl.entrants"),
         ("analysis-full", "f1sa.etl.analysis --source lake"),
+        ("telemetry-trace-full", "f1sa.etl.telemetry_trace --source lake --shuffle-partitions 48"),
     ],
 )
 def test_target_runs_in_app_against_hdfs(target: str, module: str) -> None:
@@ -187,3 +189,22 @@ def test_model_save_full_force_is_opt_in() -> None:
         check=True,
     ).stdout
     assert out.splitlines()[-1].endswith("--source full --force")
+
+
+def test_telemetry_trace_full_rounds_option() -> None:
+    result = subprocess.run(
+        [
+            "make",
+            "-n",
+            "--no-print-directory",
+            "-C",
+            str(REPO_ROOT),
+            "telemetry-trace-full",
+            "TRACE_ROUNDS=5",
+        ],
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=True,
+    )
+    assert result.stdout.rstrip().endswith("--shuffle-partitions 48 --rounds 5")

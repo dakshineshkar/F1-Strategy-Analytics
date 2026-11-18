@@ -27,6 +27,10 @@ The post-race archive (Feature 4, display only) is read the same way: zone ``arc
 ``race_bundle`` (``archive_reader``), and ``read_file`` opens only the two archive file names
 (``READABLE_FILES``) of one partition, never a listing outside it.
 
+The telemetry traces (Feature 6, display only) are partitioned by driver too:
+``read_driver_rows`` opens only ``{zone}/<table>/season=S/round=R/driver_code=XXX/`` (``XXX``
+must match ``DRIVER_CODE_PATTERN``), and ``telemetry_reader`` limits it to ``TELEMETRY_TABLES``.
+
 Both readers skip ``season=2025`` directories (the sealed test season) unless
 ``allow_test_season`` is set: those directories are never listed into or opened. Spark writes
 the partition columns into the directory names only, so ``season`` and ``round`` come from the
@@ -63,12 +67,15 @@ ZONES: tuple[str, ...] = ("clean", "features", "archive")
 """Lake zones a reader may be limited to (never ``raw``)."""
 ARCHIVE_TABLES: tuple[str, ...] = ("race_bundle",)
 """``archive.schema.TABLES`` (the post-race bundles, Feature 4)."""
+TELEMETRY_TABLES: tuple[str, ...] = ("telemetry_trace",)
+"""``lake.schemas_telemetry_trace.TABLE`` (Feature 6; partitioned by season, round, driver_code)."""
 READABLE_FILES: frozenset[str] = frozenset({"bundle.json.gz", "_manifest.json"})
 """The only file names ``read_file`` opens (``archive.schema.FILE_NAMES``)."""
 ALLOWED_OPS: frozenset[str] = frozenset({"LISTSTATUS", "OPEN"})
 """The only HttpFS operations the API sends (both read-only)."""
 
 _SEASON_DIR = re.compile(r"season=(\d{4})")
+_DRIVER_CODE = re.compile(r"[A-Z]{3}")
 _ROUND_DIR = re.compile(r"round=(\d{1,2})")
 
 
@@ -98,6 +105,12 @@ def _check_zone(zone: str) -> None:
 def _check_file(name: str) -> None:
     if name not in READABLE_FILES:
         raise CatalogError(f"file {name!r} is not readable by the API")
+
+
+def _check_code(code: str) -> str:
+    if not isinstance(code, str) or _DRIVER_CODE.fullmatch(code) is None:
+        raise CatalogError(f"invalid driver code {code!r}")
+    return code
 
 
 def _is_data_file(name: str) -> bool:
@@ -130,6 +143,17 @@ class FileReader(Protocol):
 
     def read_file(self, table: str, season: int, round_: int, name: str) -> bytes | None:
         """One whole file of a partition (``READABLE_FILES`` only); ``None`` if it is missing."""
+        ...
+
+
+class DriverReader(Protocol):
+    def partitions(self, table: str, *, required: bool = True) -> list[tuple[int, int]]: ...
+
+    def read_driver_rows(
+        self, table: str, season: int, round_: int, driver_code: str, columns: Sequence[str]
+    ) -> list[dict[str, Any]] | None:
+        """Rows of one ``driver_code=XXX`` sub-partition (only ``columns``). ``None`` when the
+        race partition does not exist, ``[]`` when it exists without that driver."""
         ...
 
 
@@ -200,6 +224,25 @@ class FileLakeReader(_PartitionWalk):
         if not self._season_allowed(season):
             raise CatalogError(f"season {season} is the sealed test season")
         part = self.clean_root / table / f"season={season}" / f"round={round_}"
+        if not part.is_dir():
+            return []
+        rows: list[dict[str, Any]] = []
+        for f in sorted(part.iterdir()):
+            if f.is_file() and _is_data_file(f.name):
+                rows.extend(_decode(str(f), columns))
+        return rows
+
+    def read_driver_rows(
+        self, table: str, season: int, round_: int, driver_code: str, columns: Sequence[str]
+    ) -> list[dict[str, Any]] | None:
+        _check_table(table, self.tables)
+        code = _check_code(driver_code)
+        if not self._season_allowed(season):
+            raise CatalogError(f"season {season} is the sealed test season")
+        race = self.clean_root / table / f"season={int(season)}" / f"round={int(round_)}"
+        if not race.is_dir():
+            return None
+        part = race / f"driver_code={code}"
         if not part.is_dir():
             return []
         rows: list[dict[str, Any]] = []
@@ -313,6 +356,30 @@ class HttpFsLakeReader(_PartitionWalk):
             rows.extend(_decode(pa.BufferReader(resp.content), columns))
         return rows
 
+    def read_driver_rows(
+        self, table: str, season: int, round_: int, driver_code: str, columns: Sequence[str]
+    ) -> list[dict[str, Any]] | None:
+        _check_table(table, self.tables)
+        code = _check_code(driver_code)
+        if not self._season_allowed(season):
+            raise CatalogError(f"season {season} is the sealed test season")
+        race = f"{self.clean}/{table}/season={int(season)}/round={int(round_)}"
+        if self._list(race) is None:
+            return None
+        part = f"{race}/driver_code={code}"
+        entries = self._list(part)
+        if entries is None:
+            return []
+        rows: list[dict[str, Any]] = []
+        for name, kind in sorted(entries):
+            if kind != "FILE" or not _is_data_file(name):
+                continue
+            resp = self._get("OPEN", f"{part}/{name}")
+            if resp is None:
+                raise CatalogError(f"HttpFS OPEN {part}/{name}: file vanished")
+            rows.extend(_decode(pa.BufferReader(resp.content), columns))
+        return rows
+
     def read_file(self, table: str, season: int, round_: int, name: str) -> bytes | None:
         _check_table(table, self.tables)
         _check_file(name)
@@ -383,6 +450,18 @@ def archive_reader(
     )
     if not isinstance(reader, FileLakeReader | HttpFsLakeReader):
         raise CatalogError("unexpected archive reader")
+    return reader
+
+
+def telemetry_reader(
+    settings: Settings,
+    *,
+    session: requests.Session | None = None,
+) -> DriverReader:
+    """A reader of ``{lake}/clean/telemetry_trace`` (``read_driver_rows``; Feature 6)."""
+    reader = zone_reader(settings, "clean", TELEMETRY_TABLES, session=session)
+    if not isinstance(reader, FileLakeReader | HttpFsLakeReader):
+        raise CatalogError("unexpected telemetry reader")
     return reader
 
 

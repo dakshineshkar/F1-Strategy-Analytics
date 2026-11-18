@@ -2,7 +2,7 @@
  * tooltips, so the two can never disagree. The wording follows the stream's definitions
  * (``streaming/events.py`` ALERT_TRIGGERS, the shared undercut rule, ``lib/tyre.ts``). */
 
-export type GlossaryGroup = "tower" | "alerts" | "whatif" | "analysis" | "engineer" | "archive";
+export type GlossaryGroup = "tower" | "alerts" | "whatif" | "analysis" | "engineer" | "archive" | "telemetry";
 
 export interface GlossaryEntry {
   id: string;
@@ -195,6 +195,39 @@ export const GLOSSARY = [
       "track status. Without race-control data they are estimated from lap times and shown as neutralised.",
   },
   {
+    id: "teldelta",
+    group: "telemetry",
+    term: "Delta (A − B)",
+    label: "the delta-time lane",
+    text:
+      "Lap A's elapsed time minus lap B's at the same point of the lap (B is read at the same fraction of its own " +
+      "lap, so both finish lines line up). Positive means A is behind there; where the line rises A loses time.",
+  },
+  {
+    id: "telgrid",
+    group: "telemetry",
+    term: "Distance axis",
+    label: "the distance axis",
+    text:
+      "Each lap's samples (about 8 per second) are resampled every 5 m from its start line. Speed, throttle and RPM " +
+      "are interpolated; gear, brake and DRS keep the last sample's value. The axis is lap A's distance.",
+  },
+  {
+    id: "telthrottle",
+    group: "telemetry",
+    term: "Full throttle",
+    label: "the full-throttle share",
+    text: "The share of the lap's distance with the throttle at 98% or more.",
+  },
+  {
+    id: "telcorner",
+    group: "telemetry",
+    term: "Slowest corner",
+    label: "the slowest corner",
+    text:
+      "The lowest speed after a braking zone (brake on for at least 10 m). On a pit lap it is the pit-lane speed.",
+  },
+  {
     id: "engcalls",
     group: "engineer",
     term: "Strategy calls",
@@ -273,6 +306,7 @@ export const GROUP_TITLE: Record<GlossaryGroup, string> = {
   analysis: "Race analysis",
   engineer: "Engineer",
   archive: "Post-race",
+  telemetry: "Telemetry",
 };
 
 export function glossary(id: GlossaryId): GlossaryEntry {

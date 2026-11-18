@@ -373,6 +373,7 @@ export const VIEWS = [
   { id: "compare", label: "Compare" },
   { id: "pits", label: "Pit stops" },
   { id: "control", label: "Race control" },
+  { id: "telemetry", label: "Telemetry" },
 ] as const;
 export type ViewId = (typeof VIEWS)[number]["id"];
 export const isViewId = (v: unknown): v is ViewId => isStr(v) && VIEWS.some((x) => x.id === v);
@@ -402,6 +403,11 @@ export interface AnalysisQuery {
   a: string | null;
   b: string | null;
   driver: string | null;
+  /** The Telemetry view's picks (Feature 6): driver A + lap and driver B + lap. */
+  ta: string | null;
+  talap: number | null;
+  tb: string | null;
+  tblap: number | null;
 }
 
 /** The tab state kept in the URL (``?view=…&lap=…&a=…&b=…&driver=…``); invalid values are dropped. */
@@ -410,14 +416,27 @@ export function parseAnalysisQuery(q: Record<string, string | string[] | undefin
     const v = q[k];
     return typeof v === "string" ? v : null;
   };
-  const lapText = one("lap");
-  const lap = lapText !== null && /^[1-9][0-9]{0,2}$/.test(lapText) ? Number(lapText) : null;
+  const lapOf = (k: string): number | null => {
+    const text = one(k);
+    return text !== null && /^[1-9][0-9]{0,2}$/.test(text) ? Number(text) : null;
+  };
+  const lap = lapOf("lap");
   const code = (k: string) => {
     const v = one(k);
     return v !== null && CODE.test(v) ? v : null;
   };
   const view = one("view");
-  return { view: isViewId(view) ? view : "strategy", lap, a: code("a"), b: code("b"), driver: code("driver") };
+  return {
+    view: isViewId(view) ? view : "strategy",
+    lap,
+    a: code("a"),
+    b: code("b"),
+    driver: code("driver"),
+    ta: code("ta"),
+    talap: lapOf("talap"),
+    tb: code("tb"),
+    tblap: lapOf("tblap"),
+  };
 }
 
 export function analysisSearch(q: Partial<AnalysisQuery> & { view: ViewId }): string {
@@ -426,6 +445,10 @@ export function analysisSearch(q: Partial<AnalysisQuery> & { view: ViewId }): st
   if (q.a) p.set("a", q.a);
   if (q.b) p.set("b", q.b);
   if (q.driver) p.set("driver", q.driver);
+  if (q.ta) p.set("ta", q.ta);
+  if (q.talap) p.set("talap", String(q.talap));
+  if (q.tb) p.set("tb", q.tb);
+  if (q.tblap) p.set("tblap", String(q.tblap));
   return `?${p.toString()}`;
 }
 

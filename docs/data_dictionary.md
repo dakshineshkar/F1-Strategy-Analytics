@@ -1038,3 +1038,60 @@ Lap events (`streaming.events.TOWER_FIELDS`), the additive Redis hash `race:{s}:
   `track_neutral` / `track_red_flag` (batch heuristic, hindsight) are never used for it.
 - Nothing model-related reads any of these values: not the rule, the live features, the scorer, the alert policy,
   the what-if or `results/`.
+
+## Telemetry traces (`clean/telemetry_trace`, Feature 6, display only, 2024 only)
+Built by `python -m f1sa.etl.telemetry_trace --source lake` (`make telemetry-trace-full`, app container, HDFS) from
+the raw telemetry samples the lake keeps for **2024 only** (Step 4C) and `clean/analysis_laps` (both read-only). It
+writes only `clean/telemetry_trace` and its report `clean/telemetry_trace/_quality.json`. Schema:
+`f1sa.lake.schemas_telemetry_trace` (outside every other table list). Only the API's
+`/api/races/2024/{r}/telemetry/*` routes read it.
+
+**The kept raw telemetry** (measured 2026-11-18, read-only through HttpFS):
+
+| Item | Value |
+|---|---|
+| Layout | `raw/tracinginsights/telemetry/season=2024/round=R/driver=CODE/{telemetry.parquet, _manifest.json}` (manifest: source lap files with git blob SHA-1, file sha256 and rows) |
+| Size | 1,944,108,895 B (1.94 GB), 956 files, 24 rounds, **478 driver-races** (20 per round; R3 and R21 have 19) |
+| Samples / laps | 18,998,812 samples in 26,606 lap files (= the TracingInsights 2024 lap rows) |
+| Channels | `driver_code, lap, time_in_lap_s, speed_kph, rpm, n_gear (1-8), throttle_pct (0-100), brake (bool), drs (0/1, binarised by TracingInsights), distance_m, rel_distance, x, y, z, acc_x/y/z, driver_ahead, distance_to_driver_ahead_m, session_time_s`; only `driver_ahead` has nulls |
+| Sampling | merged car + position data, about 7.7 Hz (median Δt 0.129 s, p99 0.34 s, max 1.34 s; about 770 samples per lap; median spacing about 5.2 m, p95 16.5 m) |
+| Laps | one lap file = one `lap`; `distance_m` restarts at about 0 every lap (TI integrates it per lap: 2024 R5 laps end at 5,387-5,403 m); `time_in_lap_s` runs from 0 to the lap end and its maximum equals the TI lap time from lap 2 on (lap 1 starts at the session lap start, 101.794 s against an official 101.528 s, and its distance from the grid slot, 5,224 m). The last sample of lap L repeats as the first of lap L+1. A few samples step back by about 0.1 m at the start or at a standstill. Monaco R8: lap 1 is one red-flag file of 18,711 samples |
+
+| Column | Type | Meaning |
+|---|---|---|
+| season, round, driver_code, lap | int, int, string, int | key; partitioned by season, round, **driver_code** |
+| driver_id | string | the race's `analysis_laps` code, else the v1 clean `drivers.code` (a lap-1 retirement has no completed Jolpica lap); two ids for one code fail the job, a code in neither is dropped and counted |
+| lap_time_s, is_pit_in_lap, is_pit_out_lap, is_deleted, is_neutralised_lap, is_red_flag_lap, compound, tyre_life_laps | | the lap's `analysis_laps` columns (null for a TI lap Jolpica does not have) |
+| coverage | string | `partial` if a sample gap > 2.0 s or the trace < 90% of the lap time, else `full` |
+| is_synthetic, source | bool, string | `false` / `tracinginsights`; `true` / `synthetic` for the sample fixture |
+| grid_step_m | double | 5.0 |
+| n_samples, n_corrected, max_gap_s | int, int, double | samples received, samples moved forward to keep the distance monotone, largest time gap |
+| lap_length_m, trace_time_s | double | the lap's final distance and the elapsed time there |
+| distance_m, elapsed_s, speed_kph, throttle_pct, rpm | array<float> | on the grid `0, 5, … ⌊L/5⌋·5, L`; linear in distance (metres and km/h to 0.1, time to 1 ms) |
+| brake, n_gear, drs | array<byte> | held: the last sample's value at or before each grid point |
+| top_speed_kph, top_speed_at_m | double | from the raw samples |
+| min_corner_speed_kph, min_corner_at_m | double | the lowest braking-zone apex (pit-lane speed on a pit lap) |
+| full_throttle_share, brake_share, drs_share | double | distance shares on the grid (full throttle: ≥ 98%) |
+| n_braking_zones, braking_start_m, braking_end_m, braking_apex_kph | int, array<float> | brake runs ≥ 10 m (merged over gaps ≤ 10 m); apex = lowest speed up to 200 m after the zone |
+
+**Full run** (`make telemetry-trace-full`, 2026-11-18, app container, 48 shuffle partitions, 4 min 41 s):
+
+| Item | Value |
+|---|---|
+| Rows | **26,604** laps of 476 driver-races in 24 races (26,606 lap files in) |
+| Laps without a trace | 2: GAS R12 lap 1 and STR R21 lap 1 (speed and distance 0 in every sample: the car never moved) |
+| Unmapped codes | 0 (the first attempt mapped through `analysis_laps` only and dropped the 13 lap files of drivers without a completed lap, e.g. 2024 Monaco HUL, MAG, OCO, PER; they now map through `drivers`, and 2 of the 13 are the two laps without a trace) |
+| Rows without lap info | 30 (TracingInsights laps Jolpica does not have: the 11 lap-1 retirements with a trace and 19 other uncompleted laps) |
+| Coverage | full 26,570, partial 34 |
+| Samples | 18,997,391 read; 405,419 moved forward to keep the distance monotone (in 4,600 laps) |
+| Grid points | 26,757,231 (about 1,006 per lap) |
+| Size | **209,217,336 B** (209 MB, zstd) on HDFS, replication 1; about 0.48 MB per driver partition |
+| `/f1/raw` | unchanged: 2,024,360,565 B and 3,542 files before and after |
+
+- **Delta time** (API): both laps on A's grid, B read at the same fraction of its own lap; `delta = elapsed A −
+  elapsed B` (positive = A behind). See `docs/architecture.md` (Telemetry lap overlay).
+- **Not the same as `telemetry_lap_real`:** that table's `pct_full_throttle` is a share of samples, these shares
+  are shares of distance, so the two differ slightly by design. No feature or model reads this table.
+- **Sample mode:** `make telemetry-trace-sample` builds the table from a **SYNTHETIC** fixture
+  (`ingest.synthetic_telemetry`, generator `synthetic-telemetry-v1`, seeded, scaled to the sample's real 2024 R5 lap
+  times; 20 drivers, 1,030 laps, 866,291 samples, 6.9 MB table). It is for tests and the Playwright smoke only.

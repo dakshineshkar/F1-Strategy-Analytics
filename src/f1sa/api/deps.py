@@ -15,6 +15,7 @@ from f1sa.api.analysis import TABLES as ANALYSIS_TABLES
 from f1sa.api.analysis import AnalysisService
 from f1sa.api.archive import ArchiveService
 from f1sa.api.catalog import (
+    DriverReader,
     FileReader,
     LakeReader,
     RaceCatalog,
@@ -22,6 +23,7 @@ from f1sa.api.catalog import (
     archive_reader,
     reader_for,
     sim_readers,
+    telemetry_reader,
     zone_reader,
 )
 from f1sa.api.engineer import TABLES as ENGINEER_TABLES
@@ -32,6 +34,7 @@ from f1sa.api.health import KafkaCheck, ModelStatus, kafka_check_for
 from f1sa.api.lap_log import LapLogManager
 from f1sa.api.latency import LatencyRecorder
 from f1sa.api.replay import Launcher, ReplayManager, subprocess_launcher
+from f1sa.api.telemetry import TelemetryService
 from f1sa.config import Settings
 from f1sa.serving import keys as K
 from f1sa.serving.redis_store import AsyncRaceStore
@@ -54,6 +57,7 @@ class ApiDeps:
     analysis: AnalysisService
     engineer: EngineerService
     archive: ArchiveService
+    telemetry: TelemetryService
 
     @classmethod
     def from_settings(
@@ -71,6 +75,7 @@ class ApiDeps:
         analysis_reader_factory: Callable[[], LakeReader] | None = None,
         engineer_reader_factory: Callable[[], LakeReader] | None = None,
         archive_reader_factory: Callable[[], FileReader] | None = None,
+        telemetry_reader_factory: Callable[[], DriverReader] | None = None,
     ) -> ApiDeps:
         client = redis or aioredis.Redis.from_url(settings.redis_url, decode_responses=True)
         sim_factory = sim_reader_factory or (lambda: sim_readers(settings, session=http_session))
@@ -133,6 +138,13 @@ class ApiDeps:
                 archive_reader_factory or (lambda: archive_reader(settings, session=http_session)),
                 ttl_s=settings.api_archive_cache_s,
                 allow_test_season=settings.allow_test_season,
+            ),
+            telemetry=TelemetryService(
+                telemetry_reader_factory
+                or (lambda: telemetry_reader(settings, session=http_session)),
+                client,
+                ttl_s=settings.api_telemetry_cache_s,
+                lake_id=lake_fingerprint(settings.data_lake_uri),
             ),
         )
 

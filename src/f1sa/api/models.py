@@ -713,3 +713,140 @@ class ArchiveListOut(_Out):
     """``GET /api/archive``: every race with a post-race bundle (season, round order)."""
 
     races: list[ArchiveRaceOut]
+
+
+# ------------------------------------------------------------------ telemetry traces (Feature 6)
+TelemetryCoverage = Literal["full", "partial"]
+TelemetrySource = Literal["tracinginsights", "synthetic"]
+
+
+class TelemetryLapOut(_Out):
+    """One lap's trace summary (``clean/telemetry_trace``; the lap columns from analysis_laps)."""
+
+    lap: int = Field(ge=1)
+    lap_time_s: float | None = Field(description="the official lap time (null if unknown)")
+    trace_time_s: float = Field(ge=0, description="elapsed time at the end of the trace")
+    lap_length_m: float = Field(gt=0, description="the lap's integrated distance")
+    n_samples: int = Field(ge=0)
+    max_gap_s: float = Field(ge=0)
+    coverage: TelemetryCoverage
+    is_pit_in_lap: bool | None
+    is_pit_out_lap: bool | None
+    is_deleted: bool | None
+    is_neutralised_lap: bool | None
+    is_red_flag_lap: bool | None
+    compound: KnownCompound | None
+    tyre_life_laps: int | None
+    top_speed_kph: float | None
+    top_speed_at_m: float | None
+    min_corner_speed_kph: float | None
+    min_corner_at_m: float | None
+    full_throttle_share: float | None = Field(ge=0, le=1)
+    brake_share: float = Field(ge=0, le=1)
+    drs_share: float = Field(ge=0, le=1)
+    n_braking_zones: int = Field(ge=0)
+
+
+class _TelemetryDriverOut(_Out):
+    season: int
+    round: int
+    driver_id: str
+    driver_code: str = Field(pattern=DRIVER_CODE_PATTERN)
+    is_synthetic: bool = Field(description="SYNTHETIC fixture samples (sample mode), not real")
+    source: TelemetrySource
+    grid_step_m: float = Field(gt=0)
+
+
+class TelemetryLapsOut(_TelemetryDriverOut):
+    """``GET …/telemetry/laps?driver=CODE``: the laps with a trace, in lap order."""
+
+    fastest_lap: int | None = Field(
+        description="the default lap: fastest lap time among full-coverage laps that are not "
+        "deleted, pit-in or pit-out laps (else the fastest trace time; null if none)"
+    )
+    rows: list[TelemetryLapOut]
+
+
+class TelemetryTraceOut(_TelemetryDriverOut):
+    """One lap on its own distance grid (cached per lap; the input of the compare)."""
+
+    summary: TelemetryLapOut
+    distance_m: list[float]
+    elapsed_s: list[float]
+    speed_kph: list[float]
+    throttle_pct: list[float]
+    rpm: list[float]
+    brake: list[int]
+    n_gear: list[int]
+    drs: list[int]
+    braking_start_m: list[float]
+    braking_end_m: list[float]
+    braking_apex_kph: list[float]
+
+    @model_validator(mode="after")
+    def _arrays(self) -> TelemetryTraceOut:
+        n = len(self.distance_m)
+        lanes = (
+            self.elapsed_s,
+            self.speed_kph,
+            self.throttle_pct,
+            self.rpm,
+            self.brake,
+            self.n_gear,
+            self.drs,
+        )
+        if n < 2 or any(len(v) != n for v in lanes):
+            raise ValueError("trace arrays must have one equal length of at least 2")
+        if any(b <= a for a, b in zip(self.distance_m, self.distance_m[1:], strict=False)):
+            raise ValueError("trace distances must increase")
+        zones = (self.braking_start_m, self.braking_end_m, self.braking_apex_kph)
+        if any(len(z) != len(self.braking_start_m) for z in zones):
+            raise ValueError("braking-zone arrays must have one equal length")
+        return self
+
+
+class TelemetryCarOut(_Out):
+    """One car of the compare, on the common axis (``distance_m`` of the compare)."""
+
+    driver_id: str
+    driver_code: str = Field(pattern=DRIVER_CODE_PATTERN)
+    lap: int = Field(ge=1)
+    summary: TelemetryLapOut
+    own_distance_m: list[float] = Field(description="the car's own lap distance at each point")
+    elapsed_s: list[float]
+    speed_kph: list[float]
+    throttle_pct: list[float]
+    rpm: list[float]
+    brake: list[int]
+    n_gear: list[int]
+    drs: list[int]
+    braking_start_m: list[float] = Field(description="on the common axis")
+    braking_end_m: list[float] = Field(description="on the common axis")
+    braking_apex_kph: list[float]
+
+
+class TelemetrySegmentOut(_Out):
+    """A mini-sector of the common axis: how the delta changed over it (+ = a lost time)."""
+
+    index: int = Field(ge=0)
+    start_m: float
+    end_m: float
+    delta_change_s: float
+
+
+class TelemetryCompareOut(_Out):
+    """``GET …/telemetry/compare?a=&alap=&b=&blap=``: both laps on ``a``'s distance grid, read
+    at the same fraction of each lap; ``delta_s`` = elapsed ``a`` - elapsed ``b`` (+ = ``a``
+    behind)."""
+
+    season: int
+    round: int
+    is_synthetic: bool
+    grid_step_m: float = Field(gt=0)
+    distance_m: list[float]
+    a: TelemetryCarOut
+    b: TelemetryCarOut
+    delta_s: list[float]
+    segments: list[TelemetrySegmentOut]
+    final_delta_s: float
+    lap_time_delta_s: float | None = Field(description="official lap time a - b, if both known")

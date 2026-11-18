@@ -524,3 +524,23 @@ input[type="search"], select {
   .tower .c-sec { width: 5.4rem; }
   .tower-columns-panel { right: auto; left: 0; min-width: min(18rem, calc(100vw - 2rem)); }
 }
+
+/* Telemetry overlay (Feature 6, display only): shared tokens only; the lanes reuse .chart-*. */
+.telemetry-picks { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 0.5rem 1rem; margin-bottom: 0.6rem; }
+.telemetry-pick { display: flex; flex-wrap: wrap; gap: 0.4rem 0.75rem; margin: 0; padding: 0.35rem 0.6rem 0.5rem; border: 1px solid var(--border); border-radius: var(--radius); }
+.telemetry-pick legend { padding: 0 0.25rem; font-size: 0.8rem; color: var(--muted); }
+.telemetry-pick select { max-width: 15rem; }
+.telemetry-summary { margin: 0.25rem 0 0.6rem; padding-left: 1.25rem; font-size: 0.88rem; line-height: 1.45; }
+.telemetry-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 0.25rem 1rem; margin: 0 0 0.4rem; font-size: 0.85rem; }
+.telemetry-legend > span { display: inline-flex; align-items: center; gap: 0.35rem; }
+.telemetry-legend .muted { display: inline; font-size: 0.78rem; }
+.telemetry-swatch { flex: none; vertical-align: middle; }
+.telemetry-chart { height: auto; }
+.telemetry-crosshair { touch-action: pan-y; cursor: crosshair; border-radius: var(--radius); }
+.telemetry-crosshair:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+.telemetry-readout-wrap { overflow-x: auto; margin-top: 0.6rem; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); }
+.tower.telemetry-readout { min-width: 0; table-layout: auto; }
+.tower.telemetry-readout .c-num { width: auto; }
+.tower.telemetry-readout th, .tower.telemetry-readout td { padding: 0 0.3rem; }
+.telemetry-readout caption { text-align: left; white-space: normal; }
+.telemetry-only { margin: 0.5rem 0; font-size: 0.9rem; }

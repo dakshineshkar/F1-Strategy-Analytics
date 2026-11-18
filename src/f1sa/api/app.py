@@ -10,6 +10,9 @@ Routes, all under ``/api`` (OpenAPI at ``/api/docs`` and ``/api/openapi.json``):
     GET  /api/races/{season}/{round}/analysis/{laps,stints,pitstops,race-control,positions}
                                              post-race analysis views (display, Feature 2)
     GET  /api/races/{season}/{round}/analysis/compare?a=&b=  two drivers lap by lap
+    GET  /api/races/{season}/{round}/telemetry/laps?driver=CODE  laps with a telemetry trace
+                                             (display, Feature 6; 2024 only)
+    GET  /api/races/{season}/{round}/telemetry/compare?a=&alap=&b=&blap=  two laps overlaid
     GET  /api/races/{season}/{round}/engineer/{driverId}?lap=N  focus vs ahead/behind (display)
     GET  /api/races/{season}/{round}/status?lap=N  race-status banner at lap N (display, Feature 5)
     GET  /api/races/{season}/{round}/events  Server-Sent Events from the race channel
@@ -45,6 +48,7 @@ from f1sa.api.routes import (
     races,
     replay,
     status,
+    telemetry,
     whatif,
 )
 from f1sa.config import Settings, get_settings
@@ -56,6 +60,7 @@ ROUTERS = (
     races.router,
     entrants.router,
     analysis.router,
+    telemetry.router,
     engineer.router,
     status.router,
     events.router,

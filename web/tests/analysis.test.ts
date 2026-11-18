@@ -227,7 +227,8 @@ describe("analysis guards", () => {
 // ------------------------------------------------------------------ tabs and URL
 describe("tabs and the URL", () => {
   it("arrow keys wrap, Home/End jump, other keys do nothing", () => {
-    expect(VIEWS).toHaveLength(7);
+    expect(VIEWS).toHaveLength(8);
+    expect(VIEWS[7]).toEqual({ id: "telemetry", label: "Telemetry" });
     expect(tabKeyTarget("ArrowRight", 6, 7)).toBe(0);
     expect(tabKeyTarget("ArrowLeft", 0, 7)).toBe(6);
     expect(tabKeyTarget("ArrowDown", 2, 7)).toBe(3);
@@ -244,6 +245,10 @@ describe("tabs and the URL", () => {
       a: "VER",
       b: "NOR",
       driver: "HAM",
+      ta: null,
+      talap: null,
+      tb: null,
+      tblap: null,
     });
     expect(parseAnalysisQuery({ view: "x", lap: "0", a: "ver", b: ["NOR"], driver: "HAMI" })).toEqual({
       view: "strategy",
@@ -251,6 +256,10 @@ describe("tabs and the URL", () => {
       a: null,
       b: null,
       driver: null,
+      ta: null,
+      talap: null,
+      tb: null,
+      tblap: null,
     });
     expect(analysisSearch({ view: "laps", lap: 7 })).toBe("?view=laps&lap=7");
     expect(analysisSearch({ view: "compare", a: "VER", b: "NOR", lap: null })).toBe("?view=compare&a=VER&b=NOR");
