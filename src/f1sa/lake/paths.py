@@ -3,6 +3,10 @@
 Raw zone layout (table first, Hive-style partitions)::
 
     {lake}/raw/{source}/{table}/season={S}[/round={R}][/driver={DRV}]/
+
+Post-race archive (Feature 4, display only; ``archive_partition_uri``)::
+
+    {lake}/archive/race_bundle/season={S}/round={R}/{bundle.json.gz,_manifest.json}
 """
 
 from __future__ import annotations
@@ -66,6 +70,18 @@ def raw_table_uri(
             raise ValueError(f"invalid driver partition value {driver!r}")
         uri += f"/driver={driver}"
     return uri
+
+
+ARCHIVE_ZONE = "archive"
+ARCHIVE_TABLE = "race_bundle"
+
+
+def archive_partition_uri(settings: Settings, season: int, round_: int) -> str:
+    """URI of one post-race archive partition (Feature 4, display only):
+    ``{lake}/archive/race_bundle/season=S/round=R``. Never inside ``raw``."""
+    _check_partition(season, round_)
+    lake = settings.data_lake_uri.rstrip("/")
+    return f"{lake}/{ARCHIVE_ZONE}/{ARCHIVE_TABLE}/season={season}/round={round_}"
 
 
 def local_path(uri: str) -> Path:

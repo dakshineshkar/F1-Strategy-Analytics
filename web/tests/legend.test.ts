@@ -116,8 +116,8 @@ describe("Legend: How to read this", () => {
     expect(m).not.toContain("<details open");
     for (const e of GLOSSARY) {
       const shown = `${esc(e.term)}</dt><dd>${esc(e.text)}</dd>`;
-      // the live page lists the live groups; the analysis and engineer tabs pass their own
-      if (e.group === "analysis" || e.group === "engineer") expect(m).not.toContain(shown);
+      // the live page lists the live groups; the analysis, engineer and post-race views pass their own
+      if (e.group === "analysis" || e.group === "engineer" || e.group === "archive") expect(m).not.toContain(shown);
       else expect(m).toContain(shown);
     }
     for (const g of ["Timing tower", "Undercut alerts", "What-if"]) expect(m).toContain(`aria-label="${g}"><h3>${g}</h3>`);

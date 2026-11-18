@@ -422,3 +422,46 @@ input[type="search"], select {
 @media (max-width: 1080px) {
   .eng-cards { grid-template-columns: minmax(0, 1fr); }
 }
+
+/* ---------------------------------------------------------------- post-race archive (display only) */
+/* Mode tabs reuse the analysis tab style; a disabled mode is struck through (a shape, not a colour). */
+.mode-tabs { align-items: center; }
+.mode-tabs [role="tab"][aria-disabled="true"] { cursor: not-allowed; text-decoration: line-through; }
+.mode-note { flex: 0 0 auto; padding: 0 0.5rem; font-size: 0.8rem; }
+.conn-archive .conn-icon { color: var(--info); }
+.archive-notes .num, .arc-lap { font-family: var(--font-num); }
+.ac-status { margin: 0; min-width: 9rem; font: 600 0.85rem/1.4 var(--font-num); color: var(--muted); text-align: right; }
+.ac-buttons { display: flex; flex-wrap: wrap; align-items: end; gap: 0.5rem 0.75rem; margin-bottom: 0.6rem; }
+.ac-play { min-width: 6.5rem; }
+/* The slider and the marker lanes share one column, so a marker sits under its lap. */
+.ac-grid { display: grid; grid-template-columns: 3.4rem minmax(0, 1fr); gap: 0.35rem 0.5rem; align-items: center; }
+.ac-slider { width: 100%; min-height: 2.5rem; margin: 0; accent-color: var(--accent); cursor: pointer; }
+.ac-slider:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+.ac-lanes { grid-column: 1 / -1; display: grid; gap: 0.3rem; }
+.ac-lane { display: grid; grid-template-columns: 3.4rem minmax(0, 1fr); gap: 0 0.5rem; align-items: start; }
+.ac-lane-name { font: 600 0.75rem/1.6rem var(--font-ui); color: var(--muted); }
+.ac-track { position: relative; margin: 0 8px; border-top: 1px dashed var(--border); }
+.ac-none { font: 600 0.72rem/1.6rem var(--font-ui); color: var(--muted); }
+.ac-marker {
+  position: absolute; transform: translateX(-50%); min-width: 24px; height: 1.4rem; margin-top: 0.1rem; padding: 0 0.25rem;
+  font: 800 0.7rem/1 var(--font-num); color: var(--text); background: var(--surface-2);
+  border: 1px solid var(--border); border-radius: var(--radius); cursor: pointer;
+}
+.ac-marker:hover { border-color: var(--text); }
+.ac-marker:focus-visible { outline: 3px solid var(--focus); outline-offset: 1px; z-index: 1; }
+/* Kinds differ by their letters and by the border style; the colour only repeats it. */
+.ac-sc { border-color: var(--warn); }
+.ac-vsc { border-color: var(--warn); border-style: dashed; }
+.ac-red { border-color: var(--danger); border-style: double; border-width: 3px; }
+.ac-neutral { border-style: dotted; }
+.ac-alert { border-color: var(--accent-ink); }
+.ac-marker[aria-current="true"] { border-width: 2px; border-color: var(--text); text-decoration: underline; z-index: 1; }
+.arc-feed { max-height: 14rem; overflow-y: auto; }
+.arc-list { list-style: none; margin: 0; padding: 0; font-size: 0.82rem; }
+.arc-list li { padding: 0.25rem 0; border-bottom: 1px solid var(--surface-2); }
+.arc-key { border-left: 3px solid var(--accent-ink); padding-left: 0.4rem !important; }
+.arc-lap { display: inline-block; min-width: 2.6rem; color: var(--muted); }
+@media (max-width: 640px) {
+  .ac-status { text-align: left; min-width: 0; }
+  .ac-grid, .ac-lane { grid-template-columns: 2.8rem minmax(0, 1fr); }
+}

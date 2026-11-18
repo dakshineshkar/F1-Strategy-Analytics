@@ -15,6 +15,8 @@ Routes, all under ``/api`` (OpenAPI at ``/api/docs`` and ``/api/openapi.json``):
     POST /api/races/{season}/{round}/replay  start the producer (ENABLE_REPLAY=1)
     POST /api/debug/latency                  UI render time per event (ENABLE_DEBUG=1)
     POST /api/races/{season}/{round}/whatif  pit now / pit next lap / stay out (Step 15)
+    GET  /api/archive                        races with a post-race bundle (display, Feature 4)
+    GET  /api/archive/{season}/{round}       the bundle (gzip, ETag; display, Feature 4)
 """
 
 from __future__ import annotations
@@ -33,6 +35,7 @@ from f1sa.api.deps import ApiDeps
 from f1sa.api.log import AccessLogMiddleware
 from f1sa.api.routes import (
     analysis,
+    archive,
     debug,
     engineer,
     entrants,
@@ -56,6 +59,7 @@ ROUTERS = (
     replay.router,
     debug.router,
     whatif.router,
+    archive.router,
 )
 
 

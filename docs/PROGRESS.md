@@ -1724,10 +1724,102 @@
   - **Services** (user approved): the api was recreated in sample mode (REPLAY=1) for Playwright, web was stopped
     for `make web-e2e` and rebuilt with `--no-deps`, and after the smoke test's own replay had finished the api was
     returned to `make api-up FULL=1 REPLAY=1` (it now runs the fixed code).
+- Feature 4 (2026-11-16): post-race viewer, any finished race scrubbed lap by lap (display only). **Done.**
+  - **Investigation.** A live replay's states, alerts and probabilities all come from
+    `StreamProcessor.process_rows` (the `foreachBatch` function) writing through `RedisSink` to any `Store`. The
+    parity harness already feeds the producer's events to it without a broker. The archive does the same with the
+    **real** `RaceStore` on an in-process stand-in (`archive/memory_redis.py`), so the frozen encoder writes every hash
+    field and published message; each snapshot is read back with the API's `read_race_state`. Nothing is re-derived.
+    The 113 / 19 / 9 alert check is sample 2024 R5 with `deploy_real_G3.5_k2`; its script was never committed.
+  - **Your choices:** the lap-N snapshot is the **end of lap N**; the live proof is a controlled real replay; `make
+    demo` builds the sample archive; the lake path is `archive/race_bundle/season=S/round=R/`.
+  - **Change** (new package `src/f1sa/archive/`):
+    - `replay.py`: the producer's events (`build_events`), one Kafka row each (`parity.kafka_batches`), cut into one
+      micro-batch per leader lap. Derived uuid4-format ids and one simulated clock (race start + 180 s + race time)
+      make a rebuild byte-identical; the rule, features, scorer and alert policy read neither.
+    - `schema.py` (schema v1, pydantic only): meta (race, model version, scorer sha256, model and builder git sha),
+      entrants, per-lap snapshots (the 9 driver-hash fields, order, tyre hash), every published message with its SSE
+      id, every scored decision, the leader's track status and race control. gzip `mtime=0`, sorted keys, no NaN.
+    - `build.py` (`python -m f1sa.archive.build --source sample|lake`; `make archive-sample`, `make archive-full`):
+      writes only `{lake}/archive/race_bundle/season=S/round=R/{bundle.json.gz,_manifest.json}` (`FileSink` under
+      `./data/lake`, or `HdfsSink` through HttpFS); never raw, clean, features or `results/`; 2025 only with
+      `--allow-test-season`; missing prerequisites give exit 1 with the make target. `make demo-pipeline` builds the
+      sample archive with the sample model after the model step.
+    - `equivalence.py` (`make archive-equivalence SEASON ROUND LAPS [FULL=1]`): rebuild check, parity-harness run plus
+      `check_alerts` / `compare_race`, and the controlled live replay (real Kafka → stream job → Redis; Redis read
+      after every lap/pit message sent up to each checked lap, and after `session_end`). It refuses while an api
+      replay runs. Outputs `data/checkpoints/demo_*` and `data/demo/<run_id>/` (`make demo-clean` removes them).
+    - API: `GET /api/archive` and `GET /api/archive/{s}/{r}` (`api/archive.py`, `api/routes/archive.py`;
+      `catalog.archive_reader`: zone `archive`, two file names, LISTSTATUS/OPEN only, 2025 sealed). Stored gzip with
+      `Content-Encoding: gzip` (else JSON), `ETag` = sha256, `Cache-Control: no-cache`, 304; 404 / 422 / 500 (sha or
+      schema) / 503. The listing is cached in process (`API_ARCHIVE_CACHE_S`); no Redis key. Still no pyspark.
+    - Dashboard: a "Live | Post-race (archive)" tab pair on the race page (only the selected mode is mounted, so
+      post-race opens no SSE). The URL holds `?mode=archive&lap=N`. `lib/archive.ts` drives the **unchanged** reducer
+      (lap messages, then the snapshot); `PostRaceView` reuses the tower (caption names the archive), gap chart, tyre
+      panel and alert feed (silent), adds a race-control list up to lap N and links to the analysis tab with lap N
+      marked. `ArchiveControls`: a native range slider (`aria-valuetext` "Lap N of M"), −1 / Play-Pause / +1, and
+      client-side 1×/10×/60× playback (one leader lap time per lap ÷ speed). The markers (P, SC, VSC, R, N
+      estimated, A announced alerts) are one toolbar with text codes, border styles and full accessible names. An
+      `archive` glossary group. Styles use only the shared tokens. `TimingTower` gained an optional caption note
+      (default unchanged).
+  - **Evidence.**
+    - Sample: `make archive-sample` gave 2023 R5 at 1,417,039 B JSON → 139,465 B gzip and 2024 R5 at 1,257,110 →
+      123,092 B. A rebuild is byte-identical (`sha256sum -c`: both OK).
+    - `make archive-equivalence SEASON=2024 ROUND=5 LAPS=5,22,45`:
+      - rebuild identical;
+      - alerts 113 / 19 / 9 (141) and 409 decisions, equal to the parity run, with 409 batch-eligible pairs; the
+        labelled attempt is included; `check_alerts` and `compare_race` OK;
+      - live: Redis == bundle at laps 5, 22, 45 and after `session_end`; all 1,252 published messages equal.
+      - Verdict: EQUIVALENT.
+    - Full lake: `make archive-full ARCHIVE_SEASON=2024 ARCHIVE_ROUND=1` gave 1,298,084 B → 133,877 B. `make
+      archive-equivalence FULL=1 SEASON=2024 ROUND=1 LAPS=10,30,50`:
+      - rebuild identical;
+      - 93 / 13 / 19 (125) alerts and 405 decisions, equal to parity; 7 labelled attempts;
+      - Redis == bundle at laps 10, 30, 50 and the final lap 57; all 1,341 messages equal.
+      - Verdict: EQUIVALENT.
+    - `make archive-full` (every 2021-2024 race; 2025 sealed): 90 bundles, 0 failed. 116,508,466 B JSON → 11,790,654 B
+      gzip (11.3 MB on HDFS, replication 1). Per race min 4,898 B (2021 R12, 1 lap), median 130,041 B, max 167,818 B
+      (2023 R13, 72 laps). 2024 R1 rebuilt to the same sha256 (d07a36eb…) as the single-race build. Only
+      `/f1/archive/race_bundle/` was written. The full-mode api serves all 90 over HttpFS (2024 R1: 200 gzip, ETag
+      = sha256).
+    - Stream parity 2021-2024 (`--out data/demo/parity_check7/`): 90 races, 157 labelled attempts, 34,608 eligible
+      pairs, 0 mismatching races; byte-identical to `results/stream_parity_full.csv` (sha256 aad8df67…).
+    - Sample 2024 R5 alert check (recreated: deployed model, parity harness at batch 7 with partition 1 lagging):
+      113 / 19 / 9 = 141 alerts, 409 decisions, `check_alerts` OK. The old dump (sha256 7eee6557…) could not be
+      compared because its format was never recorded. `git diff` is empty for `src/f1sa/{streaming,serving,features,
+      model,sim,etl}` and `results/`.
+    - `make experiments-sample`: OK 7, OK (metadata differs) 1, DIFF 0, MISSING 0. The 2 NEW files (the sample
+      what-if CSV and PNG, no committed file) are byte-identical to the Feature 2 / 3 runs. `results/` equals HEAD
+      with nothing untracked.
+    - Python: the full unit suite gave 2037 passed in 891 s (once, after all changes). Targeted: archive, API,
+      Makefile, docs and config 354 passed. ruff, format and mypy clean. `scripts/check_traceability.py`: OK 304,
+      MISSING 0. `tests/integration/test_archive_live.py` was not run; `make archive-equivalence` (above) ran the same
+      check in the app container.
+    - Web: lint and typecheck clean; Vitest 265 passed (27 new); `next build` clean. `make web-e2e`: 2 passed (the
+      existing 60x smoke test and the new post-race test: keyboard mode switch, slider steps with
+      `aria-valuetext`, ±1 buttons, a marker jump, the toolbar End key, 60x playback, reload keeps mode and lap, no
+      overflow at 375 px, back to Live).
+  - **Services** (user approved): the api was recreated in sample mode (REPLAY=1) for Playwright. web was stopped for
+    `make web-e2e`, then rebuilt and started with `--no-deps`. After the smoke test's replay finished, the api
+    returned to `make api-up FULL=1 REPLAY=1`. A Docker/WSL restart afterwards (not caused by this step) left the
+    stack down.
 ## Next
 - S18: report, docs and demo rehearsal (#44): `docs/report/`, `docs/demo_script.md`.
 - Push and watch the first CI run of the `e2e` job on GitHub (runner build time and disk are unmeasured).
 ## Known issues
+- Feature 4:
+  - The lap-N snapshot is Redis at the end of lap N (your choice). The live SSE `snapshot-N` is taken earlier, at
+    the leader's lap-N crossing, so the two moments differ by design.
+  - In post-race mode each lap's snapshot follows its messages, so the reducer's diagnostic `unknownDrivers` counter
+    counts the lap-1 cars. The end-of-lap state is the same, and the counter is not shown in post-race mode.
+  - The controlled live check needs an idle topic: it refuses while an api replay runs, but it cannot see a separate
+    `make stream-demo` on the same race.
+  - Like any replay, it writes the race's Redis keys (the safety TTL, then 1 h after `session_end`). The sample check
+    of 2024 R5 left sample keys that a full-mode dashboard shows for that race until they expire.
+  - `data/lake/archive` holds the bundles of whichever builder ran last: `make archive-sample` uses the api's model,
+    `make demo` the sample model. The bundle's meta names its model.
+  - Markers are laid out in rows so they never overlap. In a lane with many events (alerts at 375 px) the lane
+    grows by rows instead.
 - Feature 2: the degradation slope is a lap-time proxy (fuel burn-off and track evolution are in it), stated in the
   UI; the sample's tyre data is synthetic (labelled).
 - Feature 1: `drivers.permanent_number` in the clean zone is today's season-table number and wrong for history.

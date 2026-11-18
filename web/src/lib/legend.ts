@@ -2,7 +2,7 @@
  * tooltips, so the two can never disagree. The wording follows the stream's definitions
  * (``streaming/events.py`` ALERT_TRIGGERS, the shared undercut rule, ``lib/tyre.ts``). */
 
-export type GlossaryGroup = "tower" | "alerts" | "whatif" | "analysis" | "engineer";
+export type GlossaryGroup = "tower" | "alerts" | "whatif" | "analysis" | "engineer" | "archive";
 
 export interface GlossaryEntry {
   id: string;
@@ -183,6 +183,35 @@ export const GLOSSARY = [
       "ahead, and the car behind on the focus (the threat). It refers to the car directly ahead at the stream's latest " +
       "decision lap, which can lag by a lap.",
   },
+  {
+    id: "archive",
+    group: "archive",
+    term: "Post-race (archive)",
+    label: "the post-race archive",
+    text:
+      "A finished race replayed from its stored bundle. At each lap the tower, gaps, tyres and alerts are exactly what " +
+      "the stream left in Redis at the end of that lap, built by the same code as a live replay; nothing is " +
+      "recomputed in the browser.",
+  },
+  {
+    id: "markers",
+    group: "archive",
+    term: "P / SC / VSC / R / N / A markers",
+    label: "the event markers",
+    text:
+      "Laps with pit stops (P), the start of a safety car (SC), virtual safety car (VSC) or red flag (R), a " +
+      "neutralisation estimated from lap times when the lake has no race-control data (N), and the alerts the live " +
+      "feed announces (A: attempts and probability crossings). Select one to jump to that lap.",
+  },
+  {
+    id: "simclock",
+    group: "archive",
+    term: "Simulated time",
+    label: "the archive clock",
+    text:
+      "Times stored in an archived race follow the race clock (the scheduled start plus 180 s plus the race time), " +
+      "not the time the bundle was built. Playback at 1× takes one leader lap time per lap.",
+  },
 ] as const satisfies readonly GlossaryEntry[];
 
 export type GlossaryId = (typeof GLOSSARY)[number]["id"];
@@ -193,6 +222,7 @@ export const GROUP_TITLE: Record<GlossaryGroup, string> = {
   whatif: "What-if",
   analysis: "Race analysis",
   engineer: "Engineer",
+  archive: "Post-race",
 };
 
 export function glossary(id: GlossaryId): GlossaryEntry {

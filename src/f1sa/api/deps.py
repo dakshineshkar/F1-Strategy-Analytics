@@ -13,10 +13,13 @@ from fastapi.exceptions import RequestValidationError
 
 from f1sa.api.analysis import TABLES as ANALYSIS_TABLES
 from f1sa.api.analysis import AnalysisService
+from f1sa.api.archive import ArchiveService
 from f1sa.api.catalog import (
+    FileReader,
     LakeReader,
     RaceCatalog,
     SimReaders,
+    archive_reader,
     reader_for,
     sim_readers,
     zone_reader,
@@ -50,6 +53,7 @@ class ApiDeps:
     entrants: EntrantsService
     analysis: AnalysisService
     engineer: EngineerService
+    archive: ArchiveService
 
     @classmethod
     def from_settings(
@@ -66,6 +70,7 @@ class ApiDeps:
         entrants_reader_factory: Callable[[], LakeReader] | None = None,
         analysis_reader_factory: Callable[[], LakeReader] | None = None,
         engineer_reader_factory: Callable[[], LakeReader] | None = None,
+        archive_reader_factory: Callable[[], FileReader] | None = None,
     ) -> ApiDeps:
         client = redis or aioredis.Redis.from_url(settings.redis_url, decode_responses=True)
         sim_factory = sim_reader_factory or (lambda: sim_readers(settings, session=http_session))
@@ -123,6 +128,11 @@ class ApiDeps:
                         )
                     )
                 ),
+            ),
+            archive=ArchiveService(
+                archive_reader_factory or (lambda: archive_reader(settings, session=http_session)),
+                ttl_s=settings.api_archive_cache_s,
+                allow_test_season=settings.allow_test_season,
             ),
         )
 

@@ -206,3 +206,78 @@ test("sample race: a 60× replay fills the tower and updates laps", async ({ pag
   const overflow3 = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
   expect(overflow3).toBeLessThanOrEqual(0);
 });
+
+test("post-race archive: open the mode by keyboard and scrub the race", async ({ page, request }) => {
+  const listing = (await (await request.get(`${API}/api/archive`)).json()) as { races: { season: number; round: number }[] };
+  test.skip(
+    !listing.races.some((r) => r.season === 2024 && r.round === 5),
+    "no post-race bundle for 2024 R5: run 'make archive-sample' (or 'make demo')",
+  );
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto("/race/2024/5");
+
+  // Keyboard only: from the Live tab to the post-race mode; the URL records the mode and the lap.
+  const live = page.getByRole("tab", { name: "Live" });
+  await expect(live).toHaveAttribute("aria-selected", "true");
+  await live.focus();
+  await page.keyboard.press("ArrowRight");
+  const archive = page.getByRole("tab", { name: "Post-race (archive)" });
+  await expect(archive).toBeFocused();
+  await expect(archive).toHaveAttribute("aria-selected", "true");
+  await expect(page.locator(".conn")).toContainText("Post-race (archive)");
+  await expect(page).toHaveURL(/\/race\/2024\/5\?mode=archive&lap=1$/);
+  await expect(page.locator("table.tower tbody tr")).toHaveCount(20, { timeout: 15_000 });
+  await expect(page.getByText(/SYNTHETIC tyre data/)).toBeVisible();
+
+  // The slider: arrow keys step one lap, and its value is read as text.
+  const slider = page.getByRole("slider", { name: "Lap" });
+  await expect(slider).toHaveAttribute("aria-valuetext", "Lap 1 of 56");
+  await slider.focus();
+  await page.keyboard.press("ArrowRight");
+  await expect(slider).toHaveAttribute("aria-valuetext", "Lap 2 of 56");
+  await expect(page.locator(".lc-now")).toHaveText("2");
+  await page.getByRole("button", { name: "Next lap" }).click();
+  await expect(slider).toHaveAttribute("aria-valuetext", "Lap 3 of 56");
+  await page.getByRole("button", { name: "Previous lap" }).click();
+  await expect(slider).toHaveAttribute("aria-valuetext", "Lap 2 of 56");
+
+  // A marker jumps to its lap (the sample's laps 21-31 are neutralised, estimated from lap times);
+  // the markers are one toolbar: End moves to the last one.
+  const neutral = page.getByRole("button", { name: /^Lap 21: neutralised \(estimated from lap times\)/ });
+  await expect(neutral).toHaveText("N");
+  await neutral.click();
+  await expect(slider).toHaveAttribute("aria-valuetext", "Lap 21 of 56");
+  await expect(page).toHaveURL(/lap=21$/);
+  await expect(page.getByRole("toolbar", { name: "Race events: jump to a lap" })).toBeVisible();
+  await page.keyboard.press("End");
+  await expect(page.locator(".ac-marker").last()).toBeFocused();
+  await page.getByRole("button", { name: /^Lap \d+: \d+ pit stops? / }).first().click();
+  const pitLap = Number(await page.locator(".lc-now").textContent());
+  expect(pitLap).toBeGreaterThan(0);
+
+  // Play at 60x (one leader lap time per 60, client-side), then pause.
+  await page.getByLabel("60×").check();
+  await neutral.click();
+  await page.getByRole("button", { name: "Play" }).click();
+  await expect(page.locator(".ac-status")).toHaveText("Playing at 60×");
+  await expect
+    .poll(async () => Number(await page.locator(".lc-now").textContent()), { timeout: 30_000, intervals: [500] })
+    .toBeGreaterThan(21);
+  await page.getByRole("button", { name: "Pause" }).click();
+  await expect(page.locator(".ac-status")).toHaveText("Paused");
+
+  // The reload keeps the mode and the lap; then no horizontal page scroll at 375 px.
+  const lap = Number(await page.locator(".lc-now").textContent());
+  await page.reload();
+  await expect(page.getByRole("tab", { name: "Post-race (archive)" })).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByRole("slider", { name: "Lap" })).toHaveAttribute("aria-valuetext", `Lap ${lap} of 56`);
+  await page.setViewportSize({ width: 375, height: 812 });
+  await expect(page.locator("table.tower tbody tr")).toHaveCount(20);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
+
+  // Back to Live by keyboard: the live view (and its stream) returns.
+  await page.getByRole("tab", { name: "Post-race (archive)" }).focus();
+  await page.keyboard.press("ArrowLeft");
+  await expect(page.getByRole("tab", { name: "Live" })).toHaveAttribute("aria-selected", "true");
+  await expect(page).toHaveURL(/\/race\/2024\/5$/);
+});

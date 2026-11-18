@@ -23,6 +23,10 @@ limited to one zone and an explicit table list: ``SIM_CLEAN_TABLES`` in ``clean`
 ``SIM_FEATURE_TABLES`` in ``features`` (``sim_readers``). The race catalog itself keeps the default
 ``clean`` zone and ``TABLES``. No reader can be pointed at ``raw``.
 
+The post-race archive (Feature 4, display only) is read the same way: zone ``archive``, table
+``race_bundle`` (``archive_reader``), and ``read_file`` opens only the two archive file names
+(``READABLE_FILES``) of one partition, never a listing outside it.
+
 Both readers skip ``season=2025`` directories (the sealed test season) unless
 ``allow_test_season`` is set: those directories are never listed into or opened. Spark writes
 the partition columns into the directory names only, so ``season`` and ``round`` come from the
@@ -55,8 +59,12 @@ SIM_CLEAN_TABLES: tuple[str, ...] = ("races", "laps", "stints", "stints_tracingi
 """Clean tables the what-if simulator reads (tyre model fit, current compound in full mode)."""
 SIM_FEATURE_TABLES: tuple[str, ...] = ("pit_loss", "outlap_features")
 """Feature tables the what-if simulator reads (the stream's pre-race priors)."""
-ZONES: tuple[str, ...] = ("clean", "features")
+ZONES: tuple[str, ...] = ("clean", "features", "archive")
 """Lake zones a reader may be limited to (never ``raw``)."""
+ARCHIVE_TABLES: tuple[str, ...] = ("race_bundle",)
+"""``archive.schema.TABLES`` (the post-race bundles, Feature 4)."""
+READABLE_FILES: frozenset[str] = frozenset({"bundle.json.gz", "_manifest.json"})
+"""The only file names ``read_file`` opens (``archive.schema.FILE_NAMES``)."""
 ALLOWED_OPS: frozenset[str] = frozenset({"LISTSTATUS", "OPEN"})
 """The only HttpFS operations the API sends (both read-only)."""
 
@@ -87,6 +95,11 @@ def _check_zone(zone: str) -> None:
         raise CatalogError(f"zone {zone!r} is not readable by the API (allowed: {ZONES})")
 
 
+def _check_file(name: str) -> None:
+    if name not in READABLE_FILES:
+        raise CatalogError(f"file {name!r} is not readable by the API")
+
+
 def _is_data_file(name: str) -> bool:
     return name.endswith(".parquet") and not name.startswith((".", "_"))
 
@@ -109,6 +122,14 @@ class LakeReader(Protocol):
         self, table: str, season: int, round_: int, columns: Sequence[str]
     ) -> list[dict[str, Any]]:
         """Rows of one partition (only ``columns``)."""
+        ...
+
+
+class FileReader(Protocol):
+    def partitions(self, table: str, *, required: bool = True) -> list[tuple[int, int]]: ...
+
+    def read_file(self, table: str, season: int, round_: int, name: str) -> bytes | None:
+        """One whole file of a partition (``READABLE_FILES`` only); ``None`` if it is missing."""
         ...
 
 
@@ -186,6 +207,17 @@ class FileLakeReader(_PartitionWalk):
             if f.is_file() and _is_data_file(f.name):
                 rows.extend(_decode(str(f), columns))
         return rows
+
+    def read_file(self, table: str, season: int, round_: int, name: str) -> bytes | None:
+        _check_table(table, self.tables)
+        _check_file(name)
+        if not self._season_allowed(season):
+            raise CatalogError(f"season {season} is the sealed test season")
+        path = self.clean_root / table / f"season={int(season)}" / f"round={int(round_)}" / name
+        try:
+            return path.read_bytes() if path.is_file() else None
+        except OSError as exc:
+            raise CatalogError(f"unreadable file: {type(exc).__name__}") from exc
 
 
 class HttpFsLakeReader(_PartitionWalk):
@@ -281,6 +313,16 @@ class HttpFsLakeReader(_PartitionWalk):
             rows.extend(_decode(pa.BufferReader(resp.content), columns))
         return rows
 
+    def read_file(self, table: str, season: int, round_: int, name: str) -> bytes | None:
+        _check_table(table, self.tables)
+        _check_file(name)
+        if not self._season_allowed(season):
+            raise CatalogError(f"season {season} is the sealed test season")
+        resp = self._get(
+            "OPEN", f"{self.clean}/{table}/season={int(season)}/round={int(round_)}/{name}"
+        )
+        return None if resp is None else bytes(resp.content)
+
 
 def reader_for(settings: Settings, *, session: requests.Session | None = None) -> LakeReader:
     """The reader for ``settings.data_lake_uri`` (``file://`` or ``hdfs://``)."""
@@ -323,6 +365,25 @@ def zone_reader(
             settings, path, allow_test_season=allow, session=session, zone=zone, tables=tables
         )
     raise CatalogError(f"unsupported lake URI scheme in {uri.split('://', 1)[0]!r}")
+
+
+def archive_reader(
+    settings: Settings,
+    *,
+    allow_test_season: bool | None = None,
+    session: requests.Session | None = None,
+) -> FileReader:
+    """A reader of ``{lake}/archive/race_bundle`` (``read_file`` of the two archive files)."""
+    reader = zone_reader(
+        settings,
+        "archive",
+        ARCHIVE_TABLES,
+        allow_test_season=allow_test_season,
+        session=session,
+    )
+    if not isinstance(reader, FileLakeReader | HttpFsLakeReader):
+        raise CatalogError("unexpected archive reader")
+    return reader
 
 
 @dataclass(frozen=True)

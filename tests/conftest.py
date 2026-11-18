@@ -153,3 +153,30 @@ def sample_features_root(spark: SparkSession, sample_clean_lake: SampleLake) -> 
         finally:
             os.chdir(cwd)
     return f"file://{root}"
+
+
+@pytest.fixture(scope="session")
+def sample_archive_lake(
+    spark: SparkSession,
+    sample_clean_lake: SampleLake,
+    sample_features_root: str,
+    tmp_path_factory: pytest.TempPathFactory,
+) -> SampleLake:
+    """A copy of the sample lake (clean + features) with the display-only entrants and analysis
+    tables built: everything the post-race archive builder reads (Feature 4)."""
+    import shutil
+
+    from f1sa.etl.analysis import run_analysis
+    from f1sa.etl.entrants import run_entrants
+
+    lake = SampleLake(tmp_path_factory.mktemp("archive_lake"))
+    for zone in ("clean", "features"):
+        shutil.copytree(sample_clean_lake.lake / zone, lake.lake / zone)
+    cwd = os.getcwd()
+    os.chdir(lake.base)
+    try:
+        run_entrants(spark, lake.settings())
+        run_analysis(spark, lake.settings(), source="sample")
+    finally:
+        os.chdir(cwd)
+    return lake

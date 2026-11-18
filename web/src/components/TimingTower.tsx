@@ -28,17 +28,20 @@ export function TimingTower({
   rows,
   lapsDown,
   entrants = {},
+  captionNote = "gaps at the timing line, live from the race stream",
 }: {
   rows: DriverRow[];
   lapsDown: (driverId: string) => number;
   entrants?: EntrantIndex;
+  /** The caption's source note (the post-race mode names the archive). */
+  captionNote?: string;
 }) {
   const [hovered, setHovered] = useState<string | null>(null);
   return (
     <div className="tower-wrap" role="region" aria-labelledby="tower-title" tabIndex={0}>
       <table className="tower">
         <caption id="tower-title">
-          Timing tower <span className="caption-note">gaps at the timing line, live from the race stream</span>
+          Timing tower <span className="caption-note">{captionNote}</span>
         </caption>
         <thead>
           <tr>

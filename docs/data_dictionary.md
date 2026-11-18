@@ -973,3 +973,41 @@ speed traps, the per-lap track-status codes, deleted laps and the real per-lap t
   sectors, speed trap, deleted known / deleted, tyre life, compound, quick laps, neutralised by source), quick-lap
   exclusions by reason, races by tyre and neutralised source, stints by fit status, race control by kind, the
   track-status cross-check, TI rows unmapped and TI-only laps dropped, rows and checksum per table.
+
+## Post-race archive (`archive/race_bundle`, Feature 4, display only)
+Built by `python -m f1sa.archive.build --source sample|lake` (`make archive-sample`, `make archive-full`; `make demo`
+runs it with the sample model after the model step). One partition per race:
+`{DATA_LAKE_URI}/archive/race_bundle/season=S/round=R/` holding `bundle.json.gz` and `_manifest.json`. Nothing else is
+written: not `raw`, not a clean or feature table, not `results/`. 2025 only with `--allow-test-season`. It is read only
+by `GET /api/archive` and `GET /api/archive/{s}/{r}`. No feature, model input, rule, alert, stream or what-if reads it.
+
+**How it is made.** The race's producer events go through the stream's own `StreamProcessor` → `RedisSink` → real
+`RaceStore`, in one micro-batch per leader lap. A snapshot is taken after each batch with the API's `read_race_state`.
+Details and the proof of equivalence are in `docs/architecture.md` ("Post-race archive").
+
+**`bundle.json.gz`**: gzip (`mtime` 0, level 9) of canonical JSON (sorted keys, no spaces, no NaN). Schema version 1
+(`f1sa.archive.schema.ArchiveBundle`):
+
+| Field | Content |
+|---|---|
+| `schema_version` | `1` |
+| `meta` | `season`, `round`, `race_name`, `circuit_name`, `race_date`, `race_start_utc`, `laps` (the last snapshot's lap), `synthetic` (sample tyre data), `source` (`sample` / `lake`), `n_partitions` (3), `micro_batch` (`leader_lap`), `clock` (the note below), `model` (`version`, `scorer_sha256`, `feature_set`, `g`, `k`, the model's `git_sha` / `git_dirty` / `created_utc`), `builder` (`git_sha`, `git_dirty` of the code that built it; null without git) |
+| `entrants` | the race's `GET /api/races/{s}/{r}/entrants` rows (team names, colours, codes) |
+| `snapshots[]` | per leader lap N (strictly increasing): `lap` plus `drivers` (the 9 Redis driver-hash fields per driver, decoded as `GET /state` decodes them), `order` (the order zset) and `tyres` (the additive tyre hash). This is the state at the **end of lap N**: after every event before the leader's first lap-(N+1) crossing |
+| `messages[]` | every message published on `race:{s}:{r}:events` in publish order: `lap` (the micro-batch's leader lap), `event_id` (the id the SSE stream gives it) and `message` (the published JSON verbatim: `lap`, `pit_in`, `pit_out`, `undercut_alert` with `reason` / `trigger` / P / the 21 inputs, `session_end`) |
+| `decisions[]` | every rule-eligible pair the stream scored: `evaluated_lap` (micro-batch lap), `decision_lap`, `attacker_id`, `defender_id`, `gap_s`, `probability` (calibrated) |
+| `track[]` | per lap, the leader's `is_sc_lap`, `is_vsc_lap`, `is_red_flag_lap`, `is_neutralised_lap`, `neutralised_source` (`track_status` / `heuristic`) and raw `track_status` codes (`clean/analysis_laps`) |
+| `race_control[]` | the `clean/analysis_race_control` rows (empty in the sample) |
+
+- **Clock (simulated).** `updated_at`, `published_at`, `event_ts` and the `*_ms` fields follow race start + 180 s + race
+  time (the `df_jobs` lap-timestamp convention), not wall clock. A live replay stamps wall clock, so the equivalence
+  check compares everything except these fields and the ids.
+- **Event ids.** Derived, not random: the `uuid5` digest of `season:round:index:type:driver:lap` with the uuid4
+  version bits (the event schema accepts only uuid4). A rebuild of the same race with the same code, lake and model
+  is byte-identical.
+- **`_manifest.json`.** The sink's fields (`written_at`, `f1sa_version`, `partition`, `files` with name, bytes and
+  sha256) plus `schema_version`, `season`, `round`, `race_name`, `laps`, `synthetic`, `model_version`, `scorer_sha256`,
+  `sha256` / `size_bytes` (of `bundle.json.gz`, the API's ETag), `raw_bytes`, `n_snapshots`, `n_messages`, `n_alerts`
+  and `n_decisions`.
+- **Sizes (sample lake, deployed model).** 2023 R5: 57 laps, 1,395 messages (216 alerts), 567 decisions, 1,417,039 B
+  JSON → 139,465 B gzip. 2024 R5: 56 laps, 1,252 messages (141 alerts), 409 decisions, 1,257,110 B → 123,092 B.

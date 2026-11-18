@@ -35,6 +35,7 @@ flowchart LR
 | `serving` | Redis key contract and store (TTL on session end) |
 | `sim` | What-if race simulation (pit now / pit next lap / stay out) |
 | `api` | FastAPI routes and the SSE stream for the dashboard |
+| `archive` | Post-race replay bundles built with the frozen stream path, and the proof that they equal a live replay (Feature 4, display only) |
 | `bench` | Step 10 Spark benchmarks: replication, timing, resource sampling, scalability grid, partitioning/caching (docs/experiments.md); Step 16 streaming runs and `make experiments` |
 | top level | `config.py` (the only source of paths and endpoints), `demo_runs.py` (demo output folders), `demo_replay.py` (`make demo`'s headless replay check, Step 17) |
 
@@ -711,6 +712,8 @@ browser (http://localhost:3000) --CORS--> FastAPI (uvicorn, 127.0.0.1:8000)
   GET  /api/races/{s}/{r}/analysis/{view}  meta:analysis:{s}:{r}:{view} (SET EX) | clean/analysis_* (display only)
        view = laps | stints | pitstops | race-control | positions;  …/analysis/compare?a=CODE&b=CODE
   GET  /api/races/{s}/{r}/engineer/{id}?lap=N  lap log (laps <= N) + driver hashes (read only) + earlier-race priors
+  GET  /api/archive                        archive/race_bundle manifests (in-process TTL; HTTP ETag)
+  GET  /api/archive/{s}/{r}                archive/race_bundle bundle.json.gz (stored gzip, ETag = sha256)
   GET  /api/races/{s}/{r}/events           SUBSCRIBE race:{s}:{r}:events -> text/event-stream
   POST /api/races/{s}/{r}/replay           subprocesses: stream_job, then producer (ENABLE_REPLAY=1)
   GET  /api/replays                        running replays + the last 20 with state / error
@@ -748,6 +751,8 @@ Docs: `/api/docs`, `/api/openapi.json`.
 | `GET …/analysis/{laps,stints,pitstops,race-control,positions}` | 200 `{season, round, coverage, rows: [...]}`; 404 no `analysis_race` row (or 2025 sealed); 422; 500 a stored row is malformed; 503 clean zone unavailable |
 | `GET …/analysis/compare?a=&b=` | 200 `{season, round, coverage, a, b, rows: [...]}` (deltas a − b); 404 no analysis or a code without laps; 422 a code not `[A-Z]{3}` or a = b; 500; 503 |
 | `GET …/engineer/{driverId}?lap=N` | 200 `EngineerOut` (cards ahead/focus/behind, pairs, rejoin, calls; laps <= N only); 404 race not in the lake (or 2025 sealed), no live state or no laps for the driver; 409 no laps recorded yet, or lap N outside the recorded laps; 422 bad driverId or lap; 503 Redis or lake unavailable. Never writes Redis; not cached |
+| `GET /api/archive` | 200 `{races: [{season, round, race_name, laps, synthetic, schema_version, model_version, scorer_sha256, sha256, size_bytes, raw_bytes}]}`; 304 on `If-None-Match`; 500 a stored manifest is malformed; 503 archive zone unavailable. 2025 only with `ALLOW_TEST_SEASON=1` |
+| `GET /api/archive/{s}/{r}` | 200 the bundle (schema v1; `Content-Encoding: gzip` when accepted, else JSON; `ETag` = sha256 of the stored gzip, `Cache-Control: no-cache`, `Vary: Accept-Encoding`); 304 on `If-None-Match`; 404 no bundle (or 2025 sealed); 422; 500 the bytes do not match the manifest or break the schema; 503 |
 | `GET …/events` | 200 `text/event-stream`; 422 bad season/round |
 | `POST …/replay` `{speed: 1\|10\|60}` | 202 (with `run_id`, `state`); 403 disabled or 2025; 404 not in the clean zone; 409 running / limit; 422; 500 launch failed; 503 |
 | `GET /api/replays` | 200 `{enabled, max_running, running, recent}` (state `starting/running/finished/failed`, error, exit codes) |
@@ -1097,10 +1102,74 @@ request:  Redis hashes (api/state)  +  lap log (race channel)  +  features/pit_l
   Reserved height, bar transition only without reduced motion, and the table scrolls inside the panel at 375 px.
 
 
+## Post-race archive (`archive/`, `api/archive.py`, Feature 4, display only)
+```
+clean + features (one race) --producer.build_events--> events --parity.kafka_batches(1 row each), cut per leader lap-->
+  StreamProcessor.process_rows (rule, live features, calibrated LR, alert policy: unchanged) --RedisSink-->
+  RaceStore (real encoder) on MemoryRedis --after each lap: api.state.read_race_state--> snapshot N
+  --> bundle.json.gz + _manifest.json in {lake}/archive/race_bundle/season=S/round=R/  --GET /api/archive/{s}/{r}-->
+  web: reset + (lap messages + snapshot) for each lap <= N through the unchanged raceReducer --> tower, gaps, tyres, alerts
+```
+- **Same code path as live.** The archive builder (`archive/build.py`, `archive/replay.py`) feeds the producer's events
+  to `StreamProcessor.process_rows`, the `foreachBatch` function itself. The sink is the stream's `RedisSink` on the real
+  `RaceStore`, whose client is an in-process stand-in (`archive/memory_redis.py`: only the commands the store and the
+  API reader send, tested against fakeredis). So every hash field, order score and published message is produced by the
+  frozen encoder. Each snapshot is read back with the API's `read_race_state`. No alert, probability or state is
+  re-derived; the bundle stores what the processor published and scored.
+- **Micro-batches.** One per leader lap N: from the leader's first lap-N `lap` event up to, not including, the
+  leader's first lap-(N+1) event (a lap-1 `pit_in` before the first crossing joins lap 1; the `session_end` events
+  join the last lap). The snapshot of lap N is therefore Redis at the **end of lap N** (user decision), a state a live
+  replay also passes through. The decisions and alerts do not depend on the micro-batching (parity suite).
+- **Determinism (transport only).** Event ids are derived (`uuid5` digests with the uuid4 version bits, because the
+  event schema accepts only uuid4), and one simulated clock (race start + 180 s + race time, the `df_jobs`
+  lap-timestamp convention) stamps `produced_at_ms` and feeds the processor's, sink's and store's clocks. The rule,
+  the live features, the scorer and the alert policy read neither. gzip `mtime=0` and sorted keys: a rebuild is
+  byte-identical (tested; also checked on the sample lake by sha256).
+- **Bundle (schema v1, `archive/schema.py`).** `meta` (race, laps, synthetic, model version and scorer sha256,
+  model and builder git sha, micro-batch rule, clock note), `entrants` (the `GET …/entrants` rows), `snapshots`
+  (per lap: the 9 driver-hash fields, the order and the tyre hash, exactly `GET /state`), `messages` (every
+  published message verbatim, with the SSE `event_id` and its micro-batch lap), `decisions` (every scored eligible
+  pair), `track` (the leader's per-lap SC/VSC/red/neutralised flags from `analysis_laps`) and `race_control`
+  (`analysis_race_control`). Validation refuses NaN, unsorted laps, messages of another race, a `session_end`
+  outside the last lap and duplicate ids. Sizes on the sample: 123–139 KB gzip per race (1.26–1.42 MB JSON).
+- **Lake.** Only `{lake}/archive/race_bundle/season=S/round=R/{bundle.json.gz,_manifest.json}` is written
+  (`FileSink` under `./data/lake`, or `HdfsSink` through HttpFS); never `raw`, a clean or feature table, or
+  `results/`. 2025 only with `--allow-test-season`. Missing prerequisites (features, entrants, analysis) give exit 1
+  with the make target.
+- **Proof of equivalence** (`archive/equivalence.py`, `make archive-equivalence`):
+  1. the stored bundle equals a rebuild;
+  2. its alerts and decisions equal an independent parity-harness run (batch 50, partition 0 lagging), and
+     `parity.check_alerts` / `compare_race` pass against the batch tables (sample 2024 R5 with the deployed model:
+     113 / 19 / 9, 409 eligible pairs);
+  3. a **controlled live replay**: the real stream job (Kafka → Structured Streaming → `RedisSink` → Redis) is fed
+     the producer's events up to the end of each checked lap. After the subscriber has seen every lap/pit message sent,
+     Redis read by `read_race_state` must equal the bundle snapshot (`updated_at` excluded: wall clock live). After
+     `session_end` the final state and every published message (without ids and timing fields) must equal too.
+     It refuses while an api replay runs. Unit tests also compare every lap of both sample races with a
+     batch-size-1 replay into fakeredis through the real `RaceStore`.
+- **API.** Read-only through `catalog.archive_reader` (zone `archive`, table `race_bundle`, `read_file` of the two
+  file names only, LISTSTATUS/OPEN only). The listing is cached in process (`API_ARCHIVE_CACHE_S`, 300 s); each new
+  sha256 is checked against the manifest and validated once, then served as stored. HTTP caching only: no Redis key.
+- **Dashboard.** The race page has a "Live | Post-race (archive)" tab pair (WAI-ARIA tabs; only the selected mode is
+  mounted, so the post-race mode opens no event stream). The mode and lap are in the URL (`?mode=archive&lap=N`).
+  - `lib/archive.ts` drives the **unchanged** live reducer: for each lap ≤ N its messages (as SSE data lines),
+    then its snapshot. Forward moves are incremental, backward moves recompute. Announcements are cleared, so the
+    alert feed's live region stays silent.
+  - The tower (caption names the archive), gap chart, tyre panel and alert feed are the live components. A
+    race-control list shows the messages up to lap N, and the "Race analysis" link opens the lap-time view with
+    lap N marked.
+  - Controls (`ArchiveControls.tsx`): a native range slider (`aria-valuetext` "Lap N of M"), −1 / Play-Pause / +1
+    buttons, and 1×/10×/60× playback, client-side, one leader lap time per lap divided by the speed.
+  - Event markers sit under the slider in three labelled lanes: pits P; SC, VSC, red flag R and the estimated
+    neutralisation N; the announced alerts A. They form one toolbar (one tab stop; arrows, Home, End). Each marker
+    is a button with a text code, a border style per kind and a full accessible name, so colour carries no meaning.
+  - Engineer and What-if stay live-only, because they query the current server state.
+
 ## Demo and CI (Step 17)
 - **`make demo`** (after `make up` and `make sample-data`) needs no credentials, no HDFS and no host Java.
   - **`demo-pipeline`** runs in the app container (`docker compose exec`): sample ETL, sample features (counts to
-    `data/demo/<run>/`, never `results/`), the sample deployment model and the sample tyre model.
+    `data/demo/<run>/`, never `results/`), the sample deployment model, the sample post-race archive (Feature 4,
+    with the sample model) and the sample tyre model.
   - **`demo-replay`** recreates only the api with `REPLAY=1 MODEL_DIR=models/undercut/sample_deploy_real_G3.5_k2`,
     then runs `f1sa.demo_replay` in the app container against `http://api:8000`:
     - checks: health (Redis, Kafka, model and its version, synthetic lake) and that the race is listed as

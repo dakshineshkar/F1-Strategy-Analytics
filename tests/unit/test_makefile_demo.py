@@ -47,6 +47,7 @@ def test_demo_runs_the_sample_pipeline_in_the_app_container_then_the_replay() ->
         "python -m f1sa.etl.analysis --source sample",
         "python -m f1sa.features.build --source sample --results-dir data/demo/demo_",
         "python experiments/model_save.py --source sample --force",
+        f"python -m f1sa.archive.build --source sample --model-dir {SAMPLE_MODEL}",
         "python -m f1sa.sim.tyre_model --source sample",
         "python -m f1sa.demo_replay --api http://api:8000 --season 2024 --round 5 --speed 60",
     ]

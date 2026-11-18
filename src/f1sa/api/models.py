@@ -635,3 +635,26 @@ class EngineerOut(_Out):
     rejoin: EngineerRejoinOut
     calls: list[EngineerCallOut]
     disclaimer: str
+
+
+# ------------------------------------------------------------------ post-race archive (Feature 4)
+class ArchiveRaceOut(_Out):
+    """One race of ``GET /api/archive`` (from its ``_manifest.json``)."""
+
+    season: int
+    round: int
+    race_name: str | None
+    laps: int = Field(ge=1)
+    synthetic: bool
+    schema_version: int
+    model_version: str
+    scorer_sha256: str
+    sha256: str = Field(description="of the stored bundle.json.gz (the bundle's ETag)")
+    size_bytes: int = Field(ge=1, description="bundle.json.gz")
+    raw_bytes: int = Field(ge=1, description="the bundle's JSON before gzip")
+
+
+class ArchiveListOut(_Out):
+    """``GET /api/archive``: every race with a post-race bundle (season, round order)."""
+
+    races: list[ArchiveRaceOut]
