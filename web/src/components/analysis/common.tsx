@@ -82,7 +82,9 @@ export function LapLink({ lap, onLap, children }: { lap: number; onLap: (lap: nu
 export function ChartTable({ caption, head, children }: { caption: string; head: ReactNode; children: ReactNode }) {
   return (
     <details className="chart-table">
-      <summary>Show table</summary>
+      <summary>
+        Show table <span className="visually-hidden">: {caption}</span>
+      </summary>
       <div className="tower-wrap" role="region" aria-label={caption} tabIndex={0}>
         <table className="tower analysis-table">
           <caption>{caption}</caption>
@@ -94,15 +96,31 @@ export function ChartTable({ caption, head, children }: { caption: string; head:
   );
 }
 
+/** The coverage notes above the views: neutral text. A SYNTHETIC note leads with the honesty stamp (a dashed
+ * outline and the word, never a colour alone). */
 export function Notes({ notes }: { notes: readonly string[] }) {
   if (notes.length === 0) return null;
   return (
     <ul className="analysis-notes">
-      {notes.map((n) => (
-        <li key={n} className={n.startsWith("SYNTHETIC") ? "is-synthetic" : undefined}>
-          {n}
-        </li>
-      ))}
+      {notes.map((n) =>
+        n.startsWith("SYNTHETIC") ? (
+          <li key={n} className="is-synthetic">
+            <span className="stamp">SYNTHETIC</span>
+            {n.slice("SYNTHETIC".length).replace(/^:\s*/, " ")}
+          </li>
+        ) : (
+          <li key={n}>{n}</li>
+        ),
+      )}
     </ul>
+  );
+}
+
+/** The synthetic-data stamp inside a view's note (tyre strategy, degradation). */
+export function SyntheticStamp({ children }: { children: ReactNode }) {
+  return (
+    <span className="synthetic-tag">
+      <span className="stamp">SYNTHETIC</span> {children}
+    </span>
   );
 }

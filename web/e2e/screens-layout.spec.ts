@@ -210,3 +210,148 @@ for (const vp of [VIEWPORTS[0], VIEWPORTS[2]]) {
     });
   });
 }
+
+/**
+ * Redesign step 4B: every race-analysis tab and the drivers view, at 1440 dark, 1440 light and 390 dark:
+ *   - no horizontal page scroll; no HTML box cut; every SVG chart label inside its chart (nothing cut off);
+ *   - the whole tab bar visible at once (it wraps on a phone, never scrolls a tab out of view);
+ *   - the tabs work from the keyboard (arrows, Home, End), and each chart's hover readout opens from the keyboard
+ *     and stays inside the page;
+ *   - no signal amber on the tab bar or "Show table" (the amber is the live call's).
+ * Telemetry renders its own state when the lake has no traces (the layout is checked either way).
+ */
+const ANALYSIS_TABS = [
+  "Tyre strategy",
+  "Lap times",
+  "Tyre degradation",
+  "Positions",
+  "Compare",
+  "Pit stops",
+  "Race control",
+  "Telemetry",
+] as const;
+
+/** SVG text elements of the analysis charts that reach outside their SVG's box (a cut label). */
+async function cutChartText(page: Page): Promise<string[]> {
+  return page.evaluate(() =>
+    [...document.querySelectorAll(".analysis-view svg.chart")].flatMap((svg) => {
+      const box = svg.getBoundingClientRect();
+      return [...svg.querySelectorAll("text")]
+        .map((t) => ({ t, r: t.getBoundingClientRect() }))
+        .filter(({ r }) => r.width > 0)
+        .filter(({ r }) => r.left < box.left - 1 || r.right > box.right + 1 || r.top < box.top - 1 || r.bottom > box.bottom + 1)
+        .map(({ t, r }) => `"${t.textContent}" ${Math.round(r.left)}–${Math.round(r.right)} in ${Math.round(box.left)}–${Math.round(box.right)}`);
+    }),
+  );
+}
+
+async function amberOn(page: Page, selector: string): Promise<number> {
+  return page.evaluate((sel) => {
+    const probe = document.createElement("span");
+    document.body.append(probe);
+    const colours = ["--signal", "--signal-mark", "--signal-ink"].map((v) => {
+      probe.style.color = `var(${v})`;
+      return getComputedStyle(probe).color;
+    });
+    probe.remove();
+    return [...document.querySelectorAll(sel)].filter((e) => {
+      const s = getComputedStyle(e);
+      return [s.color, s.borderBottomColor, s.backgroundColor].some((c) => colours.includes(c));
+    }).length;
+  }, selector);
+}
+
+for (const vp of VIEWPORTS) {
+  test.describe(`race analysis at ${vp.name}`, () => {
+    test.use({ viewport: { width: vp.width, height: vp.height } });
+
+    test("every tab: no overflow, nothing cut, the tab bar whole and neutral", async ({ page }) => {
+      test.setTimeout(120_000);
+      await useTheme(page, vp.theme);
+      await page.goto(`${RACE}/analysis`);
+      const tablist = page.getByRole("tablist", { name: "Race analysis views" });
+      await expect(tablist.getByRole("tab")).toHaveCount(ANALYSIS_TABS.length, { timeout: 30_000 });
+      for (const name of ANALYSIS_TABS) await expect(tablist.getByRole("tab", { name }), `tab visible: ${name}`).toBeInViewport({ ratio: 1 });
+      for (const name of ANALYSIS_TABS) {
+        await tablist.getByRole("tab", { name }).click();
+        const panel = page.getByRole("tabpanel");
+        await expect(panel.locator("section.analysis-view")).toBeVisible();
+        await expect(panel).not.toContainText(/Loading the (comparison|telemetry)/, { timeout: 30_000 });
+        // HTML boxes only: SVG text has no meaningful scrollWidth and is checked against its chart below
+        const m = await layout(
+          page,
+          ".race-head-sub, .race-head-sub *, .analysis-tabs, .analysis-tabs *, .analysis-panel, .analysis-panel *:not(svg, svg *), .analysis-notes *, .legend",
+        );
+        expect(m.overflow, `${name}: page overflow`).toBeLessThanOrEqual(0);
+        expect(m.cut, `${name}: cut boxes`).toEqual([]);
+        expect(await cutChartText(page), `${name}: cut chart labels`).toEqual([]);
+      }
+      expect(await amberOn(page, ".analysis-tabs [role=tab], .chart-table summary")).toBe(0);
+    });
+
+    test("tabs by keyboard (arrows, Home, End) and the hover readout from the keyboard", async ({ page }) => {
+      await useTheme(page, vp.theme);
+      await page.goto(`${RACE}/analysis?view=strategy`);
+      const tab = (name: string) => page.getByRole("tab", { name, exact: true });
+      await tab("Tyre strategy").focus();
+      await page.keyboard.press("ArrowRight");
+      await expect(tab("Lap times")).toHaveAttribute("aria-selected", "true");
+      await expect(tab("Lap times")).toBeFocused();
+      await page.keyboard.press("ArrowLeft");
+      await expect(tab("Tyre strategy")).toBeFocused();
+      await page.keyboard.press("End");
+      await expect(tab("Telemetry")).toHaveAttribute("aria-selected", "true");
+      await expect(tab("Telemetry")).toBeFocused();
+      await page.keyboard.press("Home");
+      await expect(tab("Tyre strategy")).toHaveAttribute("aria-selected", "true");
+      await expect(tab("Tyre strategy")).toBeFocused();
+      // the lap-times readout: focus the chart's slider, step a lap, read every chosen driver
+      await tab("Lap times").click();
+      const slider = page.getByRole("slider", { name: "Lap times: read a lap" });
+      await slider.focus();
+      await page.keyboard.press("Home");
+      await page.keyboard.press("ArrowRight");
+      await expect(slider).toHaveAttribute("aria-valuetext", /^Lap 2, /);
+      const tip = page.locator(".chart-tip");
+      await expect(tip).toBeVisible();
+      const r = await tip.boundingBox();
+      expect(r!.x).toBeGreaterThanOrEqual(0);
+      expect(r!.x + r!.width).toBeLessThanOrEqual(vp.width);
+      await page.keyboard.press("Tab");
+      await expect(tip).toHaveCount(0);
+    });
+  });
+}
+
+for (const vp of VIEWPORTS) {
+  test.describe(`drivers view at ${vp.name}`, () => {
+    test.use({ viewport: { width: vp.width, height: vp.height } });
+
+    test("the table fits: no overflow, nothing cut, the head in the live order", async ({ page }) => {
+      await useTheme(page, vp.theme);
+      await page.goto(`${RACE}/drivers`);
+      const drivers = page.getByRole("table", { name: /Drivers/ });
+      await expect(drivers.locator("tbody tr")).toHaveCount(20, { timeout: 30_000 });
+      const views = page.getByRole("navigation", { name: "Race views" });
+      await expect(views.getByRole("link", { name: "Drivers" })).toHaveAttribute("aria-current", "page");
+      await expect(views.getByRole("link", { name: "Live race" })).toHaveAttribute("href", RACE);
+      const m = await layout(page, ".race-head-sub, .race-head-sub *, .drivers-panel, .drivers-panel *");
+      expect(m.overflow).toBeLessThanOrEqual(0);
+      expect(m.cut).toEqual([]);
+      // the table needs no sideways scroll inside its region either
+      const wide = await page.evaluate(() => {
+        const w = document.querySelector(".drivers-wrap")!;
+        return w.scrollWidth - w.clientWidth;
+      });
+      expect(wide).toBeLessThanOrEqual(0);
+      // no cell paints over the next one (each row's cells are side by side, none overlapping)
+      const overlaps = await page.evaluate(() =>
+        [...document.querySelectorAll(".drivers-table tr")].flatMap((tr) => {
+          const cells = [...tr.children].map((c) => c.getBoundingClientRect());
+          return cells.slice(1).filter((c, i) => c.left < (cells[i] as DOMRect).right - 1).map(() => tr.getAttribute("data-driver") ?? "head");
+        }),
+      );
+      expect(overlaps).toEqual([]);
+    });
+  });
+}

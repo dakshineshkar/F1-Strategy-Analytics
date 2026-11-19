@@ -29,6 +29,11 @@ export function lapTime(seconds: number | null): string {
   return minutes > 0 ? `${minutes}:${secs}` : rest.toFixed(3);
 }
 
+/** A lap-time axis tick: ``lapTime`` without a zero fraction ("1:52", "1:52.5"), so the axis stays recessive. */
+export function lapTick(seconds: number): string {
+  return lapTime(seconds).replace(/\.?0+$/, "");
+}
+
 export function probability(p: number | null): string {
   if (p === null) return DASH;
   return `${Math.round(p * 100)}%`;

@@ -40,7 +40,9 @@ export function RaceControlList({ rows, names, onLap }: { rows: readonly RaceCon
             {shown.map((r) => (
               <li key={r.seq} className={r.is_key ? "is-key" : undefined}>
                 <span className="rc-lap">{r.lap !== null ? <LapLink lap={r.lap} onLap={onLap} /> : "—"}</span>
-                <span className={`rc-kind rc-${r.kind}`}>{RC_KIND_LABEL[r.kind]}</span>
+                <span className="rc-kind-cell">
+                  <span className={`rc-kind rc-${r.kind}`}>{RC_KIND_LABEL[r.kind]}</span>
+                </span>
                 <span className="rc-time">{clock(r.time_utc)} UTC</span>
                 <span className="rc-msg">
                   {r.message ?? ""}

@@ -1,12 +1,12 @@
 "use client";
 
-import Link from "next/link";
 import { useEffect, useState } from "react";
 
 import { api, type Race } from "@/lib/api";
 import { useEntrants } from "@/lib/useEntrants";
 
 import { DriversView } from "./DriversView";
+import { RaceSubHead } from "./RaceSubHead";
 
 export function DriversPage({ season, round }: { season: number; round: number }) {
   const { entrants, error } = useEntrants(season, round);
@@ -22,15 +22,7 @@ export function DriversPage({ season, round }: { season: number; round: number }
 
   return (
     <>
-      <div className="race-head">
-        <nav aria-label="Breadcrumb" className="crumbs">
-          <Link href="/">All races</Link> / <Link href={`/race/${season}/${round}`}>Race</Link>
-        </nav>
-        <h1>
-          <span className="race-season">{season}</span> {race?.name ?? `Round ${round}`}
-          <span className="muted"> · R{round} · Drivers</span>
-        </h1>
-      </div>
+      <RaceSubHead season={season} round={round} name={race?.name ?? null} page="drivers" />
       {error !== null ? (
         <p className="error" role="alert">
           Could not load the drivers: {error}

@@ -1,9 +1,9 @@
 "use client";
 
-import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState, type KeyboardEvent } from "react";
 
 import { Legend } from "@/components/Legend";
+import { RaceSubHead } from "@/components/RaceSubHead";
 import {
   analysisSearch,
   codeIndex,
@@ -83,23 +83,7 @@ export function AnalysisPage({ season, round, initial }: { season: number; round
     document.getElementById(tabId(v))?.focus();
   };
 
-  const head = (
-    <div className="race-head">
-      <nav aria-label="Breadcrumb" className="crumbs">
-        <Link href="/">All races</Link> / <Link href={`/race/${season}/${round}`}>Race</Link>
-      </nav>
-      <nav aria-label="Race views" className="race-views">
-        <Link href={`/race/${season}/${round}/drivers`}>Drivers</Link>{" "}
-        <Link href={`/race/${season}/${round}/analysis`} aria-current="page">
-          Race analysis
-        </Link>
-      </nav>
-      <h1>
-        <span className="race-season">{season}</span> {race?.name ?? `Round ${round}`}
-        <span className="muted"> · R{round} · Race analysis</span>
-      </h1>
-    </div>
-  );
+  const head = <RaceSubHead season={season} round={round} name={race?.name ?? null} page="analysis" />;
 
   if (error !== null) {
     return (

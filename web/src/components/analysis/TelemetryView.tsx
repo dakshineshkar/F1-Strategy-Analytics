@@ -464,7 +464,8 @@ export function TelemetryView({
             </span>
             <span className="muted">
               {" "}
-              Team colours; A solid, B dashed{styles.sameColour ? " (same colour: tell them apart by the line style)" : ""}.
+              {styles.a.neutral || styles.b.neutral ? "Team colours, a car without one in neutral ink" : "Team colours"}; A solid, B
+              dashed{styles.closeColours ? " (similar colours: tell them apart by the line style)" : ""}.
               In the brake and DRS lanes A is the upper, filled row and B the lower, outlined row.{" "}
               <InfoTip id="telgrid" />
             </span>

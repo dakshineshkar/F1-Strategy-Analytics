@@ -4,6 +4,7 @@
  * the whole response, as for the entrants. */
 
 import { isBool, isDriverId, isFiniteNumber, isInt, isObj, isStr } from "./guard";
+import { lapTime } from "./format";
 import { median } from "./plot";
 
 // ------------------------------------------------------------------ types
@@ -768,3 +769,61 @@ export function sectorTotals(rows: readonly CompareLap[]): { sector: 1 | 2 | 3; 
 /** The race-control list: key events only (SC, VSC, red flag, penalties) unless ``all``. */
 export const raceControlRows = (rows: readonly RaceControlMsg[], all: boolean): RaceControlMsg[] =>
   rows.filter((r) => all || r.is_key);
+
+// ------------------------------------------------------------------ text summaries (each chart's words)
+/** One line per chosen driver: the best lap and the median of the racing laps (no pit-in or pit-out lap, no
+ * SC/VSC lap), so the chart's story is readable without the plot. */
+export function lapTimesSummary(series: readonly { driverId: string; points: readonly LapPoint[] }[], code: (id: string) => string): string[] {
+  return series.map((s) => {
+    if (s.points.length === 0) return `${code(s.driverId)}: no timed laps.`;
+    const best = s.points.reduce((b, p) => (p.time < b.time ? p : b));
+    const racing = s.points.filter((p) => p.pit === null && !p.neutralised).map((p) => p.time);
+    const mid = median(racing);
+    return (
+      `${code(s.driverId)}: best ${lapTime(best.time)} on lap ${best.lap}` +
+      (mid === null ? "; no racing laps." : `; median ${lapTime(mid)} over ${racing.length} racing lap${racing.length === 1 ? "" : "s"}.`)
+    );
+  });
+}
+
+/** The winner and the biggest gain and loss from the grid among the cars running at the end (a car that stopped
+ * early has no finishing place to compare). A pit-lane start counts from the back of the field. */
+export function positionsSummary(series: readonly PositionSeries[], code: (id: string) => string): string {
+  const withLaps = series.filter((s) => s.positions.length > 0);
+  if (withLaps.length === 0) return "No positions in the lake for this race.";
+  const lastLap = Math.max(...withLaps.map((s) => (s.positions[s.positions.length - 1] as { lap: number }).lap));
+  const field = Math.max(series.length, ...withLaps.flatMap((s) => s.positions.map((p) => p.position)));
+  const startOf = (g: number) => (g > 0 ? g : field);
+  const startText = (g: number) => (g > 0 ? `P${g}` : "the pit lane");
+  const running = withLaps
+    .filter((s) => (s.positions[s.positions.length - 1] as { lap: number }).lap === lastLap)
+    .map((s) => ({ id: s.driver_id, grid: s.grid, end: (s.positions[s.positions.length - 1] as { position: number }).position }));
+  const parts: string[] = [];
+  const winner = running.find((r) => r.end === 1);
+  if (winner) parts.push(`${code(winner.id)} won${winner.grid === null ? "" : ` from ${startText(winner.grid)}`}.`);
+  const moves = running
+    .filter((r): r is { id: string; grid: number; end: number } => r.grid !== null)
+    .map((r) => ({ ...r, change: startOf(r.grid) - r.end }));
+  const gain = moves.reduce<(typeof moves)[number] | null>((b, m) => (m.change > 0 && (b === null || m.change > b.change) ? m : b), null);
+  const loss = moves.reduce<(typeof moves)[number] | null>((b, m) => (m.change < 0 && (b === null || m.change < b.change) ? m : b), null);
+  if (gain) parts.push(`Biggest gain: ${code(gain.id)}, ${startText(gain.grid)} to P${gain.end} (${gain.change} places).`);
+  if (loss) parts.push(`Biggest loss: ${code(loss.id)}, ${startText(loss.grid)} to P${loss.end} (${-loss.change} places).`);
+  const out = series.length - running.length;
+  parts.push(`${running.length} car${running.length === 1 ? "" : "s"} ran to lap ${lastLap}${out > 0 ? `; ${out} stopped earlier` : ""}.`);
+  return parts.join(" ");
+}
+
+/** The stops in one sentence: how many, by how many drivers, how many under SC/VSC, and the shortest pit-lane
+ * time (entry to exit) with who and when. */
+export function pitStopsSummary(stops: readonly PitStop[], code: (id: string) => string): string {
+  if (stops.length === 0) return "No pit stops in the lake for this race.";
+  const drivers = new Set(stops.map((s) => s.driver_id)).size;
+  const neutral = stops.filter((s) => s.under_neutralisation === true).length;
+  const timed = stops.filter((s): s is PitStop & { duration_s: number } => s.duration_s !== null);
+  const best = timed.reduce<(typeof timed)[number] | null>((b, s) => (b === null || s.duration_s < b.duration_s ? s : b), null);
+  return (
+    `${stops.length} stop${stops.length === 1 ? "" : "s"} by ${drivers} driver${drivers === 1 ? "" : "s"}` +
+    `; ${neutral} under SC/VSC.` +
+    (best ? ` Shortest pit-lane time: ${best.duration_s.toFixed(3)} s, ${code(best.driver_id)} on lap ${best.lap}.` : " No pit-lane times in the lake.")
+  );
+}

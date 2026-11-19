@@ -8,8 +8,10 @@ import { describe, expect, it } from "vitest";
 import { makeNames } from "@/components/analysis/common";
 import { Lanes, ReadoutTable, TelemetryView } from "@/components/analysis/TelemetryView";
 import { analysisSearch, parseAnalysisQuery } from "@/lib/analysis";
+import { dark, light } from "@/lib/theme";
 import {
   carStyles,
+  strokesClose,
   crosshairKey,
   gainsAndLosses,
   LANES,
@@ -309,10 +311,41 @@ describe("picking laps and the URL", () => {
     const team = carStyles({ colour: "#3366ff" }, { colour: "#3366ff" });
     expect(team.a.dash).toBe("");
     expect(team.b.dash).not.toBe("");
-    expect(team.sameColour).toBe(true);
+    expect(team.closeColours).toBe(true);
     const none = carStyles(null, null);
-    expect([none.a.colour, none.b.colour]).toEqual(["var(--line-0)", "var(--line-1)"]);
-    expect(none.sameColour).toBe(false);
+    expect([none.a.colour, none.b.colour]).toEqual(["var(--text)", "var(--text)"]);
+    expect([none.a.neutral, none.b.neutral]).toEqual([true, true]);
+    expect(none.closeColours).toBe(true);
+  });
+
+  it("a car without a team colour is neutral text ink, never a chart-line colour next to a team colour", () => {
+    for (const [a, b] of [
+      [{ colour: "#3671c6" }, null],
+      [null, { colour: "#ff8000" }],
+    ] as const) {
+      const s = carStyles(a, b);
+      expect([s.a.colour, s.b.colour].join(" ")).not.toMatch(/--line-/);
+      expect([s.a.colour, s.b.colour]).toContain("var(--text)");
+      expect(s.a.dash).toBe("");
+      expect(s.b.dash).toBe("6 4");
+    }
+    // a team colour stands apart from the neutral ink; a white one does not in dark (the legend then says so)
+    expect(carStyles({ colour: "#3671c6" }, null).closeColours).toBe(false);
+    expect(carStyles({ colour: "#ff8000" }, null).closeColours).toBe(false);
+    expect(carStyles({ colour: "#4e7c9b" }, null).closeColours).toBe(false);
+    expect(carStyles({ colour: "#ffffff" }, null).closeColours).toBe(true);
+    // Mercedes teal is far from the ink with normal vision (17.3) but not under protanopia (4.2 in the validator)
+    expect(carStyles({ colour: "#27f4d2" }, null).closeColours).toBe(true);
+    expect(carStyles({ colour: dark.text }, null).closeColours).toBe(true);
+    expect(carStyles(null, { colour: light.text }).closeColours).toBe(true);
+  });
+
+  it("strokesClose: equal, near and far colours; a value it cannot measure is not close", () => {
+    expect(strokesClose("#3366ff", "#3366ff")).toBe(true);
+    expect(strokesClose("#3366ff", "#3467fe")).toBe(true);
+    expect(strokesClose("#3366ff", "#ff8000")).toBe(false);
+    expect(strokesClose("var(--text)", "var(--text)")).toBe(true);
+    expect(strokesClose("var(--line-0)", "#ff8000")).toBe(false);
   });
 });
 

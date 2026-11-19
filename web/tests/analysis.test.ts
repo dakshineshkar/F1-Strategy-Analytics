@@ -3,6 +3,8 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
 import { AnalysisPage } from "@/components/analysis/AnalysisPage";
+import { ChartHover, readoutSentence } from "@/components/analysis/ChartHover";
+import { RaceSubHead } from "@/components/RaceSubHead";
 import { makeNames } from "@/components/analysis/common";
 import { compareText, CompareView } from "@/components/analysis/CompareView";
 import { DegradationChart, fitText } from "@/components/analysis/DegradationChart";
@@ -22,9 +24,12 @@ import {
   lapList,
   lapSeries,
   lapTimeDomain,
+  lapTimesSummary,
   neutralRanges,
   parseAnalysisQuery,
+  pitStopsSummary,
   positionLines,
+  positionsSummary,
   raceControlRows,
   sectorTotals,
   signed,
@@ -48,7 +53,7 @@ import {
   type RaceControlMsg,
   type Stint,
 } from "@/lib/analysis";
-import { linear, median, niceTicks, pathOf, spreadLabels } from "@/lib/plot";
+import { hoverKey, linear, median, nearestPoint, niceTicks, pathOf, spreadLabels } from "@/lib/plot";
 import { COMPOUND_TOKENS, contrastRatio, dark, inkOn, light, themeCss } from "@/lib/theme";
 
 const html = (el: Parameters<typeof renderToStaticMarkup>[0]) => renderToStaticMarkup(el);
@@ -373,6 +378,51 @@ describe("chart data shaping", () => {
   });
 });
 
+describe("text summaries (Step 4B)", () => {
+  const code = NAMES.code;
+
+  it("lap times: best lap and the median of racing laps per driver; no laps and no racing laps say so", () => {
+    const lines = lapTimesSummary(lapSeries(LAPS, ["alpha", "bravo"]), code);
+    // alpha: best 1:29.000 on lap 6; racing laps = 1, 2, 6 (3 pit-in, 4 pit-out + SC, 5 SC)
+    expect(lines[0]).toBe("ALP: best 1:29.000 on lap 6; median 1:30.200 over 3 racing laps.");
+    expect(lines[1]).toBe("BRA: best 1:30.000 on lap 6; median 1:31.250 over 4 racing laps.");
+    expect(lapTimesSummary([{ driverId: "alpha", points: [] }], code)).toEqual(["ALP: no timed laps."]);
+    const scOnly = lapSeries([lap("alpha", 4, 130, SC)], ["alpha"]);
+    expect(lapTimesSummary(scOnly, code)).toEqual(["ALP: best 2:10.000 on lap 4; no racing laps."]);
+  });
+
+  it("positions: winner, gain from a pit-lane start, loss, and cars that stopped early", () => {
+    const series: PositionSeries[] = [
+      { driver_id: "alpha", driver_code: "ALP", grid: 2, positions: [{ lap: 1, position: 2 }, { lap: 2, position: 1 }] },
+      { driver_id: "bravo", driver_code: "BRA", grid: 0, positions: [{ lap: 1, position: 3 }, { lap: 2, position: 2 }] },
+      { driver_id: "charlie", driver_code: "CHA", grid: 1, positions: [{ lap: 1, position: 1 }, { lap: 2, position: 3 }] },
+      { driver_id: "delta", driver_code: "DEL", grid: 3, positions: [{ lap: 1, position: 4 }] },
+    ];
+    expect(positionsSummary(series, code)).toBe(
+      "ALP won from P2. Biggest gain: BRA, the pit lane to P2 (2 places). Biggest loss: CHA, P1 to P3 (2 places). " +
+        "3 cars ran to lap 2; 1 stopped earlier.",
+    );
+    expect(positionsSummary([], code)).toBe("No positions in the lake for this race.");
+    // nobody moved: no gain or loss sentence; a missing grid gives no start
+    expect(positionsSummary([{ driver_id: "alpha", driver_code: "ALP", grid: null, positions: [{ lap: 1, position: 1 }] }], code)).toBe(
+      "ALP won. 1 car ran to lap 1.",
+    );
+  });
+
+  it("pit stops: count, drivers, SC/VSC stops and the shortest pit-lane time; null times are skipped", () => {
+    const more: PitStop[] = [
+      ...PITS,
+      { ...(PITS[0] as PitStop), driver_id: "bravo", stop: 1, lap: 4, duration_s: 21.9, under_neutralisation: true },
+      { ...(PITS[0] as PitStop), driver_id: "bravo", stop: 2, lap: 5, duration_s: null },
+    ];
+    expect(pitStopsSummary(more, code)).toBe("3 stops by 2 drivers; 1 under SC/VSC. Shortest pit-lane time: 21.900 s, BRA on lap 4.");
+    expect(pitStopsSummary([{ ...(PITS[0] as PitStop), duration_s: null }], code)).toBe(
+      "1 stop by 1 driver; 0 under SC/VSC. No pit-lane times in the lake.",
+    );
+    expect(pitStopsSummary([], code)).toBe("No pit stops in the lake for this race.");
+  });
+});
+
 describe("plot geometry", () => {
   it("linear scales, ticks, paths, median and label spreading", () => {
     const s = linear([0, 10], [100, 200]);
@@ -417,8 +467,13 @@ describe("rendered views", () => {
     const m = html(createElement(StrategyChart, { rows, laps: 6, coverage: SYNTH, names: NAMES }));
     expect(m).toMatch(/<svg[^>]*role="img"[^>]*aria-labelledby="[^"]+ [^"]+"/);
     expect(m).toContain("<title");
-    expect(m).toContain("SYNTHETIC: not real tyre data.");
-    expect(m).toContain("<summary>Show table</summary>");
+    expect(m).toContain('<span class="stamp">SYNTHETIC</span> not real tyre data.');
+    expect(m).toContain('<summary>Show table <span class="visually-hidden">: Stints by driver</span></summary>');
+    // lap ticks are whole laps only (a 6-lap race had 1.5, 2.5 … before step 4B)
+    expect(m).not.toMatch(/>\d+\.5<\/text>/);
+    // the pit stop key is an authored triangle (the font subset has no "▼")
+    expect(m).not.toContain("▼");
+    expect(m).toContain('class="pit-mark"');
     expect(m).toContain("<caption>Stints by driver</caption>");
     expect((m.match(/<tr>/g) ?? []).length).toBe(3); // header + 2 drivers
     expect(m).toContain("laps 1–3 (used set)");
@@ -473,7 +528,8 @@ describe("rendered views", () => {
     expect(m).toContain("<caption>Positions by driver</caption>");
     expect(m).toContain(">Pit lane<");
     expect(m).toContain('stroke="#D9142B" stroke-width="2" stroke-dasharray="6 4"'); // bravo: second of the team
-    expect((m.match(/stroke-dasharray/g) ?? []).length).toBe(1);
+    // bravo's line and its end-label key (step 4B) are dashed; alpha's are solid
+    expect((m.match(/stroke-dasharray/g) ?? []).length).toBe(2);
     expect(m).toContain(">Last pos.<");
   });
 
@@ -530,5 +586,91 @@ describe("rendered views", () => {
     expect(m).toContain('<nav aria-label="Race views"');
     expect(m).toContain('aria-current="page"');
     expect(m).toContain("Loading the race analysis…");
+  });
+});
+
+describe("step 4B: hover layer, head, glyphs and colours", () => {
+  it("nearestPoint snaps to the closest mark (x only, or x and y); none for no marks", () => {
+    const pts = [{ x: 10 }, { x: 50 }, { x: 90 }];
+    expect(nearestPoint(pts, 0)).toBe(0);
+    expect(nearestPoint(pts, 69)).toBe(1);
+    expect(nearestPoint(pts, 200)).toBe(2);
+    expect(nearestPoint([{ x: 10, y: 0 }, { x: 12, y: 100 }], 11, 95)).toBe(1);
+    expect(nearestPoint([], 5)).toBe(-1);
+  });
+
+  it("hoverKey: arrows by one without wrapping, pages by ten, Home and End; the first arrow shows the last mark", () => {
+    expect(hoverKey("ArrowRight", 2, 5)).toBe(3);
+    expect(hoverKey("ArrowRight", 4, 5)).toBe(4);
+    expect(hoverKey("ArrowLeft", 0, 5)).toBe(0);
+    expect(hoverKey("ArrowLeft", -1, 5)).toBe(4);
+    expect(hoverKey("PageDown", 0, 30)).toBe(10);
+    expect(hoverKey("PageUp", 5, 30)).toBe(0);
+    expect(hoverKey("Home", 3, 5)).toBe(0);
+    expect(hoverKey("End", 0, 5)).toBe(4);
+    expect(hoverKey("Enter", 1, 5)).toBeNull();
+    expect(hoverKey("ArrowRight", 0, 0)).toBeNull();
+  });
+
+  it("ChartHover is a keyboard slider with a readout sentence; nothing for no marks", () => {
+    const props = {
+      width: 300,
+      height: 100,
+      points: [{ x: 10 }, { x: 20 }],
+      mark: (i: number) => ({ kind: "line" as const, x: 10 * (i + 1), top: 0, bottom: 100 }),
+      readout: (i: number) => ({ title: `Lap ${i + 1}`, rows: [{ key: "a", value: "1:30.000", label: "ALP" }] }),
+      label: "Lap times: read a lap",
+    };
+    const m = html(createElement(ChartHover, props));
+    expect(m).toContain('role="slider"');
+    expect(m).toContain('tabindex="0"');
+    expect(m).toContain('aria-label="Lap times: read a lap"');
+    expect(m).toContain('aria-valuemax="2"');
+    expect(html(createElement(ChartHover, { ...props, points: [] }))).toBe("");
+    expect(readoutSentence({ title: "Lap 3", rows: [{ key: "a", value: "P1", label: "ALP" }] })).toBe("Lap 3, ALP P1");
+  });
+
+  it("RaceSubHead: the live head's order, the current page marked, no amber", () => {
+    const m = html(createElement(RaceSubHead, { season: 2024, round: 5, name: "Chinese Grand Prix", page: "drivers" }));
+    expect(m.indexOf('aria-label="Breadcrumb"')).toBeLessThan(m.indexOf("<h1>"));
+    expect(m.indexOf("<h1>")).toBeLessThan(m.indexOf('aria-label="Race views"'));
+    expect(m).toContain('href="/race/2024/5"');
+    expect(m).toContain('<a aria-current="page" href="/race/2024/5/drivers">');
+    expect((m.match(/aria-current/g) ?? []).length).toBe(1);
+    expect(m).toContain("Chinese Grand Prix");
+    expect(m).not.toContain("signal");
+  });
+
+  it("compare: gain blue and loss orange (never red/green), a desc on both charts, no Δ glyph", () => {
+    const m = html(
+      createElement(CompareView, { compare: COMPARE, error: null, a: "ALP", b: "BRA", order: ["alpha", "bravo"], onPick: () => undefined, totalLaps: 3, hasSectors: true, names: NAMES }),
+    );
+    expect(m).toContain('fill="var(--gain)"');
+    expect(m).toContain('stroke="var(--loss)"');
+    expect(m).not.toMatch(/var\(--(ok|danger)\)/);
+    expect((m.match(/<desc/g) ?? []).length).toBe(2);
+    expect(m).not.toContain("Δ");
+    expect(m).toContain(">S1 delta<");
+  });
+
+  it("pit stops: a summary sentence and the authored arrow, read as \"to\" (no → glyph)", () => {
+    const m = html(createElement(PitStopsTable, { stops: PITS, names: NAMES, onLap: () => undefined }));
+    expect(m).toContain("1 stop by 1 driver; 0 under SC/VSC. Shortest pit-lane time: 22.400 s, ALP on lap 3.");
+    expect(m).not.toContain("→");
+    expect(m).toContain('<span class="visually-hidden">to</span>');
+  });
+
+  it("lap times: a legend for two or more drivers, end labels in text ink, a summary per driver", () => {
+    const m = html(
+      createElement(LapTimesChart, { laps: LAPS, drivers: ["alpha", "bravo"], order: ["alpha", "bravo"], onToggle: () => undefined, neutral: [], markLap: null, totalLaps: 6, names: NAMES }),
+    );
+    expect(m).toContain('aria-label="Lines"');
+    expect(m).toContain("ALP: best 1:29.000 on lap 6");
+    expect(m).toMatch(/class="chart-label" fill="var\(--text\)">ALP</);
+    expect(m).not.toMatch(/class="chart-label" fill="currentColor"/);
+    const one = html(
+      createElement(LapTimesChart, { laps: LAPS, drivers: ["alpha"], order: ["alpha", "bravo"], onToggle: () => undefined, neutral: [], markLap: null, totalLaps: 6, names: NAMES }),
+    );
+    expect(one).not.toContain('aria-label="Lines"');
   });
 });

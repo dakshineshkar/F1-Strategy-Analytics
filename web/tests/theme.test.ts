@@ -4,12 +4,14 @@ import {
   COMPOUND_TOKENS,
   contrastRatio,
   dark,
+  deltaE,
   darkPalette,
   inGamut,
   light,
   lightPalette,
   oklchCss,
   oklchToHex,
+  hexToOklab,
   parseThemeChoice,
   themeBootScript,
   themeCss,
@@ -40,8 +42,7 @@ function pairs(t: Theme): [string, string, string, number][] {
   for (const fg of ["gain", "loss"] as const) out.push([t[fg], t.signalWash, `${fg} (mark) on signalWash`, AA_UI]);
   // the call's probability chip and alert type chips: ink on the signal fill
   out.push([t.signalOn, t.signal, "signalOn on signal", AA_TEXT]);
-  // the banner (legacy names) and the placeholder (F34) use faint on surface2 (inputs)
-  out.push([t.bannerInk, t.bannerBg, "banner", AA_TEXT]);
+  // the placeholder (F34) uses faint on surface2 (inputs); the synthetic banner is text on raised (above)
   out.push([t.faint, t.surface2, "placeholder (faint) on input", AA_TEXT]);
   return out;
 }
@@ -63,8 +64,8 @@ describe.each([
   });
 
   it("tyre-age and range bars are visible against their track (≥ 3:1)", () => {
-    expect(contrastRatio(theme.bar, theme.surface2)).toBeGreaterThanOrEqual(AA_UI);
-    expect(contrastRatio(theme.bar, theme.surface)).toBeGreaterThanOrEqual(AA_UI);
+    expect(contrastRatio(theme.muted, theme.surface2)).toBeGreaterThanOrEqual(AA_UI);
+    expect(contrastRatio(theme.muted, theme.surface)).toBeGreaterThanOrEqual(AA_UI);
   });
 
   it("chart grid lines are visible (≥ 3:1)", () => {
@@ -132,11 +133,10 @@ describe("theme stylesheet", () => {
     expect(themeCss).toContain(`--line-0:${light.lines[0]};--line-0:${oklchCss(lightPalette.lines[0] as Palette["bg"])};`);
   });
 
-  it("keeps the legacy names as aliases of the new roles", () => {
-    expect(themeCss).toContain("--accent:var(--signal-mark);");
-    expect(themeCss).toContain("--ok:var(--gain);");
-    expect(themeCss).toContain("--warn:var(--loss);");
-    expect(light.accent).toBe(light.signalMark);
+  it("emits no legacy alias (removed in step 4B) and no legacy --radius / --gap shorthand", () => {
+    expect(themeCss).not.toMatch(/--(accent|accent-ink|accent-bg|ok|warn|info|banner-bg|banner-ink|bar|radius|gap):/);
+    expect(Object.keys(light)).not.toContain("accent");
+    expect(Object.keys(dark)).not.toContain("bar");
   });
 
   it("emits the non-colour scale once", () => {
@@ -180,5 +180,38 @@ describe("contrastRatio", () => {
     expect(contrastRatio("#000000", "#ffffff")).toBeCloseTo(21, 5);
     expect(contrastRatio("#ffffff", "#ffffff")).toBeCloseTo(1, 5);
     expect(() => contrastRatio("red", "#fff")).toThrow();
+  });
+});
+
+describe("deltaE (OKLab x 100)", () => {
+  it("is 0 for the same colour and symmetric", () => {
+    expect(deltaE("#3366ff", "#3366ff")).toBe(0);
+    expect(deltaE("#3366ff", "#ff8000")).toBeCloseTo(deltaE("#ff8000", "#3366ff"), 10);
+  });
+
+  it("matches the known OKLab anchors (white L 1, black L 0)", () => {
+    expect(hexToOklab("#ffffff")[0]).toBeCloseTo(1, 3);
+    expect(hexToOklab("#000000")[0]).toBeCloseTo(0, 6);
+    expect(deltaE("#000000", "#ffffff")).toBeCloseTo(100, 1);
+  });
+
+  it("inverts oklchToHex within rounding", () => {
+    const [l, c, h] = darkPalette.gain;
+    const [L, a, b] = hexToOklab(oklchToHex(darkPalette.gain));
+    expect(L).toBeCloseTo(l, 2);
+    expect(Math.hypot(a, b)).toBeCloseTo(c, 2);
+    expect(((Math.atan2(b, a) * 180) / Math.PI + 360) % 360).toBeCloseTo(h, 0);
+  });
+
+  it("simulates protanopia and deuteranopia: red and green collapse, blue and orange stay apart", () => {
+    expect(deltaE("#e8002d", "#52e252")).toBeGreaterThan(15);
+    expect(deltaE("#e8002d", "#52e252", "deutan")).toBeLessThan(deltaE("#e8002d", "#52e252") / 2);
+    expect(deltaE("#3671c6", "#ff8000", "protan")).toBeGreaterThan(8);
+    expect(deltaE("#3366ff", "#3366ff", "deutan")).toBe(0);
+  });
+
+  it("rejects anything that is not #rrggbb", () => {
+    expect(() => deltaE("red", "#000000")).toThrow();
+    expect(() => hexToOklab("var(--grid)")).toThrow();
   });
 });

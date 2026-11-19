@@ -281,7 +281,7 @@ test("sample race: a 60× replay fills the tower and updates laps", async ({ pag
   const strategy = page.getByRole("tab", { name: "Tyre strategy" });
   await expect(strategy).toHaveAttribute("aria-selected", "true");
   const panelA = page.getByRole("tabpanel");
-  await expect(panelA).toContainText("SYNTHETIC: not real tyre data.");
+  await expect(panelA).toContainText(/SYNTHETIC\s*not real tyre data\./);
   await expect(page.locator(".analysis-notes")).toContainText("SYNTHETIC");
   await panelA.getByText("Show table").click();
   await expect(page.getByRole("table", { name: "Stints by driver" }).locator("tbody tr")).toHaveCount(20);

@@ -4,7 +4,7 @@ import { toHealth, toRaces, toReplayStatus, toSnapshot } from "@/lib/api";
 import { gapSeries, layoutLabels, LINE_COLOURS, linePath, scales, seriesColour } from "@/lib/chart";
 import { parseApiUrl } from "@/lib/config";
 import { newIds } from "@/lib/debugLatency";
-import { driverCode, driverName, gap, lapTime, probability } from "@/lib/format";
+import { driverCode, driverName, gap, lapTick, lapTime, probability } from "@/lib/format";
 import { parseRaceParams } from "@/lib/params";
 import { initialState, raceReducer } from "@/lib/reducer";
 import { replayFor, replayMessage, replayStatusText } from "@/lib/replays";
@@ -17,6 +17,8 @@ describe("format", () => {
   it("formats gaps, lap times and probabilities", () => {
     expect([gap(null), gap(0), gap(1.2345)]).toEqual(["—", "Leader", "+1.234"]);
     expect([lapTime(92.456), lapTime(59.1), lapTime(null)]).toEqual(["1:32.456", "59.100", "—"]);
+    // axis ticks drop a zero fraction only (step 4B)
+    expect([lapTick(112), lapTick(112.5), lapTick(60), lapTick(10), lapTick(92.456)]).toEqual(["1:52", "1:52.5", "1:00", "10", "1:32.456"]);
     expect([probability(0.623), probability(null)]).toEqual(["62%", "—"]);
     expect([driverName("max_verstappen"), driverCode("max_verstappen"), driverName("de_vries")]).toEqual(["Verstappen", "VER", "De Vries"]);
   });

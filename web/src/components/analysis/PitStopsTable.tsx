@@ -1,8 +1,19 @@
 import { useId } from "react";
 
-import type { PitStop } from "@/lib/analysis";
+import { PairArrow } from "@/components/Marks";
+import { pitStopsSummary, type PitStop } from "@/lib/analysis";
 
 import { CompoundTag, LapLink, type Names } from "./common";
+
+/** "from → to": the authored arrow (the font subset has no "→"), read as "to". */
+function To() {
+  return (
+    <span className="to-mark">
+      <PairArrow size={12} />
+      <span className="visually-hidden">to</span>
+    </span>
+  );
+}
 
 /** Every Jolpica pit stop by lap: the pit-lane time (entry to exit, not the stationary time), the
  * tyres before and after, the positions on the in-lap and the out-lap, and notes. */
@@ -11,9 +22,8 @@ export function PitStopsTable({ stops, names, onLap }: { stops: readonly PitStop
   return (
     <section aria-labelledby={`${id}-h`} className="analysis-view">
       <h2 id={`${id}-h`}>Pit stops</h2>
-      <p className="panel-note">
-        {stops.length} stops. Time = pit-lane time from Jolpica (entry to exit, not the stationary time).
-      </p>
+      <p className="chart-summary">{pitStopsSummary(stops, names.code)}</p>
+      <p className="panel-note">Pit lane = the pit-lane time from Jolpica (entry to exit, not the stationary time).</p>
       {stops.length === 0 ? (
         <p className="muted">No pit stops in the lake for this race.</p>
       ) : (
@@ -46,10 +56,10 @@ export function PitStopsTable({ stops, names, onLap }: { stops: readonly PitStop
                   <td className="c-num">{p.duration_s === null ? "—" : `${p.duration_s.toFixed(3)} s`}</td>
                   <td className="wrap">
                     <CompoundTag compound={p.compound_before} />
-                    {p.tyre_life_before !== null ? ` (${p.tyre_life_before} laps)` : ""} → <CompoundTag compound={p.compound_after} />
+                    {p.tyre_life_before !== null ? ` (${p.tyre_life_before} laps)` : ""} <To /> <CompoundTag compound={p.compound_after} />
                   </td>
                   <td className="c-num">
-                    {p.position_before ?? "—"} → {p.position_after ?? "—"}
+                    {p.position_before ?? "—"} <To /> {p.position_after ?? "—"}
                   </td>
                   <td>
                     {[p.under_neutralisation ? "under SC/VSC" : "", p.is_long_stop ? "long stop (> 60 s)" : ""]

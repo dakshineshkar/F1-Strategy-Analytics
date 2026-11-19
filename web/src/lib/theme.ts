@@ -128,8 +128,8 @@ export const lightPalette: Palette = {
   },
 };
 
-/** The derived hex values of one theme. The legacy names (accent, ok, warn, info, banner, bar) are aliases
- * of the new roles, kept so the pages not yet redesigned still render. */
+/** The derived hex values of one theme. (The legacy alias names accent, ok, warn, info, banner and bar were
+ * removed in redesign step 4B, when the last page that read them moved to the roles.) */
 export interface Theme {
   bg: string;
   surface: string;
@@ -150,24 +150,6 @@ export interface Theme {
   focus: string;
   danger: string;
   grid: string;
-  /** legacy alias of signalMark */
-  accent: string;
-  /** legacy alias of signalInk */
-  accentInk: string;
-  /** legacy alias of signal */
-  accentBg: string;
-  /** legacy alias of gain */
-  ok: string;
-  /** legacy alias of loss (caution: SC/VSC, in pit, paused; always with a border shape or text) */
-  warn: string;
-  /** legacy alias of gain */
-  info: string;
-  /** legacy alias of raised */
-  bannerBg: string;
-  /** legacy alias of text */
-  bannerInk: string;
-  /** legacy alias of muted (tyre-age and range bars) */
-  bar: string;
   lines: string[];
   compounds: Record<CompoundToken, string>;
 }
@@ -209,6 +191,66 @@ export function oklchToHex(o: Oklch): string {
   );
 }
 
+function decode(v: number): number {
+  return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
+}
+
+type Rgb = [number, number, number];
+
+/** Linear-light sRGB of a ``#rrggbb`` colour. */
+function hexToLinear(hex: string): Rgb {
+  const m = /^#([0-9a-f]{6})$/i.exec(hex);
+  if (!m || !m[1]) throw new Error(`not a #rrggbb colour: ${hex}`);
+  const n = parseInt(m[1], 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255].map((c) => decode(c / 255)) as Rgb;
+}
+
+/** OKLab ``[L, a, b]`` of linear sRGB (the inverse of the matrices above). */
+function linearToOklab([r, g, b]: Rgb): Rgb {
+  const l = Math.cbrt(0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b);
+  const mm = Math.cbrt(0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b);
+  const s = Math.cbrt(0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b);
+  return [
+    0.2104542553 * l + 0.793617785 * mm - 0.0040720468 * s,
+    1.9779984951 * l - 2.428592205 * mm + 0.4505937099 * s,
+    0.0259040371 * l + 0.7827717662 * mm - 0.808675766 * s,
+  ];
+}
+
+/** OKLab ``[L, a, b]`` of a ``#rrggbb`` colour. */
+export function hexToOklab(hex: string): Rgb {
+  return linearToOklab(hexToLinear(hex));
+}
+
+/** Dichromat simulation in linear sRGB (Viénot, Brettel and Mollon 1999). */
+const CVD = {
+  protan: [
+    [0.11238, 0.88762, 0],
+    [0.11238, 0.88762, 0],
+    [0.00401, -0.00401, 1],
+  ],
+  deutan: [
+    [0.29275, 0.70725, 0],
+    [0.29275, 0.70725, 0],
+    [-0.02234, 0.02234, 1],
+  ],
+} as const;
+export type Vision = "normal" | keyof typeof CVD;
+
+function simulate(rgb: Rgb, vision: Vision): Rgb {
+  if (vision === "normal") return rgb;
+  return CVD[vision].map((row) => Math.min(1, Math.max(0, row[0] * rgb[0] + row[1] * rgb[1] + row[2] * rgb[2]))) as Rgb;
+}
+
+/** Colour difference ΔE of two ``#rrggbb`` colours: Euclidean OKLab distance × 100 (the scale of the dataviz
+ * validator: 15 is the normal-vision floor between two series, 8 the colour-blind target), as seen with normal
+ * vision or simulated protanopia / deuteranopia. */
+export function deltaE(a: string, b: string, vision: Vision = "normal"): number {
+  const p = linearToOklab(simulate(hexToLinear(a), vision));
+  const q = linearToOklab(simulate(hexToLinear(b), vision));
+  return 100 * Math.hypot(p[0] - q[0], p[1] - q[1], p[2] - q[2]);
+}
+
 /** CSS ``oklch()`` text of a colour. */
 export function oklchCss([l, c, h]: Oklch): string {
   return `oklch(${+(l * 100).toFixed(2)}% ${+c.toFixed(4)} ${+h.toFixed(2)})`;
@@ -220,24 +262,10 @@ const ROLES = [
   "signalInk", "signalMark", "signalWash", "gain", "loss", "focus", "danger", "grid",
 ] as const satisfies readonly Role[];
 
-/** Legacy alias → the role it follows. */
-const ALIASES = {
-  accent: "signalMark",
-  accentInk: "signalInk",
-  accentBg: "signal",
-  ok: "gain",
-  warn: "loss",
-  info: "gain",
-  bannerBg: "raised",
-  bannerInk: "text",
-  bar: "muted",
-} as const satisfies Record<string, Role>;
-
 function resolve(p: Palette): Theme {
   const t = Object.fromEntries(ROLES.map((r) => [r, oklchToHex(p[r])])) as Record<Role, string>;
-  const aliases = Object.fromEntries(Object.entries(ALIASES).map(([k, r]) => [k, t[r]])) as Record<keyof typeof ALIASES, string>;
   const compounds = Object.fromEntries(COMPOUND_TOKENS.map((k) => [k, oklchToHex(p.compounds[k])])) as Record<CompoundToken, string>;
-  return { ...t, ...aliases, lines: p.lines.map(oklchToHex), compounds };
+  return { ...t, lines: p.lines.map(oklchToHex), compounds };
 }
 
 export const dark: Theme = resolve(darkPalette);
@@ -245,7 +273,7 @@ export const light: Theme = resolve(lightPalette);
 
 // --- CSS emission -----------------------------------------------------------------------------------
 
-const VAR: Record<Role | keyof typeof ALIASES, string> = {
+const VAR: Record<Role, string> = {
   bg: "--bg",
   surface: "--surface",
   surface2: "--surface-2",
@@ -265,15 +293,6 @@ const VAR: Record<Role | keyof typeof ALIASES, string> = {
   focus: "--focus",
   danger: "--danger",
   grid: "--grid",
-  accent: "--accent",
-  accentInk: "--accent-ink",
-  accentBg: "--accent-bg",
-  ok: "--ok",
-  warn: "--warn",
-  info: "--info",
-  bannerBg: "--banner-bg",
-  bannerInk: "--banner-ink",
-  bar: "--bar",
 };
 
 /** ``--name:#hex;--name:oklch(…);``: the hex first, so a browser without OKLCH keeps it. */
@@ -283,12 +302,11 @@ function decl(name: string, o: Oklch): string {
 
 function vars(p: Palette): string {
   const roles = ROLES.map((r) => decl(VAR[r], p[r])).join("");
-  const aliases = (Object.keys(ALIASES) as (keyof typeof ALIASES)[]).map((k) => `${VAR[k]}:var(${VAR[ALIASES[k]]});`).join("");
   const lines = p.lines.map((c, i) => decl(`--line-${i}`, c)).join("");
   const compounds = COMPOUND_TOKENS.map(
     (k) => `${decl(`--compound-${k}`, p.compounds[k])}--compound-${k}-ink:${inkOn(oklchToHex(p.compounds[k]))};`,
   ).join("");
-  return roles + aliases + lines + compounds + `--elev-pop:${elevation(p)};`;
+  return roles + lines + compounds + `--elev-pop:${elevation(p)};`;
 }
 
 /** The one elevation (popovers): a hairline ring; on light also a soft drop. On dark a drop shadow reads as
@@ -322,7 +340,7 @@ function scaleVars(): string {
   return (
     f + s + r + d +
     `--ease-out:${SCALE.ease.out};--ease-in-out:${SCALE.ease.inOut};` +
-    `--row-h:${SCALE.rowHeight / 16}rem;--radius:var(--radius-md);--gap:var(--sp-4);`
+    `--row-h:${SCALE.rowHeight / 16}rem;`
   );
 }
 

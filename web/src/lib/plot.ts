@@ -89,3 +89,46 @@ export function spreadLabels(ys: { id: string; y: number }[], minGap: number, to
   }
   return placed;
 }
+
+/** The index of the point nearest to ``(px, py)`` (``py`` is ignored for a point without ``y``): the hover layer
+ * snaps to the closest mark, so the pointer never has to land on a 2 px line. -1 when there are no points. */
+export function nearestPoint(points: readonly { x: number; y?: number }[], px: number, py?: number): number {
+  let best = -1;
+  let bestD = Infinity;
+  points.forEach((p, i) => {
+    const dx = p.x - px;
+    const dy = p.y === undefined || py === undefined ? 0 : p.y - py;
+    const d = dx * dx + dy * dy;
+    if (d < bestD) {
+      bestD = d;
+      best = i;
+    }
+  });
+  return best;
+}
+
+/** The hover layer's keyboard: arrows move one mark (no wrap), Page Up / Page Down ten, Home and End to the ends;
+ * any other key is not handled (null). ``index`` -1 (nothing shown yet) starts from the last mark. */
+export function hoverKey(key: string, index: number, count: number): number | null {
+  if (count <= 0) return null;
+  const at = index < 0 ? count - 1 : Math.min(index, count - 1);
+  const clamp = (i: number) => Math.min(count - 1, Math.max(0, i));
+  switch (key) {
+    case "ArrowRight":
+    case "ArrowDown":
+      return index < 0 ? at : clamp(at + 1);
+    case "ArrowLeft":
+    case "ArrowUp":
+      return index < 0 ? at : clamp(at - 1);
+    case "PageDown":
+      return clamp(at + 10);
+    case "PageUp":
+      return clamp(at - 10);
+    case "Home":
+      return 0;
+    case "End":
+      return count - 1;
+    default:
+      return null;
+  }
+}

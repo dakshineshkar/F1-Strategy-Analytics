@@ -11,13 +11,15 @@ import {
   type Coverage,
   type Degradation,
 } from "@/lib/analysis";
-import { lapTime } from "@/lib/format";
+import { lapTick, lapTime } from "@/lib/format";
 import { innerX, innerY, linear, niceTicks } from "@/lib/plot";
 import { useWidth } from "@/lib/useWidth";
 
-import { ChartTable, CompoundMark, CompoundTag, type Names } from "./common";
+import { ChartHover } from "./ChartHover";
+import { ChartTable, CompoundMark, CompoundTag, SyntheticStamp, type Names } from "./common";
+import { LineKey } from "./LapTimesChart";
 
-const BASE = { width: 760, height: 320, left: 60, right: 150, top: 16, bottom: 34 };
+const BASE = { width: 760, height: 320, left: 60, right: 16, top: 16, bottom: 34 };
 const FIT_DASHES = ["", "6 4", "2 3", "10 3 2 3"];
 
 /** The fit's status in words. */
@@ -57,6 +59,9 @@ export function DegradationChart({
   const y = linear([yLo, yHi], [yBottom, yTop], true);
   const yTicks = niceTicks(yLo, yHi, 5);
   const xTicks = niceTicks(0, Math.max(5, ...lives) + 1, 6);
+  const marks = deg.stints
+    .flatMap((s) => s.points.map((p) => ({ s, p })))
+    .sort((a, b) => a.p.life - b.p.life || a.s.stint - b.s.stint);
 
   return (
     <section aria-labelledby={`${id}-h`} className="analysis-view">
@@ -78,7 +83,7 @@ export function DegradationChart({
       <p className="panel-note">
         <strong>A lap-time proxy, not tyre wear:</strong> fuel burn-off and track evolution are in the slope too. Only
         quick laps are plotted <InfoTip id="quicklap" align="end" />.
-        {coverage.is_synthetic ? <strong className="synthetic-tag"> SYNTHETIC tyre life: not real tyre data.</strong> : null}
+        {coverage.is_synthetic ? <> <SyntheticStamp>tyre life: not real tyre data.</SyntheticStamp></> : null}
       </p>
       <div className="chart-box" ref={ref} style={{ height: BASE.height }}>
         <svg viewBox={`0 0 ${width} ${BASE.height}`} role="img" aria-labelledby={`${id}-t ${id}-d`} className="chart">
@@ -91,7 +96,7 @@ export function DegradationChart({
             <g key={t} className="chart-grid">
               <line x1={BASE.left} x2={width - BASE.right} y1={y(t)} y2={y(t)} />
               <text x={BASE.left - 6} y={y(t) + 4} textAnchor="end">
-                {lapTime(t)}
+                {lapTick(t)}
               </text>
             </g>
           ))}
@@ -100,7 +105,7 @@ export function DegradationChart({
               {t}
             </text>
           ))}
-          <text className="chart-axis" x={(BASE.left + width - BASE.right) / 2} y={BASE.height - 2} textAnchor="middle">
+          <text className="chart-axis-title" x={(BASE.left + width - BASE.right) / 2} y={BASE.height - 2} textAnchor="middle">
             tyre life (laps on the set)
           </text>
           {deg.stints.map((s, i) => (
@@ -119,23 +124,36 @@ export function DegradationChart({
                     strokeWidth={1.75}
                     strokeDasharray={FIT_DASHES[i % FIT_DASHES.length] || undefined}
                   />
-                  <text
-                    x={width - BASE.right + 6}
-                    y={y(s.fit.intercept + s.fit.slope * s.fit.x1) + 4}
-                    className="chart-label"
-                    fill="var(--text)"
-                  >
-                    S{s.stint} {compoundName(s.compound)} {slopeText(s.fit.slope)}
-                  </text>
                 </g>
               ) : null}
             </g>
           ))}
         </svg>
+        <ChartHover
+          width={width}
+          height={BASE.height}
+          points={marks.map((m) => ({ x: x(m.p.life), y: y(m.p.time) }))}
+          mark={(i) => {
+            const m = marks[i] as (typeof marks)[number];
+            return { kind: "box", x: x(m.p.life) - 5, y: y(m.p.time) - 5, w: 10, h: 10 };
+          }}
+          readout={(i) => {
+            const m = marks[i] as (typeof marks)[number];
+            return {
+              title: `Lap ${m.p.lap}, stint ${m.s.stint} (${compoundName(m.s.compound)})`,
+              rows: [
+                { key: "t", value: lapTime(m.p.time), label: "lap time" },
+                { key: "l", value: String(m.p.life), label: "laps on the set" },
+              ],
+            };
+          }}
+          label="Tyre degradation: read each quick lap"
+        />
       </div>
-      <ul className="analysis-list">
-        {deg.stints.map((s) => (
+      <ul className="chart-summary chart-legend-list" aria-label="Fits by stint">
+        {deg.stints.map((s, i) => (
           <li key={s.stint}>
+            {s.fit ? <LineKey colour="var(--text)" dash={FIT_DASHES[i % FIT_DASHES.length] ?? ""} width={1.75} /> : <span className="line-key" />}
             Stint {s.stint} · <CompoundTag compound={s.compound} /> · {fitText(s)}
           </li>
         ))}

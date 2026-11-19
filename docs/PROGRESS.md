@@ -2534,12 +2534,66 @@
       and picker dark ones were already there);
     - `docs/design/after/`: `d-dark-engineer.png`, `d-dark-archive.png`, `d-light-archive.png`,
       `d-dark-picker.png`, `m-dark-picker.png`.
+- UI redesign Step 4B (2026-11-19, on `main`; not committed): the last screens on the DESIGN.md system. These are
+  the race analysis (8 tabs), telemetry, drivers, the Pipeline panel, "How to read this" and the footer. The
+  legacy token aliases are removed. This was display only: the reducer, the API, the stream job, Python, Redis and
+  `results/` are unchanged. The race view, engineer view, archive and picker keep their markup; the Pipeline panel
+  and legend got CSS only.
+  - **Head (F08):** the new `RaceSubHead` serves analysis and drivers, in the live order (crumbs, h1, then "Live
+    race", "Race analysis", "Drivers"). It replaces the old head with the doubled "/ / Race /" crumbs.
+  - **Analysis tabs:** text-ink underline, no amber (F05). They wrap on a phone, so all 8 are visible at 390 px.
+  - **Charts (dataviz):**
+    - each chart has a visible text summary, a legend for two or more series, `<title>` + `<desc>` and
+      "Show table";
+    - the new `ChartHover` gives a hover readout (lap crosshair or mark box) that the keyboard reaches too (a
+      slider: arrows, Page Up/Down, Home, End);
+    - series names are text ink; whole-lap ticks only (a short race had 1.5, 2.5 …); lap-time ticks drop ".000".
+  - **New pure helpers** (unit-tested): `lapTimesSummary`, `positionsSummary` and `pitStopsSummary` in
+    `lib/analysis.ts`, `nearestPoint` and `hoverKey` in `lib/plot.ts`, and `lapTick` in `lib/format.ts`.
+  - **Per tab:**
+    - **Strategy:** the authored pit triangle replaces "▼", which is not in the font subset. A 2 px surface gap
+      replaces the bar borders.
+    - **Lap times:** end labels never overlap.
+    - **Degradation:** keeps "A lap-time proxy, not tyre wear". The fit legend is the stint list.
+    - **Positions:** full names only at 560 px or wider.
+    - **Compare:** gain/loss replace red/blue `--ok`/`--danger`. Both charts have a `<desc>`. "Delta" replaces
+      "Δ". The charts now fill the panel; they were stuck at 760 px because the ref was mounted after the
+      loading state.
+    - **Pit stops:** authored arrow in place of "→".
+    - **Race control:** kind chips with border styles; no uppercase tracking.
+  - **Telemetry fallback:**
+    - A car without a team colour is now neutral text ink, never `--line-0/1` next to the other car's team colour.
+    - `strokesClose` (`lib/telemetry.ts`) and the new `deltaE` with protan/deutan simulation (`lib/theme.ts`) flag
+      similar strokes for the legend note.
+    - The dataviz validator was run on text ink against all 35 served team colours, in both themes: 68 of 70
+      pass. The 2 dark failures (`#ffffff`, `#27f4d2`) are exactly the ones `strokesClose` flags.
+  - **Drivers:** one panel with h2 and count. At 390 px the table fits with no sideways scroll; the tower's sticky
+    phone cells no longer paint over Nat.
+  - **Shared parts:**
+    - the data banner reads `--raised`/`--text`;
+    - the footer sits under a hairline;
+    - the legend and pipeline disclosures have a chevron and a 24 px target.
+  - **Legacy aliases:** removed from `theme.ts` (the `Theme` fields, `VAR`, CSS emission) and `globals.css`, along
+    with the `--radius`/`--gap` shorthands. The new guard is `web/tests/legacy-tokens.test.ts`.
+  - **Tests:**
+    - Vitest 550 passed.
+    - Lint and typecheck clean; `contrast-report --check` all AA (92/92 per theme, unchanged).
+    - `impeccable detect`: 0 findings, no suppressions.
+    - Sample lake (`make api-up REPLAY=1`, `make web-up`, `E2E_NO_SERVER=1 npx playwright test`): 26 passed and 1
+      skipped (`latency.spec.ts`, which runs only with `E2E_LATENCY=1`).
+    - Full lake (`make api-up FULL=1 REPLAY=1`): `race-layout` + `screens-layout` 21 passed.
+    - `git status results/` is clean.
+  - **Screenshots:**
+    - `docs/design/before/`: `d-dark-analysis-laps`, `-positions`, `-compare`, `-telemetry`,
+      `d-light-analysis-laps`, `m-dark-analysis`, `d-dark-drivers`.
+    - `docs/design/after/`: `d-dark-analysis-strategy`, `-laps`, `-positions`, `-compare`, `-telemetry`,
+      `d-light-analysis-laps`, `m-dark-analysis`, `d-dark-drivers`.
+    - All are full lake, 2024 R5, each under 240 KB.
 ## Next
 - S18B: the demo rehearsal with `docs/demo_script.md` (full lake, then the sample-mode fallback); fill in section 16
   (team contributions) of the report and run `make report-pdf` again.
-- Then the remaining UI redesign (Step 4B): the Analysis, Telemetry and Drivers pages on the design system (they
-  still read the legacy aliases), and F23 (a session-end summary). The engineer, archive and picker are done (4A),
-  and every F35 bar is gone.
+- The UI redesign is complete (Steps 2–4B). F23 remains: a session-end summary for a page that joined late needs an
+  additive API change. It was not done in 4B and needs approval first.
   - F24 API stays declined (revisit only if time allows).
 ## Known issues
 - Report §16 team contributions still to be filled in (blocker for submission).
@@ -2553,8 +2607,15 @@
     Markdown, not that the PDF is current.
   - **Parity wording.** The parity result is "maximum input difference 0.0, maximum probability difference
     3.3e-16" (`docs/architecture.md`), not byte-identical. The report uses the docs' wording.
-  - **Screenshots.** The what-if and analysis views exist only as pre-redesign screenshots
-    (`docs/design/before/`, 2026-11-18). The engineer, archive and picker have after shots (Step 4A).
+  - **Screenshots.** The what-if view exists only as a pre-redesign screenshot (`docs/design/before/`,
+    2026-11-18). The engineer, archive and picker (4A) and the analysis and drivers views (4B) have after shots.
+- UI redesign Step 4B (2026-11-19):
+  - **F23 not done.** A page opened after `session_end` gets no race summary; it needs an API change.
+  - **Telemetry legend.** The "similar colours" note uses fixed ΔE floors (15 normal, 8 protan/deutan), with a
+    Viénot simulation of protanopia and deuteranopia; tritanopia is not simulated. A and B also always differ by
+    dash and width.
+  - **Hover readout on positions.** It lists all cars at the lap (up to 20 rows); on a phone it covers much of
+    the chart while open. The same values are in "Show table".
 - UI redesign Step 4A (2026-11-19):
   - **Picker "Start here":** the card reads `/api/replays` once, when the page loads. A replay started later shows
     after a reload; it is not polled, to keep load off the API.

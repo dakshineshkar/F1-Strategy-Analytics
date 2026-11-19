@@ -37,7 +37,7 @@ The finding numbers (F01–F38) refer to [critique-2026-11-18.md](critique-2026-
 
 | Screen / panel | Data shown | Source | Findings | Server/API change? |
 |---|---|---|---|---|
-| Layout chrome (every page) | Skip link, PIT WALL brand, data banner, footer disclaimer | static; banner from health | F34 (no `::placeholder` token), F33 | no |
+| Layout chrome (every page) | Skip link, PIT WALL brand, data banner, footer disclaimer | static; banner from health | F34 (no `::placeholder` token), F33. **Step 4B:** the banner reads `--raised`/`--text` (no legacy alias); the footer sits under a hairline in tokens | no |
 | Data banner | "SYNTHETIC DEMO DATA …" (sample), "Full lake (HDFS\|local)" (full), "Data source unavailable" | health → `lake.mode` | F10 (no model id, no SMOKE TEST) | client parser for the model id (health already returns `checks.model.model_version`, `feature_set`, `g`, `k`); YES (proposal) for a real smoke flag |
 | Race picker `/` | Search, `N of M races`, races grouped by season, R##, name, laps, "synthetic tyres" tag | races | F34, F36 | no |
 | Live race: header | Breadcrumb, Drivers / Race analysis links, h1, LAP n/N, connection pill | races (name, laps); SSE (leader lap, connection) | F08, F06 | no |
@@ -53,8 +53,8 @@ The finding numbers (F01–F38) refer to [critique-2026-11-18.md](critique-2026-
 | Live race: stream stats | "N events applied · M malformed · K unknown drivers" | reducer counters | F06 | no |
 | Engineer tab | Focus select; Ahead / Focus / Behind cards; pair line and sparkline; rejoin bar; strategy calls | engineer (per new leader lap); `order`, `maxLap` | F19, F20, F21, F35 (strategy-call rows: accent left bar, see [Detector findings](#detector-findings-carried-to-later-steps)) | no |
 | Post-race archive `?mode=archive&lap=N` | Same tower, chart, alert feed and tyres, replayed through the live reducer; lap slider; play 1/10/60×; marker lanes (Flags / Pits / Alerts); race control (12 latest); "Model {version} (scorer {sha})" | archive bundle | F13, F33 (55 detector hits), F35 (alert-list key rows: accent left bar, see [Detector findings](#detector-findings-carried-to-later-steps)) | no |
-| Race analysis `/analysis` | 8 tabs: tyre strategy, lap times, degradation, positions, compare, pit stops, race control, telemetry (2024) | analysis; telemetry | F08, F33 (SVG labels 10–10.5 px), F35 (race-control key rows: accent left bar, see [Detector findings](#detector-findings-carried-to-later-steps)) | no |
-| Drivers `/drivers` | Grid, driver, nationality, team, car no., colour-source note | entrants; races | (none) | no |
+| Race analysis `/analysis` | 8 tabs: tyre strategy, lap times, degradation, positions, compare, pit stops, race control, telemetry (2024) | analysis; telemetry | F08, F33 (SVG labels 10–10.5 px), F35 (race-control key rows: accent left bar, see [Detector findings](#detector-findings-carried-to-later-steps)). **Step 4B:** all fixed. The head is in the live order, tabs and "Show table" no longer use amber, sizes are tokens with an 11 px floor, and race-control kinds are border-style chips. Every chart has a summary, legend, title and desc, a hover readout (keyboard too) and its table. Telemetry falls back to neutral ink, not `--line-0/1`. | no |
+| Drivers `/drivers` | Grid, driver, nationality, team, car no., colour-source note | entrants; races | (none). **Step 4B:** the shared race sub-head (F08), one panel, and at 390 px the table fits with no sideways scroll and no cell overlap | no |
 | Not found | "Race not found" + link | static | (none) | no |
 
 ## States
@@ -108,6 +108,16 @@ unchanged.
 | F24 gap history from before the page opened | The reducer keeps only the lap frames received. The analysis endpoints hold the **whole** race, so using them in the live view would leak future laps. | The chart's x-axis starts at the first lap it has, and says so. | A causal `GET …/laps?upto_lap=N` (laps ≤ N only). |
 
 The other 34 findings can be fixed in the web client alone. F37 is already fixed (`5e50881`).
+
+## Step 4B (2026-11-19): the last screens
+
+- **Screens:** race analysis (all 8 tabs), telemetry, drivers, the Pipeline panel, "How to read this" and the
+  footer.
+- **Legacy aliases:** removed from `theme.ts` and `globals.css`. No file reads them;
+  `web/tests/legacy-tokens.test.ts` guards this.
+- **Detector:** `impeccable detect` reports 0 findings and no suppressions.
+- **Not done:** F23 (session-end summary for a late joiner). It needs an API change and was out of scope.
+- **Server or API changes:** none were needed for 4B.
 
 ## Detector findings carried to later steps
 

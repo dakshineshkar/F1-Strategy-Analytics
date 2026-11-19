@@ -78,18 +78,11 @@ blue and loss is orange: a colourblind-safe pair, never red/green, and always wi
   (critique F05). No chart line has an amber hue (60–100°, tested).
 - **Team colours are data only:** a small swatch with the team's text code, never a background, a border
   theme or a brand treatment.
-- **The legacy names** (`--accent`, `--accent-ink`, `--accent-bg`, `--ok`, `--warn`, `--info`, `--banner-*`,
-  `--bar`) remain as aliases of the new roles, so the pages not yet redesigned still render:
-
-  | Legacy | Now follows |
-  |---|---|
-  | `--accent` | `--signal-mark` |
-  | `--accent-ink` | `--signal-ink` |
-  | `--accent-bg` | `--signal` |
-  | `--ok`, `--info` | `--gain` |
-  | `--warn` | `--loss` (caution: SC/VSC, in pit, paused; always with a border shape or text) |
-  | `--banner-bg`, `--banner-ink` | `--raised`, `--text` |
-  | `--bar` | `--muted` |
+- **No legacy names** (Step 4B, 2026-11-19). The old aliases (`--accent`, `--accent-ink`, `--accent-bg`, `--ok`,
+  `--warn`, `--info`, `--banner-bg`, `--banner-ink`, `--bar`) and the `--radius` / `--gap` shorthands are removed
+  from `theme.ts` and `globals.css`. The race analysis, telemetry, drivers views and the data banner were the last
+  readers. The test `web/tests/legacy-tokens.test.ts` fails if any source file reads one again or the theme
+  emits one.
 
 ### Roles
 
@@ -132,7 +125,12 @@ cleared it.
 - No view that shows team colours uses a line colour:
   - the positions chart is team colours only, and a car without one is neutral;
   - the gap chart is neutral in both the live view and the archive (the highlighted car in the text colour,
-    the live call's pair in signal and text).
+    the live call's pair in signal and text);
+  - the telemetry overlay is team colours only. A car without one is drawn in neutral **text ink**, never
+    `--line-0` or `--line-1` (fixed in Step 4B). A is solid and B dashed whatever the colours. The legend says
+    "similar colours: tell them apart by the line style" when the two strokes are under ΔE 15 with normal vision
+    or under ΔE 8 with protanopia or deuteranopia, in either theme (`strokesClose` in `lib/telemetry.ts`,
+    `deltaE` in `lib/theme.ts`). See [the validator run](#palette-validator-dataviz-validate_palettejs).
 - **Violet is a data colour only:** `--line-3` dark and `--line-2` light. It is never chrome, a button or a focus
   state. It appears only in the lap-times chart, which shows no team colours.
 - **OB has no hue.** The OB tag was violet (`--best`). No colour clears, in the dark theme, all of these at
@@ -227,6 +225,28 @@ engineer and the picker have none.
 | **Archive layout** | The transport spans the page. Below it, the tower (left) and a side column (right) as tall as the tower block: the alert feed with both cars' tyres, then race control (key rows have semibold text and a "Key" chip). The gap chart and the key come last. One column at 1080 px and below. No Tyres panel: the tower and the alert rows carry the tyres. |
 | **Race picker** | A "Start here" card above the search: the race replaying now, else the `make demo` race (2024 R5), else the newest race. It shows name, season, round and laps, why it is offered, "Open the race" (a 2 px text-ink outline) and, when a bundle exists, "Open the post-race archive". It is neutral (a 2 px text-ink top rule) and reserves its height while loading. Below are the search and the season lists of race cards (R## and laps in Plex Mono, a "synthetic tyres" tag). Arrow keys, Home and End move within the list. Hover and focus change the border instantly (no transition: arrow keys move focus). |
 
+## Components of the race analysis, telemetry and drivers views (Step 4B)
+
+These are Operate screens with no loud element. The amber stays with the live call: the analysis tab bar, "Show
+table", the hover readouts and the drivers table never use it.
+
+| Component | Rules |
+|---|---|
+| **Race sub-head** | `RaceSubHead` is shared by `/analysis` and `/drivers`. It follows the live head's order: crumbs ("All races"), h1 (season, name, R#), then the race's views ("Live race", "Race analysis", "Drivers"). The current page has `aria-current` and a 2 px text-ink underline. On a phone the views take short labels, and the head wraps like the archive's (critique F08). |
+| **Analysis tabs** | WAI-ARIA tabs (arrows, Home, End). Muted `--fs-sm` text; the selected tab is text ink with a 2 px text-ink underline (a shape). The bar **wraps** on a narrow screen, so all 8 tabs are visible at 390 px and none scrolls out of view. |
+| **Coverage notes** | Neutral text. A SYNTHETIC note leads with the dashed honesty stamp, never a colour alone; the same goes for the synthetic note inside strategy and degradation. |
+| **Every chart** | Each chart has, in this order: a visible text summary, the legend (two or more series), the plot with `<title>` and `<desc>`, then "Show table" (a neutral disclosure with a chevron and the table's caption as hidden text). Lap ticks are whole laps; a lap-time axis drops a zero fraction ("1:52"). Series names are text ink, and colour appears only on the line key next to the name. SVG text is 11 px or larger. |
+| **Hover readout** | `ChartHover` is transparent over the plot and snaps to the nearest mark. The mark is a 1 px text-ink hairline (a lap) or a 2 px text-ink box (a stint, a quick lap). The tooltip lists every series at that mark, value first (Plex Mono) and name after (muted). It flips to the side with more room and is placed by `transform`, with no animation. The same readout comes from the keyboard: the layer is a slider (arrows one mark, Page Up and Page Down ten, Home, End) with the readout as `aria-valuetext`. Tooltips never gate: every value is also in the table. |
+| **Lap times** | The four line colours (2 px), then neutral `--grid` (1.5 px) with a dash, never cycled. End labels are spread so they never overlap and carry a short key. Summary: best lap and median racing lap per driver (`lapTimesSummary`). |
+| **Tyre degradation** | It stays labelled "(lap-time proxy)" and "A lap-time proxy, not tyre wear". The fit lines are text ink with a dash per stint. Their legend is the stint list (line key, compound, slope); there are no end labels, so nothing can overlap or run off a narrow chart. |
+| **Positions** | Team colours only (a car without one is `--grid`). The second teammate is dashed, and end labels carry a team-colour key. Full-name labels need a chart at least 560 px wide; below that the radio is disabled and says why. Summary: the winner and start slot, the biggest gain and loss, and the cars that stopped early (`positionsSummary`). |
+| **Compare** | Delta bars are gain blue below the line (A faster) and loss orange above (A slower); pit and SC/VSC laps are hollow. The side carries the meaning, colour repeats it, and a legend names all three. The gap line is `--line-0`. Both charts have a `<desc>`. Table heads read "Delta" (the font subset has no "Δ"). |
+| **Pit stops** | A summary sentence (`pitStopsSummary`). "from → to" uses the authored `PairArrow`, read as "to". |
+| **Race control** | The kind is a code chip whose border style is the track status, as in the status strip: SC solid 2 px, VSC dashed, red flag double `--danger`, penalty 2 px bold, others dotted and muted. Sentence case, untracked. Key rows have semibold text and a "Key" chip, with no side bar (F35). |
+| **Telemetry** | Team colours, with neutral text ink for a car without one (see [Colour](#colour)). A is solid and B dashed. Picks, legend and readout use tokens only. |
+| **Drivers** | One panel: h2, count, a note, then the table (badge swatch, code, name, nationality code, team, car number). Team colour appears only as the badge swatch. At 390 px the table fits with no sideways scroll: the name drops under the code, the team wraps, and none of the tower's sticky phone columns apply. |
+| **Pipeline panel, "How to read this", footer** | Restyled on tokens only; their markup and their place on the race page are unchanged. The disclosures share the chevron and the 24 px summary target, reading text is capped at 72ch, and counters are Plex Mono. The footer is the disclaimer under a `--rule` hairline. |
+
 ## Honesty rules
 
 1. **Calibrated probabilities are labelled as model estimates, with the model id** (`model_version`, feature
@@ -270,9 +290,10 @@ banded row) and `gain`/`loss` marks on `signal-wash` (the gauge's trend arrow ov
 
 ### impeccable detect
 
-`impeccable detect --json web/src/app web/src/components` reports **0 findings and no suppressions** (Step 4A,
-2026-11-19). The five `side-tab` hits are resolved; inventory.md has the table. No colour token was added in Step
-4A, so the contrast and palette results below are unchanged.
+`impeccable detect --json web/src/app web/src/components` reports **0 findings and no suppressions** (Step 4B,
+2026-11-19, re-run after the race analysis, telemetry, drivers and shared-part changes; Step 4A had the same
+result). No colour token was added in Step 4A or 4B, so the contrast table below is unchanged: 92 of 92 pairs pass
+in each theme.
 
 ### Palette validator (dataviz `validate_palette.js`)
 
@@ -301,6 +322,18 @@ Run against our own surfaces (`--surface` = `--surface` of each theme).
     `--line-8` dark against Red Bull `#3671c6` (normal ΔE 4.6, CVD 1.5).
   - **After:** OB carries no hue. The one remaining violet line appears only in the lap-times chart, where no
     team colour is shown, so no violet shares a view with a team colour.
+
+- **Telemetry neutral against team colours** (Step 4B). The neutral stroke of a car without a team colour was
+  checked against the same 35 team colours. Each pair was run as `validate_palette.js "<ink>,<team>" --mode <m>
+  --surface <surface> --pairs all` in both themes (70 runs).
+  - **Text ink** (`#ebedf0` dark, `#171b20` light): 68 of 70 pass both checks.
+    - **Dark fails 2:** `#ffffff` (normal ΔE 5.5) and Mercedes `#27f4d2` (protan ΔE 4.2). The next lowest are
+      normal ΔE 15.9 (`#b6babd`) and CVD ΔE 11.4 (`#6cd3bf`).
+    - **Light:** all pass. Worst normal ΔE is 17.0 (`#2b4562`); worst CVD ΔE is 12.0 (`#900000`, protan).
+  - **The grid neutral** (`--grid`) was the first candidate. It was under normal ΔE 15 from 9 team colours in
+    each theme (worst 6.0, `#4e7c9b`), so text ink was chosen.
+  - `strokesClose` flags exactly the two failing pairs, which then get the "line style" note. A and B also always
+    differ by dash and width.
 
 Raw validator output (2026-11-18; the line sets re-run 2026-11-19):
 

@@ -8,6 +8,7 @@
 
 import { lapTime } from "./format";
 import { isBool, isDriverId, isFiniteNumber, isInt, isObj, isStr } from "./guard";
+import { dark, deltaE, light } from "./theme";
 
 export const TELEMETRY_SEASON = 2024;
 export const ONLY_2024_NOTE =
@@ -525,15 +526,54 @@ export interface CarStyle {
   colour: string;
   dash: string;
   width: number;
+  /** true when the car has no team colour and is drawn in the neutral text ink */
+  neutral: boolean;
 }
 
-/** A is solid and B dashed (and thinner) whatever their colours, so teammates or the same driver on
- * two laps stay distinguishable; colours are the team colours, else theme lines 0 and 1. */
+/** The neutral stroke of a car without a team colour: text ink, never a chart-line colour next to a team colour.
+ * Measured against the 35 served team colours (2021–2024, ΔE OKLab × 100): text is under 15 from one of them in
+ * dark (#ffffff, 5.5) and from none in light, where the grid neutral is under 15 from nine (DESIGN.md, Step 4B). */
+export const NEUTRAL_STROKE = "var(--text)";
+/** The dataviz floors between two series (ΔE, OKLab × 100): 15 with normal vision, 8 under protanopia or
+ * deuteranopia. */
+export const CLOSE_DELTA_E = 15;
+export const CLOSE_DELTA_E_CVD = 8;
+
+const HEX = /^#[0-9a-f]{6}$/i;
+
+/** True when two strokes are hard to tell apart by colour in either theme: the same value, both neutral, or two
+ * colours (a team colour, or the neutral ink of each theme) under ``CLOSE_DELTA_E`` apart with normal vision or
+ * under ``CLOSE_DELTA_E_CVD`` with protanopia or deuteranopia. */
+export function strokesClose(a: string, b: string): boolean {
+  if (a === b) return true;
+  const options = (c: string): string[] => (c === NEUTRAL_STROKE ? [dark.text, light.text] : HEX.test(c) ? [c] : []);
+  const pa = options(a);
+  const pb = options(b);
+  if (pa.length === 0 || pb.length === 0) return false;
+  // the same theme for both strokes: dark text against dark, light against light (a hex is the same in both)
+  const pairs: [string, string][] =
+    pa.length === 2 && pb.length === 2
+      ? [[pa[0] as string, pb[0] as string], [pa[1] as string, pb[1] as string]]
+      : pa.flatMap((x) => pb.map((y) => [x, y] as [string, string]));
+  return pairs.some(
+    ([x, y]) =>
+      deltaE(x, y) < CLOSE_DELTA_E || deltaE(x, y, "protan") < CLOSE_DELTA_E_CVD || deltaE(x, y, "deutan") < CLOSE_DELTA_E_CVD,
+  );
+}
+
+/** A is solid and B dashed (and thinner) whatever their colours, so teammates or the same driver on two laps stay
+ * distinguishable. The colours are the team colours; a car without one is the neutral text ink (never
+ * ``--line-0`` / ``--line-1``, which would sit next to the other car's team colour). ``closeColours`` says when the
+ * line style, not the colour, tells them apart. */
 export function carStyles(
   aTeam: { colour: string } | null,
   bTeam: { colour: string } | null,
-): { a: CarStyle; b: CarStyle; sameColour: boolean } {
-  const a = aTeam?.colour ?? "var(--line-0)";
-  const b = bTeam?.colour ?? "var(--line-1)";
-  return { a: { colour: a, dash: "", width: 2 }, b: { colour: b, dash: "6 4", width: 1.75 }, sameColour: a === b };
+): { a: CarStyle; b: CarStyle; closeColours: boolean } {
+  const a = aTeam?.colour ?? NEUTRAL_STROKE;
+  const b = bTeam?.colour ?? NEUTRAL_STROKE;
+  return {
+    a: { colour: a, dash: "", width: 2, neutral: aTeam === null },
+    b: { colour: b, dash: "6 4", width: 1.75, neutral: bTeam === null },
+    closeColours: strokesClose(a, b),
+  };
 }
