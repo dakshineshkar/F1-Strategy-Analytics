@@ -43,3 +43,4 @@ data/cache/
 .ipynb_checkpoints/
 *.log
 spark-events/
+checkpoints/

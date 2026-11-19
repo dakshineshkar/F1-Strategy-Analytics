@@ -2381,16 +2381,44 @@
     `make api-up FULL=1 REPLAY=1`:
     - health ok, `lake` hdfs/full, `deploy_real_G3.5_k2`, `smoke_test` false, `trained_on` full;
     - replay enabled, no replay running.
+- Freeze checks for `submission-rc1` (2026-11-19, on `main` at acc8ae3):
+  - **CI:** run 44514775234 green (python 2326 passed / 7 skipped, web 524 Vitest, e2e demo + Playwright 2 passed
+    / 1 skipped). No annotations; log warnings are harmless (eslint@9 deprecation notice from npm, git default-branch
+    hint, JDK incubator-module notice, netlib BLAS fallback, the sample's missing `stints_tracinginsights` table).
+  - **Clean clone** from GitHub as its own compose project (`COMPOSE_PROJECT_NAME=f1sa-clone F1SA_IMAGE_TAG=clone`,
+    no `.env`), warm image cache: `make up` 63 s, `make sample-data` ok, `make demo` 193 s. Health ok (sample,
+    synthetic, smoke-test model), 20 cars in Redis, SSE carried 137 `undercut_alert` and a `session_end`,
+    dashboard 200 and Playwright smoke 2 passed / 1 skipped. The full stack was then restored (`make up-full`,
+    `make api-up FULL=1 REPLAY=1`, `make web-up`); the HDFS `/f1` tree is identical before and after (12,094
+    directories, 13,596 files; before = offline fsimage + edit log of the stopped namenode).
+  - **Traceability:** `docs/traceability.md` rewritten with Status, Code, Tests and Proof columns (same 44
+    commitments; the proposal PDF is not in the repo). `scripts/check_traceability.py` now checks every cell
+    after Step (each cell on its own); new test `test_every_cell_after_step_is_checked`. Result: OK 490,
+    GENERATED 2, PENDING 3 (S18), MISSING 0. Partial: #4 (FastF1 via TracingInsights), #43 and #44 (S18 open).
+  - **Hygiene:** only `data/sample/` is tracked as data, no `models/`, no `.env`, no credentials; regex secrets
+    scan 0 hits (one `FAKE_PASSWORD` test constant); OFL 1.1 present for all three fonts; one tracked file over
+    1 MB (`.claude/skills/impeccable/scripts/data/font-index.json`, 1.05 MB, skill data). `.gitignore` now also
+    ignores `checkpoints/`.
+  - **README fixes** from the clean clone: a note on a second checkout (fixed project name `f1sa`, the isolation
+    variables of `docs/reproduce.md` §4); "What `make demo` does" lists the entrants, analysis and archive steps,
+    with the 193 s timing; full-data step 5 says `make up-full` comes before `make api-up FULL=1 REPLAY=1` after a
+    `make down`.
 ## Next
-- UI redesign: approve Step 2, then the race picker (F36), analysis, drivers, archive and engineer layouts
-  (F20, F21), the session-end summary (F23).
-- Review and commit Step 3 (F09 alert history, F10 health fields, e2e replay cleanup). F24 API is declined
-  (revisit only if time allows).
-  Fix the three F35 side bars when their pages are rebuilt, and re-check the archive race-status banner
-  (inventory, "Detector findings carried to later steps").
-- S18: report, docs and demo rehearsal (#44): `docs/report/`, `docs/demo_script.md`.
-- Push and watch the first CI run of the `e2e` job on GitHub (runner build time and disk are unmeasured).
+- S18: the report and the demo script (#44): `docs/report/`, `docs/demo_script.md`, then the demo rehearsal.
+- Then the remaining UI redesign:
+  - the Engineer, Archive, race picker, Analysis, Telemetry and Drivers pages;
+  - the three F35 side bars, fixed when their pages are rebuilt, and a re-check of the archive race-status
+    banner (inventory, "Detector findings carried to later steps");
+  - F36 (race picker), F20 and F21 (analysis, drivers, archive and engineer layouts), F23 (session-end summary).
+  - F24 API stays declined (revisit only if time allows).
 ## Known issues
+- Pinned versions reviewed on 2026-11-19 (no pin changed, freeze): Python 3.12 (security-only until 2028) and
+  Java 17 LTS are kept on purpose for stability; newer minor releases exist for PySpark, Kafka, Hadoop and
+  FastAPI.
+- Freeze checks rc1 (2026-11-19): the clean-clone check left the `f1sa-clone_kafka-data` volume and the
+  `f1sa-app:clone` / `f1sa-web:clone` images on the dev host (not removed; no volume removal or prune).
+  `docs/reproduce.md` §4 still shows the 2026-11-14 timing table (`make demo` 103 s, before the entrants,
+  analysis and archive steps); the README gives both measurements.
 - Step 3 alert history (2026-11-19):
   - The history is in memory in the API. An API restart loses it; the restart also stops the API's replays, so
     no live run is affected. A page opened afterwards on the old run's leftover keys gets `[]`, plus the Step 2c

@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Check that every file named in ``docs/traceability.md`` exists (Step 17, commitment #42).
 
-Reads the matrix's last column ("File or module") and checks each backticked reference:
+Reads every cell after the matrix's Step column (Status, Code, Tests, Proof; each cell on its own)
+and checks each backticked reference:
 
 * **paths** (``lake/writer.py``, ``tests/unit/test_keys.py``, ``web/src/components/``,
   ``docker/web/Dockerfile``): tried at the repo root and under ``src/f1sa``, ``tests/unit``,
@@ -60,15 +61,15 @@ class Finding:
 
 
 # ------------------------------------------------------------------ parsing
-def rows(text: str) -> Iterator[tuple[str, str, str]]:
-    """``(number, steps, last cell)`` for every data row of the matrix table."""
+def rows(text: str) -> Iterator[tuple[str, str, list[str]]]:
+    """``(number, steps, every cell after the Step column)`` for every data row of the matrix."""
     for line in text.splitlines():
         if not line.startswith("|"):
             continue
         cells = [c.strip() for c in line.strip().strip("|").split("|")]
         if len(cells) < 4 or not cells[0].isdigit():
             continue
-        yield cells[0], cells[2], cells[-1]
+        yield cells[0], cells[2], cells[3:]
 
 
 def expand_braces(ref: str) -> list[str]:
@@ -243,10 +244,11 @@ def check(repo: Path, matrix: Path, pending_steps: Sequence[str]) -> list[Findin
     text = (repo / matrix).read_text(encoding="utf-8")
     targets = make_targets(repo)
     findings: list[Finding] = []
-    for number, steps, cell in rows(text):
+    for number, steps, cells in rows(text):
         row_steps = set(STEP.findall(steps))
         pending = bool(row_steps) and row_steps <= set(pending_steps)
-        findings.extend(check_cell(repo, number, cell, targets, pending))
+        for cell in cells:
+            findings.extend(check_cell(repo, number, cell, targets, pending))
     return findings
 
 

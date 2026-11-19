@@ -161,6 +161,32 @@ def test_generated_outputs_and_pending_rows_are_reported_not_failed(tmp_path: Pa
     assert any("PENDING   #2   docs/report/" in line for line in lines)
 
 
+def test_every_cell_after_step_is_checked(tmp_path: Path) -> None:
+    # | # | Commitment | Step | Status | Code | Tests | Proof |: a missing file in a middle column
+    # fails; the Status text has no references; a bare name resolves only next to its own cell.
+    repo = _repo(
+        tmp_path,
+        [
+            "| 1 | x | S5 | done (reason) | `features/gaps.py`, `lake/gone.py` | `test_keys.py` "
+            "| `results/run_s10.csv`, `make demo` |",
+            "| 2 | y | S6 | partial | `features/gaps.py` | `stints.py` | `make nope` |",
+        ],
+    )
+    got = [(f.row, f.ref, f.status) for f in CT.check(repo, Path("docs/traceability.md"), [])]
+    assert got == [
+        ("1", "features/gaps.py", "OK"),
+        ("1", "lake/gone.py", "MISSING"),
+        ("1", "test_keys.py", "OK"),
+        ("1", "results/run_s10.csv", "OK"),
+        ("1", "make demo", "OK"),
+        ("2", "features/gaps.py", "OK"),
+        ("2", "stints.py", "MISSING"),  # no base folder has it; the previous cell's is not used
+        ("2", "make nope", "MISSING"),
+    ]
+    table = "| 3 | z | S1 | a | b |\n| x | not | a | row |\n"
+    assert list(CT.rows(table)) == [("3", "S1", ["a", "b"])]
+
+
 def test_main_exit_codes(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     ok = _repo(tmp_path / "ok", ["| 1 | x | S5 | `lake/paths.py` |"])
     assert CT.main(["--repo", str(ok)]) == 0

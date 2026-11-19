@@ -94,6 +94,12 @@ host. The dashboard always shows a **SYNTHETIC DEMO DATA** banner.
   [architecture.md#memory-budget](docs/architecture.md#memory-budget).
 - **User id.** Without a `.env`, `make` builds the app image for your user id (`id -u`), so the containers can
   write `data/` and `models/`. To change ports or the user id, copy `.env.example` to `.env`.
+- **A second checkout on the same host.** `docker-compose.yml` fixes the compose project name (`name: f1sa`), so
+  a second clone would join a stack that already runs: it would share that stack's `kafka-data` volume and
+  rebuild its `:dev` images. Stop the running stack with `make down` (it uses the same ports) and run the second
+  clone as its own project, in the same shell as every `make` command of that clone
+  ([reproduce.md §4](docs/reproduce.md#4-timing-of-a-fresh-clone)):
+  `export COMPOSE_PROJECT_NAME=f1sa-clone F1SA_IMAGE_TAG=clone`.
 
 ### Run it
 
@@ -105,25 +111,33 @@ make sample-data   # validates data/sample offline
 make demo          # sample pipeline + sample model + a 60x replay of 2024 R5
 ```
 
-On the dev host, a clean clone took **5 min 57 s** for an image build without cache plus
-`make up && make sample-data && make demo` (`make demo` alone: 103 s). Base images and package caches were warm, so
-a first run on a new machine also pays for the downloads ([reproduce.md §4](docs/reproduce.md#4-timing-of-a-fresh-clone)).
+On the dev host, `make demo` takes about **193 s** (clean clone of 2026-11-19 with a warm image cache; `make up`
+63 s). An earlier clean clone (2026-11-14) took 5 min 57 s for an image build without cache plus
+`make up && make sample-data && make demo`, when `make demo` took 103 s because it did not yet build the
+entrants, analysis and archive tables. Base images and package caches were warm both times, so a first run on a
+new machine also pays for the downloads ([reproduce.md §4](docs/reproduce.md#4-timing-of-a-fresh-clone)).
 
 `make demo` prints `Dashboard: http://localhost:3000/race/2024/5  (SYNTHETIC DEMO DATA)`. Open it while the replay
 runs (about 2 minutes at 60x). Start another replay from the page, or run `make demo-replay`. Use `localhost`,
 not `127.0.0.1`: it is the API's CORS origin.
 
 What `make demo` does. Every Spark step runs in the `app` container:
-1. Sample ETL into `data/lake/clean` and the Spark feature jobs into `data/lake/features`. The undercut counts go
-   to `data/demo/<run>/`, never to `results/`.
-2. Builds the **sample deployment model** `models/undercut/sample_deploy_real_G3.5_k2/`, which is what the stream job
+1. Sample ETL into `data/lake/clean`.
+2. Builds the display-only tables the dashboard reads: the per-race **entrants** (`clean/entrants`: driver, team,
+   colours) and the post-race **analysis** tables (`clean/analysis_*`: laps, stints, pit stops, race control,
+   positions).
+3. Runs the Spark feature jobs into `data/lake/features`. The undercut counts go to `data/demo/<run>/`, never to
+   `results/`.
+4. Builds the **sample deployment model** `models/undercut/sample_deploy_real_G3.5_k2/`, which is what the stream job
    scores with.
    - It is the frozen procedure trained on the one sample training race and stamped SMOKE TEST.
    - Its probabilities are not findings.
    - The real deployment model is built from the full lake (`make model-save-full`) and is not part of the demo.
-3. Builds the what-if tyre model `models/sim/tyre_model_sample.json`.
-4. Recreates only the `api` container (replay on, sample model).
-5. Starts the replay. It waits until all 20 cars are in Redis, then prints the URL.
+5. Builds the **post-race archive** bundles (`data/lake/archive`): each sample race replayed lap by lap through the
+   stream path with the sample model, for the post-race viewer.
+6. Builds the what-if tyre model `models/sim/tyre_model_sample.json`.
+7. Recreates only the `api` container (replay on, sample model).
+8. Starts the replay. It waits until all 20 cars are in Redis, then prints the URL.
 
 Stop everything with `make down`. It removes the containers and keeps the volumes. `make demo-clean` lists the demo
 outputs under `data/demo`.
@@ -149,7 +163,9 @@ targets that write `results/` are in **[docs/reproduce.md](docs/reproduce.md)**.
 4. **Clean zone, features and model.** `make pipeline-full` and `make etl-ti-full` build them. `make model-dev-full`
    runs development on 2021–2024. `make model-save-full` saves the deployment model, which never reads 2025. The
    single 2025 test run, `make model-test-full CONFIRM=yes`, is pre-registered and refuses to run twice.
-5. **Serve the full lake:** `make api-up FULL=1 REPLAY=1`.
+5. **Serve the full lake:** `make api-up FULL=1 REPLAY=1`. It needs the hdfs profile, so after a `make down`
+   start the full stack again with `make up-full` first (the HDFS volumes are kept), then run
+   `make api-up FULL=1 REPLAY=1` and, for a rebuilt dashboard, `make web-up`.
 
 ## Reproducing the experiments
 
