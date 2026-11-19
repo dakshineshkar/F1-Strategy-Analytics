@@ -139,13 +139,13 @@ thead { display: table-header-group; }
 tr { break-inside: avoid; page-break-inside: avoid; }
 th, td { border: 0.5pt solid #aaa; padding: 1.8pt 3pt; vertical-align: top; text-align: left; }
 th { background: #e9e9e9; font-family: "Barlow Semi Condensed", "DejaVu Sans", sans-serif; font-weight: 600; font-size: 8pt; }
-td code { font-size: 7pt; }
+td code { font-size: 7pt; overflow-wrap: normal; word-break: normal; }
 figure { margin: 4pt 0 8pt; text-align: center; break-inside: avoid; page-break-inside: avoid; }
-figure img { max-width: 100%; max-height: 56mm; object-fit: contain; }
-figure.pair { display: flex; flex-wrap: wrap; gap: 3mm; justify-content: space-between; }
-figure.pair > div { flex: 1 1 0; min-width: 0; }
-figure.pair img { width: 100%; max-height: none; }
-figure.pair figcaption { flex-basis: 100%; }
+figure img { display: block; width: 100%; max-height: 240mm; object-fit: contain; }
+figure.pair { break-inside: auto; page-break-inside: auto; }
+figure.pair > div { break-inside: avoid; page-break-inside: avoid; }
+figure.pair > div + div { margin-top: 3mm; }
+figure.pair figcaption { break-before: avoid; page-break-before: avoid; }
 figcaption { font-size: 7.8pt; color: #333; margin-top: 2pt; text-align: left; }
 blockquote { margin: 0 0 6pt; padding: 2pt 8pt; border-left: 2pt solid #999; color: #333; }
 hr { border: 0; border-top: 0.5pt solid #999; margin: 8pt 0; }

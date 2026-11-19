@@ -307,6 +307,11 @@ From [docs/experiments.md](docs/experiments.md). All medians are on one 12-CPU W
 
 - **Small test season.** With 49 labelled attempts in 19 races, the 2025 intervals are wide. No difference
   between models or feature sets is claimed as significant.
+- **The label depends on the defender's response.** An attempt (attacker A pits on lap L, behind defender D) is
+  labelled only when D makes its first stop in [L + 1, L + k]. If it does not, the outcome is
+  `defender_stayed_out`, which is not part of the binary label, and those rows are dropped from the model data
+  ([docs/label_definition.md](docs/label_definition.md)). The model's probability is therefore the chance of
+  success given that D responds within k laps, and whether D will respond is not known at decision time.
 - **Single host.** Every "node" is a container on one VM: no network shuffle, no HDFS data locality (one datanode),
   and a shared page cache, so timed runs read warm. Larger lap inputs are synthetic copies with shifted keys, so
   skew and cardinality are idealised.

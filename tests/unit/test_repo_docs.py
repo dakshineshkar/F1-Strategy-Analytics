@@ -158,7 +158,7 @@ def test_report_has_every_section_the_team_and_open_contribution_cells() -> None
     headings = re.findall(r"^## (.+)$", text, re.MULTILINE)
     assert headings == list(REPORT_SECTIONS)
     for name in TEAM:
-        assert f"| {name} | TODO: fill in |" in text, name
+        assert f"| {name} | TO BE COMPLETED BEFORE SUBMISSION |" in text, name
     assert text.count(APPENDIX_MARKER) == 1 and text.count("<!-- toc -->") == 1
     abstract = text.split("## 1. Abstract", 1)[1].split("## 2.", 1)[0]
     assert len(abstract.split()) <= 200
@@ -181,7 +181,9 @@ def test_report_links_and_images_resolve() -> None:
         assert target.is_relative_to(REPO), link
         if target.suffix == ".png":
             rel = target.relative_to(REPO).as_posix()
-            assert rel.startswith(("results/", "docs/design/before/", "docs/design/after/")), rel
+            assert rel.startswith(
+                ("results/", "docs/report/figures/", "docs/design/before/", "docs/design/after/")
+            ), rel
 
 
 def test_appendix_a_values_appear_verbatim_in_their_source_and_the_report() -> None:

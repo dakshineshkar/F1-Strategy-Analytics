@@ -2409,7 +2409,8 @@
     - Every number is copied from a committed file in `results/` or `docs/`; nothing was recomputed.
     - Figures are the committed PNGs and the redesign screenshots.
     - No new 2025 number. The what-if 2025 row is the README's (user decision).
-    - Section 16 (team contributions) has a "TODO: fill in" cell per member, left for the team.
+    - Section 16 (team contributions) has a "TODO: fill in" cell per member, left for the team (now "TO BE
+      COMPLETED BEFORE SUBMISSION", review fixes below).
   - **`docs/report/report.pdf`** (committed, the submission file): `make report-pdf` renders it.
     - The renderer is `web/scripts/report-pdf.mjs`: marked turns the Markdown into HTML, mermaid draws the diagram
       inside Playwright's Chromium, and Chromium prints A4 with page numbers, PDF bookmarks and a linked table of
@@ -2433,6 +2434,30 @@
       and `web/tests/reportPdf.test.ts`.
   - **README fix.** "Full-data mode" said the 2021–2025 lake has 90 races. It now says the lake holds 114 races
     (2021–2025) and the API serves the 90 of 2021–2024 (2025 is the sealed test season).
+- Step 18a review fixes (2026-11-19, documentation; #43, #44): the report review's P0, P1 and P2 findings applied to
+  `docs/report/report.md` and `docs/demo_script.md`, each P1 claim checked against its source first.
+  - Report:
+    - conclusion corrected: better than the majority baseline on PR-AUC, ROC-AUC, F1 and Brier, not ECE;
+    - in-sample selection Brier; sparse LR (6 of 52 columns); development LOSO 0.559 against 0.533;
+    - the label's dependence on the defender's response;
+    - the race-filter cost in the recorded build cells; the two Redis hosts;
+    - data volume; track status and the frozen label;
+    - a planned-vs-actual timeline (#43); the what-if screenshot (#26); plain names for step labels; a Terms
+      paragraph;
+    - Appendix A has 79 rows.
+  - Figures:
+    - every figure at full text width, with the screenshots stacked;
+    - five report-only copies in `docs/report/figures/`, re-plotted from the committed `results/*.csv` by
+      `docs/report/make_figures.py` (`uv run python docs/report/make_figures.py`; deterministic; `results/`
+      unchanged);
+    - file names in tables no longer break mid-word.
+  - PDF: 21 pages (body 18, Appendix A 3).
+  - Demo script:
+    - segment 9 commands fixed (`sed … | head -12`; the checker prints no MISSING entry);
+    - Enter after Ctrl+V; segment 9 now 90 s;
+    - the sample fallback is prebuilt (`make demo-pipeline`, 153 s), so during the demo it is only `make up`
+      plus `make demo-replay DEMO_SPEED=10` (28 s, measured on the dev host).
+  - Tests: `test_repo_docs.py` expects "TO BE COMPLETED BEFORE SUBMISSION" and allows `docs/report/figures/`.
 ## Next
 - S18B: the demo rehearsal with `docs/demo_script.md` (full lake, then the sample-mode fallback); fill in section 16
   (team contributions) of the report and run `make report-pdf` again.
@@ -2443,7 +2468,11 @@
   - F36 (race picker), F20 and F21 (analysis, drivers, archive and engineer layouts), F23 (session-end summary).
   - F24 API stays declined (revisit only if time allows).
 ## Known issues
+- Report §16 team contributions still to be filled in (blocker for submission).
 - Step 18a (2026-11-19):
+  - **Report body page count.** `make report-pdf` prints "body N" from a separate render of the body alone, which
+    paginates differently from the full document since the figures became full-width (it printed body 21 for a
+    21-page PDF whose Appendix A starts on page 19). The real split is 18 + 3 (counted from the Appendix A heading).
   - **Rendering limits.** The PDF's table of contents links to each section but has no page numbers (Chromium
     cannot compute them); PDF bookmarks carry the outline. `make report-pdf` is not run in CI (Chromium), so the
     committed PDF must be re-rendered by hand after any change to `docs/report/report.md`. The tests check the

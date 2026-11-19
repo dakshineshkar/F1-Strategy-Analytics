@@ -21,7 +21,8 @@ under a pre-registered specification. On 49 labelled attempts it reached PR-AUC 
 [0.106, 0.232], better than the rule baseline on every metric but with overlapping intervals. Kafka replays feed
 Spark Structured Streaming, which applies the same rule and scorer as the batch path (parity on 90 races) and writes
 Redis. FastAPI pushes the state over Server-Sent Events to a Next.js dashboard with a Monte Carlo what-if simulator.
-On a single host, steady-state end-to-end latency at 60x is 798 / 1461.5 / 1757 ms (p50 / p95 / p99).
+On a single host, for one replayed race (2024 R5, sample lake), steady-state end-to-end latency at 60x is 798 /
+1461.5 / 1757 ms (p50 / p95 / p99).
 
 ## 2. Problem and motivation
 
@@ -120,6 +121,11 @@ Source: `docs/data_source_audit.md`, `docs/traceability.md` #4.
 The lake holds 2021–2025 (114 races in the lake). The API catalog serves the 90 races of 2021–2024, because 2025 is
 the sealed test season (`docs/traceability.md` #6).
 
+**Volume.** The HDFS raw zone holds 2,024,360,565 B and 3,542 files (about 2.02 GB) (`docs/data_dictionary.md`,
+telemetry trace table). The clean zone has 124,834 laps over the five seasons (`docs/experiments.md`, real seasons
+at x1). The 2024 per-lap telemetry trace table, resampled on a distance grid, is 209,217,336 B (209 MB, zstd) on
+HDFS.
+
 | Season | Races | Results | Laps | Pit stops | Stints | Undercut rows (all 9 G, k settings) |
 |---|---|---|---|---|---|---|
 | 2021 | 22 | 440 | 23,688 | 798 | 1,223 | 3,543 |
@@ -164,6 +170,13 @@ Source: `docs/data_dictionary.md` "Quality checks".
 Source: `DATA_LICENSES.md`.
 
 ## 5. Processing and features
+
+**Terms used below.**
+- **SC / VSC:** safety car / virtual safety car. Laps run under either (or under a red flag) are *neutralised*.
+- **The timing line** is the start/finish line, where every lap time is recorded. Gaps are measured there, as the
+  difference of cumulative race times at the same lap number.
+- **Decision lap L − 1 and attempt lap L:** L is the lap on which the attacker pits (its in-lap). The decision is
+  made at the end of lap L − 1, the last completed lap before the stop, and features may use nothing later.
 
 ### 5.1 The three Spark APIs
 
@@ -216,6 +229,13 @@ The core rule: a feature for a decision at lap *L* may only use information avai
 
 The track-status heuristic uses the whole race's median lap. It is therefore used only for eligibility and
 exclusion, never as a feature. Source: `docs/label_definition.md` "Leakage rules", "Track status".
+
+**Why labels still use the heuristic although TracingInsights has track status.** The label definition was frozen
+(git tag `label-definition-v1`, 2026-11-11) before the TracingInsights ingest (2026-11-12), and changing it would
+change labels. TracingInsights track status is therefore used only for display: the race-analysis tables, the
+dashboard's race-status line and the archive's flag lane. Its two forms, per-lap codes and race-control periods,
+agree with each other: "463 leader laps flagged by both, 0 by only one source" (`docs/PROGRESS.md`, race-analysis
+evidence). This checks the display data only; the heuristic itself was not compared with TracingInsights.
 
 ## 6. Undercut definition and detection
 
@@ -281,7 +301,9 @@ With fewer than 300 labelled validation rows, Platt scaling is used without comp
 Platt for both models in both settings (49 and 64 validation rows).
 
 The **primary model is the calibrated LR**, because it has the lowest calibrated validation Brier: 0.168 against
-0.205 for calibrated GBT at G=3.5, k=2. It was named before the test run and not re-chosen afterwards. The same
+0.205 for calibrated GBT at G=3.5, k=2 (Platt is fitted and scored on the same 49 validation rows, so both Brier
+values are optimistic). 2024 is used both to select the grid point and to fit the calibration; there is no separate
+calibration season. The primary model was named before the test run and not re-chosen afterwards. The same
 specification, trained once without reading 2025 (`make model-save-full`), is the deployed model. Streaming scores it
 with a pure-Python scorer that equals Spark within 1e-9. Source: `docs/model_spec.md` "Calibration",
 "Primary model", "Deployment artefact".
@@ -289,16 +311,25 @@ with a pure-Python scorer that equals Spark within 1e-9. Source: `docs/model_spe
 ### 7.3 Explanations
 
 `model/explain.py` reports three things: GBT importances, standardised LR coefficients, and permutation importance on
-validation. At the primary setting (`results/feature_importance_G3.5_k2.csv`):
+validation, all in `results/feature_importance_G3.5_k2.csv` (Figure 2).
+
+![Figure 2. (a) GBT importance and (b) LR permutation PR-AUC drop at G=3.5, k=2, the 10 largest values of each. Re-plotted for the report from results/feature_importance_G3.5_k2.csv; the LR coefficients are in the same file.](figures/feature_importance.png)
+
+At the primary setting:
 - **The gap dominates.**
   - LR coefficient of `gap_s` on the standardised column: -0.694987 log-odds per 1 sd. A larger gap lowers the odds.
   - LR permutation PR-AUC drop for `gap_s`: 0.159439.
   - GBT importance of `gap_s`: 0.195536.
-- **GBT's largest importance is `defender_expected_outlap_pace_residual_s`** (0.258437): how quickly the defender's
-  team typically warms up its tyres on an out-lap.
+- **GBT's largest importance is `defender_expected_outlap_pace_residual_s`** (0.258437), the defender's prior
+  out-lap residual.
 - **The attacker's degradation slope** has the second-largest LR coefficient (0.212565).
-
-![Figure 2. Feature importance at G=3.5, k=2 (LR coefficients, permutation drop, GBT importance).](../../results/feature_importance_G3.5_k2.png)
+- **The LR is sparse.** The elastic net (regParam 0.1, elasticNetParam 0.5) leaves 6 of the 52 assembled columns
+  non-zero: `gap_s`, `attacker_deg_slope_s_per_lap`, `gap_ahead_change_1l` (-0.163837), `attacker_stint_laps`
+  (-0.059743), `defender_expected_outlap_pace_residual_s` (0.049918) and `gap_ahead_change_3l` (-0.029925). The
+  pit-loss prior, rejoin traffic, laps remaining, both stop-delta priors and the attacker's out-lap residual get
+  zero weight. In effect the model is gap + gap trend + attacker degradation, with two small terms. The deployed
+  scorer (`models/undercut/deploy_real_G3.5_k2`) has the same 6 non-zero columns, and the permutation drop is
+  material only for `gap_s`.
 
 ### 7.4 Pre-registration and the single 2025 run
 
@@ -308,8 +339,11 @@ validation. At the primary setting (`results/feature_importance_G3.5_k2.csv`):
   them could replace `real`: a mean leave-one-season-out PR-AUC at least 0.02 above it.
   - Leave-one-season-out (LOSO) fits on three of 2021–2024 and scores the fourth.
   - Neither set qualified: 0.413 for `real`, 0.402 for `real_tyre` and 0.374 for `real_ti`, so `real` stayed primary.
+  - The form of the rule was written before any development table for the two sets existed, but the 0.02 margin
+    was fixed after those tables had been seen. Both sets score below `real`, so the outcome is the same for any
+    margin of 0 or more (`docs/model_spec_v2.md` §2).
 - **Approval.** On 2026-11-13 the specs were approved for the single test run "by Parinith D. on behalf of the team"
-  (`docs/PROGRESS.md` "9f approval").
+  (the approval record at the end of `docs/PROGRESS.md`).
 - **The one run.** `make model-test-full CONFIRM=yes` ran 3 feature sets × 2 settings. It refuses to run again once
   its files exist. An earlier attempt crashed overnight before any test number was written, and the rerun rule
   allowed it to be repeated.
@@ -365,13 +399,15 @@ Two defender responses are simulated: D covers one lap after A (primary) or k = 
 Everything below was pre-registered in `docs/sim_spec.md` before any backtest:
 - **Lap time** = driver pace level + a tyre model f(compound, age, lap) + noise.
 - **The tyre model** is fitted on green laps of strictly earlier races per circuit × compound, with fallbacks.
-- **Stop loss** uses the Step 8 decomposition (pit-loss prior + team stop delta + out-lap residual) plus noise with a
+- **Stop loss** uses the out-lap decomposition of §5.2 (pit-loss prior + team stop delta + out-lap residual) plus noise with a
   robust (1.4826 × MAD) SD.
 - **Traffic:** a third car within 1.0 s ahead holds the pitting car to 1.0 s behind it.
 - **Draws:** 500 by default, seed 42, common random numbers across strategies.
 
 The calibrated model probability is shown next to the simulator's, unchanged. Source: `docs/sim_spec.md`,
 `docs/architecture.md` "What-if simulator".
+
+![Figure 3. What-if panel before the redesign (captured 2026-11-18, full lake, 2024 R5, lap 10, PER on VER, 500 draws, seed 42): the three strategies with the share of sim runs ahead, the expected gap and its 80% interval, then the sensitivity case where the defender covers 2 laps later. This pair is 8.04 s apart, outside the 3.5 s rule window, so every strategy is at 0% and the model line is empty.](../design/before/d-dark-whatif.png)
 
 ## 10. Dashboard
 
@@ -386,19 +422,22 @@ November 2026 around one question, "is there a call now?". Its parts:
 <figure class="pair">
 <div><img src="../design/after/d-dark-mid.png" alt="Live race view after the redesign"></div>
 <div><img src="../design/before/d-dark-fold.png" alt="Live race view before the redesign"></div>
-<figcaption>Figure 3. Live race view, full lake, 2024 Chinese Grand Prix (R5), 10x replay. Left, after the redesign (lap 38): the call (PER → LEC, 69% model estimate) leads, and the timing tower and the alert feed are its evidence. Right, before the redesign (captured 2026-11-18, lap 10): the replay control and the alerts sat in a side column with no single call.</figcaption>
+<figcaption>Figure 4. Live race view, full lake, 2024 Chinese Grand Prix (R5), 10x replay. Top, after the redesign (lap 38): the call (PER → LEC, 69% model estimate) leads, and the timing tower and the alert feed are its evidence. Bottom, before the redesign (captured 2026-11-18, lap 10): the replay control and the alerts sat in a side column with no single call.</figcaption>
 </figure>
 
 **The other views** (not yet redesigned, `docs/PROGRESS.md` "Next"):
 - **Engineer tab:** ahead / focus / behind cards with the pair's pace and the rejoin estimate.
-- **What-if panel:** a run for the chosen pair; the results are "share of sim runs ahead", the expected gap and its
+- **What-if panel** (Figure 3): a run for the chosen pair; the results are "share of sim runs ahead", the expected gap and its
   80% range.
 - **Post-race (archive):** a stored bundle replayed through the live reducer, with a lap slider and event lanes.
 - **Race analysis:** tyre strategy, lap times, tyre degradation, positions, compare, pit stops, race control and,
   for 2024, telemetry overlays.
 - **Drivers:** the entrant list.
 
-The archive is built by the stream's own processor and proved equal to a live replay (`make archive-equivalence`).
+The archive is built by the stream's own processor and checked equal to a live replay at the compared laps
+(`make archive-equivalence`).
+
+![Figure 5. Late join at lap 45 (full lake, 2024 R5, 10x replay): the call is shown at once, and the alert feed lists the run's earlier alerts under "Received before you opened the page" (the connect snapshot's alert history).](../design/after/d-dark-latejoin.png)
 
 **Honesty labels** (`docs/design/DESIGN.md` "Honesty rules"):
 - Probabilities are labelled as model estimates with the model id, next to the 2025 base rate.
@@ -407,8 +446,6 @@ The archive is built by the stream's own processor and proved equal to a live re
 - Nothing in the live view uses a lap the stream has not reached. After a late join, history from before the page
   opened is shown as "not received", never back-filled.
 - Every empty value says why.
-
-![Figure 4. Late join at lap 45 (full lake, 2024 R5, 10x replay): the call is shown at once, and the alert feed lists the run's earlier alerts under "Received before you opened the page" (the connect snapshot's alert history).](../design/after/d-dark-latejoin.png)
 
 ## 11. Evaluation
 
@@ -423,8 +460,12 @@ All measurements ran on one 12-CPU WSL 2 VM with about 14 GB of memory. The fing
 - Larger inputs are synthetic copies of the lap tables (x4, x16) with shifted keys.
 - Telemetry aggregation runs over the real 2024 raw samples (1.94 GB), using 5, 14 or 24 rounds.
 - Masters: `local[1]`, `local[2]`, `local[4]`, and a standalone cluster of 2 workers × 2 cores.
-- Each cell runs in a fresh JVM: 1 warm-up + 3 timed runs, and the median with its IQR is reported.
+- Each cell runs in a fresh JVM: 1 warm-up + 3 timed runs, and the median with its IQR is reported. With 3 runs,
+  q1 and q3 are interpolated halfway between the median and the fastest or slowest run, so the IQR bars show half
+  the spread of the three runs, not a robust quartile range.
 - A memory guard kills a cell when the app container passes 90% of its 6 GiB (5.40 GiB).
+
+![Figure 6. Feature-build runtime by real seasons and by replication factor, per master (median with IQR bars; hollow marker = re-run after the race-filter fix). Re-plotted for the report from results/scalability.csv.](figures/scalability_build.png)
 
 | Feature build, real seasons at x1 | local[1] | local[2] | local[4] | cluster |
 |---|---|---|---|---|
@@ -442,8 +483,6 @@ All measurements ran on one 12-CPU WSL 2 VM with about 14 GB of memory. The fing
 
 Source: `docs/experiments.md` "Final findings", `results/scalability.csv`.
 
-![Figure 5. Feature-build runtime by real seasons and by replication factor, per master (median with IQR bars).](../../results/scalability_build.png)
-
 **Reading.**
 - **Fixed overhead dominates at small sizes.** Going from 1 to 5 real seasons multiplies the lap rows by 4.7, but
   the `local[4]` time only by 1.37 (48.0 → 65.8 s).
@@ -451,8 +490,17 @@ Source: `docs/experiments.md` "Final findings", `results/scalability.csv`.
   [160.9, 164.8], 1.59x over `local[1]`.
 - **Telemetry grows about linearly** with the rounds. The speed-up from more cores is about 1.7x for two cores and
   2.4x for four.
-- **The 1-season `local[1]` value (80.5 s)** is above its 3-season value. The series is not monotonic there, and the
-  experiments doc does not explain it.
+- **A race-filter cost in the recorded cells.** The recorded build cells used the old race filter (one `OR` per
+  race), whose cost grows with the number of races. The later fix made two re-timed cells faster:
+  `build_s1_x4_local4` (96 races) from 64.68 s to 54.03 s (−16%), and `build_s3_x1_local4` (68 races) from
+  49.36 s to 43.71 s (−11%) (`docs/experiments.md` "StackOverflowError in six build cells, and the fix"). The growth
+  of the recorded times with input size therefore partly reflects the filter, not only the build. How the filter
+  cost splits between the driver and the cores was not measured.
+- **The 1-season `local[1]` value (80.5 s)** is above its 3-season value (57.9 s), in Figure 6 (a). The series is
+  not monotonic there, and no cause is documented (`docs/experiments.md` says it is not explained; the CSV rows have
+  no note). It is not explained here either: its three timed runs (67.2348 to 82.8875 s) do not overlap those at
+  3 seasons (56.6513 to 64.5230 s), so run-to-run variance alone does not account for it
+  (`results/scalability.csv`, `build_s1_x1_local1` and `build_s3_x1_local1`).
 - **The largest cells.** At 1 season x16 and 5 seasons x4, all four `local[N]` cells were stopped by the memory guard
   (5.44–5.56 GiB). The cluster finished them, at 175.6 s [169.6, 186.7] and 213.6 s [211.2, 216.6].
   - Each of these cluster runs lost an executor to a heartbeat timeout and recovered, so the medians may include
@@ -479,7 +527,7 @@ They are stored unpartitioned or with `partitionBy(season, round)`, on file:// a
 
 Source: `docs/experiments.md` "Partitioning and caching", `results/partitioning.csv`.
 
-![Figure 6. Speed-up of each layout and caching variant against the simplest baseline (file://, unpartitioned, no cache).](../../results/partitioning_speedup.png)
+![Figure 7. Speed-up of each layout and caching variant against the simplest baseline (file://, unpartitioned, no cache; dashed line = 1x), laps x16 queries. Re-plotted for the report from results/partitioning.csv; the telemetry panels are in results/partitioning_speedup.png.](figures/partitioning_laps.png)
 
 **Reading.**
 - **Pruning helps the narrow lap queries, mostly on file://.** One-race queries are 1.74x faster on file:// and
@@ -495,6 +543,8 @@ Source: `docs/experiments.md` "Partitioning and caching", `results/partitioning.
 The single pre-registered run covers 49 labelled attempts in 19 races at the primary setting, with a base rate
 of 0.347.
 
+![Figure 8. Reliability diagram of the 2025 test run at G=3.5, k=2.](../../results/reliability_G3.5_k2.png)
+
 | Model (primary setting) | PR-AUC [95% CI] | Brier [95% CI] | ROC-AUC [95% CI] | F1 positive class [95% CI] | ECE, 10 bins [95% CI] |
 |---|---|---|---|---|---|
 | **Calibrated LR, feature set `real` (primary)** | **0.670 [0.421, 0.898]** | **0.177 [0.106, 0.232]** | 0.792 [0.667, 0.929] | 0.571 [0.323, 0.778] | 0.107 [0.076, 0.234] |
@@ -509,9 +559,10 @@ Source: `README.md` "Key results", `docs/model_results.md`, `results/model_eval_
 - At the sensitivity setting (60 attempts in 20 races) its PR-AUC is 0.723 [0.541, 0.858].
 - Calibrated GBT has a slightly higher point PR-AUC at the primary setting (0.703 [0.505, 0.872]) but a worse Brier
   (0.194). It was not re-chosen.
-- **For context only:** in development no model beat the rule on LOSO at the primary setting.
-
-![Figure 7. Reliability diagram of the 2025 test run at G=3.5, k=2.](../../results/reliability_G3.5_k2.png)
+- **In development the rule beat every model on LOSO at the primary setting:** mean PR-AUC 0.559 for the rule
+  against 0.533 for the best model, `real_tyre` GBT (`docs/model_spec_v2.md` §7; LOSO uses raw scores at the first
+  grid point, so it is not comparable with the calibrated columns). The 2025 advantage over the rule may therefore
+  partly reflect this sample.
 
 ### 11.4 Ablation: with and without tyre and telemetry inputs (#30)
 
@@ -530,7 +581,7 @@ Source: `README.md` "Key results", `docs/model_results.md`, `results/model_eval_
 
 Source: `docs/model_results.md` "Paired ablation intervals", `results/ablation_paired.csv`.
 
-![Figure 8. Paired 2025 differences between feature sets, with 95% race-cluster intervals.](../../results/ablation_paired.png)
+![Figure 9. Paired 2025 differences between feature sets for calibrated LR at G=3.5, k=2 (the rows of the table above), with 95% race-cluster intervals; red = the interval excludes 0 (2 of all 48 intervals, both in this figure). Re-plotted for the report from results/ablation_paired.csv; all 48 intervals are in results/ablation_paired.png.](figures/ablation_lr_primary.png)
 
 **Reading.**
 - 46 of the 48 paired intervals contain 0. The two that do not are both calibrated LR at the primary setting:
@@ -568,6 +619,10 @@ Source: `README.md` "Streaming, UI and Redis latency", `docs/experiments.md`, `r
 - **UI at 60x:** API SSE send → browser paint is p50 / p95 / p99 28 / 37 / 40 ms, and produced → paint is
   855 / 1519.5 / 3443.5 ms (`results/ui_latency_summary.csv`).
 - **Throughput** equals the produced rate, 12.71 messages/s at 60x, with no backlog. The maximum was not load-tested.
+- **Measured before two later SSE changes.** The per-lap snapshot now comes before the lap's first frame, which
+  adds about +3 ms at the median to that frame (measured separately; `docs/experiments.md`, the section on the snapshot order).
+  The connect snapshot now also carries the run's recent alerts. It is sent once per connection, and its effect
+  was not measured. The end-to-end runs above were not repeated after either change.
 
 ### 11.6 Redis latency at streaming rates (#37)
 
@@ -584,8 +639,10 @@ one pipelined batch write, 20 HGETALL and 1 ZRANGE, from the host through the Do
 
 Source: `docs/experiments.md` "Redis latency" (quiet rerun), `results/redis_latency_quiet.csv`.
 
-**Reading.** Every rate met its schedule, and every p99 is below 3.1 ms. An earlier run on a busier host fell behind
-at 60/s (2876 late ticks). It is kept as `results/redis_latency.csv`, and the difference is attributed to host load.
+**Reading.** Every rate met its schedule, and every p99 is below 3.1 ms. An earlier run fell behind at 60/s (2876
+late ticks) on the earlier VM configuration (6 logical CPUs, 9.7 GiB) under background load. It is kept as
+`results/redis_latency.csv`. The two runs differ in both host size and load, so the difference cannot be put down
+to load alone (`docs/experiments.md` "Redis latency").
 
 ### 11.7 Resource usage (#38)
 
@@ -612,6 +669,8 @@ core. The peaks come from JVM and Spark start-up.
   where P(`pit_next_lap`) − P(`pit_now`) = +0.022. The extra simulated lap widens the spread and lifts a small tail
   probability, even though the mean gap worsens. The rule was kept unchanged, and the failure is part of the result.
 
+![Figure 10. What-if checks. (a) The ordering check as recorded, P(pit_next_lap) − P(pit_now) per gap and closing rate; the circled cell is the one failure. (b) Backtest reliability in 10 bins for the simulator (2021–2024 and held-out 2025) and the calibrated model (2021–2024). Re-plotted for the report from results/whatif_consistency.csv.](figures/whatif_checks.png)
+
 **Backtest of P(`pit_now`) against the real outcomes:**
 
 | Subset | Attempts | Simulator Brier | Simulator ECE, 10 bins | Simulator mean P | Observed rate | Model Brier | Model ECE, 10 bins |
@@ -620,8 +679,6 @@ core. The peaks come from JVM and Spark start-up.
 | **2025 (held out)** | 49 | **0.245** | **0.207** | **0.395** | 0.347 | 0.177 | 0.107 |
 
 Source: `README.md` "What-if simulator", `results/whatif_consistency.csv`.
-
-![Figure 9. What-if consistency checks and the backtest reliability.](../../results/whatif_consistency.png)
 
 **Reading.**
 - On 2025 the simulator over-predicts success (mean P 0.395 against an observed 0.347).
@@ -646,19 +703,43 @@ Read the simulator's probabilities as a comparison between strategies from the s
 | 41 | Interactive dashboard | live race view, engineer, what-if, archive, analysis; UI paint p50 28 ms | done | `docs/traceability.md` #41 |
 
 Of the 44 commitments in `docs/traceability.md`, #4 (FastF1 data via TracingInsights), #43 (timeline) and #44
-(report and demo rehearsal, Step 18) are partial. None is dropped.
+(report and demo rehearsal) are partial. None is dropped.
+
+**Timeline (#43), planned against actual.** The proposal's own week dates are not in the repository. The planned
+week below is the week tag on each step in `docs/PROGRESS.md`. The actual column is the date the work was committed
+(`git log`), so it shows order and slippage, not effort.
+
+| Planned week | Work | Committed |
+|---|---|---|
+| W1 | scaffold and tooling, Docker Compose, ingestion clients | 2026-11-10 |
+| W2 | bulk raw-zone ingestion and HDFS sink, offline sample bundle, clean zone | 2026-11-10 |
+| W3 | Spark RDD / DataFrame / SQL feature tables | 2026-11-10 |
+| W4 | telemetry and out-lap features, undercut labels and the shared rule; full-data HDFS run | 2026-11-10 to 11-11 |
+| W5 | MLlib model, development mode, deployment model; Redis serving; Spark scalability experiments | 2026-11-11 to 11-14 |
+| W6 | Kafka replay and Structured Streaming; FastAPI with SSE | 2026-11-12 |
+| W7 | live dashboard; what-if simulator | 2026-11-12 to 11-13 |
+| not tagged (last steps) | final experiments, hardening and CI; this report and the demo script | 2026-11-14; 2026-11-19 |
+| unplanned | TracingInsights instead of FastF1 (2026-11-12); the single 2025 test run (2026-11-13); dashboard features and the race-view redesign (2026-11-15 to 11-19) | as listed |
+| open | the demo rehearsal | not done |
 
 ## 13. Limitations and threats to validity
 
 - **A small labelled set, so wide intervals.** The test season has 49 labelled attempts in 19 races, and the training
   set has 108. The 2025 intervals are wide, and no difference between models or feature sets is claimed as significant.
-  2024 is used for both selection and calibration.
+  The model choice rests on an in-sample 2024 Brier (§7.2).
+- **The label depends on the defender's response.** An attempt is labelled only when D makes its first stop in
+  [L + 1, L + k]. If it does not, the outcome is `defender_stayed_out`, which is not part of the binary label, and
+  those rows are dropped from the model data (`docs/label_definition.md` "Definition", item 3, and "Model inputs").
+  The model's probability is therefore the chance of success given that D responds within k laps, and whether D
+  will respond is not known at decision time.
 - **A single host.**
   - Every "node" is a container on one VM: there is no network shuffle and one HDFS datanode (no data locality), and
     the page cache is shared, so timed runs read warm.
   - The "cluster" is 2 workers × 2 cores on the same CPUs as the driver.
 - **Synthetic scale-up.** Inputs above x1 are exact copies of the lap tables with shifted keys, so skew, cardinality
   and compression are idealised. Telemetry is real but only one season.
+- **Modest real data.** The real data is about 2 GB raw (§4.2). Scale behaviour beyond it comes only from synthetic
+  replication.
 - **The largest local cells have no timing.** Four `local[N]` cells were stopped by the memory guard. The two
   cluster cells that finished each lost an executor and may include recovery time. One of them had 0.2 GiB of
   memory margin.
@@ -669,7 +750,7 @@ Of the 44 commitments in `docs/traceability.md`, #4 (FastF1 data via TracingInsi
 - **Hindsight track status and race distance in the replay.** Track status (a whole-race heuristic) and `race_laps`
   are carried on the replayed events. They are the only non-causal inputs of the stream. In batch they are used only
   for eligibility and exclusion.
-- **Jolpica data gaps.** Lap timestamps are estimated (±1 min). Penalties are not in the data, so they are inferred
+- **Jolpica data gaps.** Lap timestamps are estimated (about ±1 min or more). Penalties are not in the data, so they are inferred
   as heuristics. Wet running is excluded as neutralised rather than as wet.
 - **The inferred stale-car rule.** The dashboard marks a car "no timing since L…" after 2 leader laps without a
   crossing. This is inferred, not a retirement signal: a car in a long repair stop is marked stale until it crosses
@@ -705,8 +786,10 @@ Source: `README.md`, `docs/reproduce.md`, `docs/experiments.md`, `docs/PROGRESS.
 
 The pipeline answers the undercut question end to end: a partitioned 2021–2025 lake on HDFS; features from all
 three Spark APIs under explicit leakage rules; a pre-registered, calibrated MLlib model evaluated once on a sealed
-season; a streaming path shown to match the batch path; and a Redis-backed dashboard with a what-if simulator.
-On 2025 the calibrated LR is better than the rule and the majority baseline on every point estimate. The sample is
+season; a stream processor that matches the batch path in simulated micro-batches (Kafka itself is not in the
+parity check); and a Redis-backed dashboard with a what-if simulator.
+On 2025 the calibrated LR is better than the rule baseline on every point estimate, and better than the majority
+baseline on PR-AUC, ROC-AUC, F1 and Brier (the majority baseline's ECE, 0.051, is lower). The sample is
 too small to call the difference with the rule significant. Tyre and telemetry inputs did not help. The simulator is
 useful for comparing strategies but is not calibrated odds.
 
@@ -715,16 +798,16 @@ Future work:
    drying laps. That changes labels, so it would need a fresh review on 2021–2024 first.
 2. More labelled attempts (more seasons, or sprint races) to narrow the intervals.
 3. A multi-host cluster and a synthetic load test for the streaming path's maximum throughput.
-4. The remaining UI redesign (engineer, archive, picker, analysis pages) and the demo rehearsal (Step 18).
+4. The remaining UI redesign (engineer, archive, picker, analysis pages) and the demo rehearsal.
 
 ## 16. Team contributions
 
 | Member | Contributions |
 |---|---|
-| Parinith D. | TODO: fill in |
-| Dakshinesh K. | TODO: fill in |
-| Rohan Deore | TODO: fill in |
-| Kaushal V. | TODO: fill in |
+| Parinith D. | TO BE COMPLETED BEFORE SUBMISSION |
+| Dakshinesh K. | TO BE COMPLETED BEFORE SUBMISSION |
+| Rohan Deore | TO BE COMPLETED BEFORE SUBMISSION |
+| Kaushal V. | TO BE COMPLETED BEFORE SUBMISSION |
 
 ## 17. References
 
@@ -817,3 +900,24 @@ both, ignoring line breaks). Paths are relative to the repository root.
 | A60 | Clean-clone `make demo` | 193 s | README.md | Run it |
 | A61 | CI freeze run | python 2326 passed / 7 skipped, web 524 Vitest, e2e demo + Playwright 2 passed / 1 skipped | docs/PROGRESS.md | Done, Freeze checks for submission-rc1 |
 | A62 | `make experiments` regeneration result | 66 OK, 2 DIFF | docs/experiments.md | `make experiments` (full lake) |
+| A63 | Majority baseline, 2025 ECE 10 bins (lower than the primary model's) | 0.051 | docs/model_results.md | Results, G=3.5, k=2 table, majority baseline |
+| A64 | LOSO mean PR-AUC of the rule, development, primary setting | 0.559 | docs/model_spec_v2.md | §7 Disclosure |
+| A65 | LOSO mean PR-AUC of the best model (`real_tyre` GBT), development | 0.533 | docs/model_spec_v2.md | §7 Disclosure |
+| A66 | `build_s1_x4_local4`, recorded median (old race filter) | 64.68 s | docs/experiments.md | StackOverflowError section, timing table |
+| A67 | `build_s1_x4_local4`, median with the fixed filter | 54.03 s | docs/experiments.md | StackOverflowError section, timing table |
+| A68 | `build_s3_x1_local4`, recorded median (old race filter) | 49.36 s | docs/experiments.md | StackOverflowError section, timing table |
+| A69 | `build_s3_x1_local4`, median with the fixed filter | 43.71 s | docs/experiments.md | StackOverflowError section, timing table |
+| A70 | Host of the earlier Redis latency run | 6 logical CPUs, 9.7 GiB | docs/experiments.md | Redis latency, Different hosts |
+| A71 | HDFS raw zone size and file count | 2,024,360,565 B and 3,542 files | docs/data_dictionary.md | Telemetry trace table, `/f1/raw` row |
+| A72 | Laps 2021–2025 | 124,834 | docs/experiments.md | Feature build, real seasons at x1 |
+| A73 | 2024 telemetry trace table size on HDFS | 209,217,336 B | docs/data_dictionary.md | Telemetry trace table, Size row |
+| A74 | TracingInsights track-status cross-check (per-lap codes vs race-control periods) | 463 leader laps flagged by both, 0 by only one source | docs/PROGRESS.md | Done, race-analysis evidence |
+| A75 | Snapshot-before-frame change, lap's first frame at the median | +3 ms | docs/experiments.md | "the per-lap snapshot now precedes its lap frame" (2026-11-15) |
+| A76 | LR standardised coefficient of `gap_ahead_change_1l` | -0.163837 | results/feature_importance_G3.5_k2.csv | model=lr, method=lr_std_coefficient |
+| A77 | LR standardised coefficient of `attacker_stint_laps` | -0.059743 | results/feature_importance_G3.5_k2.csv | model=lr, method=lr_std_coefficient |
+| A78 | LR standardised coefficient of `defender_expected_outlap_pace_residual_s` | 0.049918 | results/feature_importance_G3.5_k2.csv | model=lr, method=lr_std_coefficient |
+| A79 | LR standardised coefficient of `gap_ahead_change_3l` | -0.029925 | results/feature_importance_G3.5_k2.csv | model=lr, method=lr_std_coefficient |
+| A80 | `build_s1_x1_local1`, fastest timed run | 67.2348 | results/scalability.csv | cell_id=build_s1_x1_local1, min_s |
+| A81 | `build_s1_x1_local1`, slowest timed run | 82.8875 | results/scalability.csv | cell_id=build_s1_x1_local1, max_s |
+| A82 | `build_s3_x1_local1`, fastest timed run | 56.6513 | results/scalability.csv | cell_id=build_s3_x1_local1, min_s |
+| A83 | `build_s3_x1_local1`, slowest timed run | 64.5230 | results/scalability.csv | cell_id=build_s3_x1_local1, max_s |
