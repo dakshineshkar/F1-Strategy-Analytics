@@ -475,6 +475,14 @@ web-e2e: web/node_modules ## Playwright smoke test (needs make api-up REPLAY=1; 
 	cd web && npx playwright install chromium
 	cd web && $(WEB_ENV) npm run build && $(WEB_ENV) npm run test:e2e
 
+# ---------------------------------------------------------------- report (Step 18a)
+# The submission PDF: marked + mermaid (web devDependencies) and Playwright's Chromium; no network needed once
+# Chromium is installed. docs/report/report.pdf is committed.
+.PHONY: report-pdf
+report-pdf: web/node_modules ## Render docs/report/report.md to docs/report/report.pdf (A4; Playwright Chromium + mermaid)
+	cd web && npx playwright install chromium
+	cd web && node scripts/report-pdf.mjs ../docs/report/report.md ../docs/report/report.pdf
+
 # ---------------------------------------------------------------- demo (Step 17)
 # make demo: the sample pipeline and a 60x replay from a fresh clone (no credentials, no HDFS).
 # Needs `make up` (core profile) and `make sample-data`. Every Spark step runs in the running app

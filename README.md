@@ -144,8 +144,9 @@ outputs under `data/demo`.
 
 ## Full-data mode
 
-Full mode builds the 2021–2025 lake in HDFS (90 races) and needs `make up-full`, which adds the namenode, datanode,
-HttpFS, a Spark master and two workers. Give Docker about 14 GB. Step-by-step commands, outputs and the
+Full mode builds the 2021–2025 lake in HDFS. The lake holds 114 races (2021–2025), and the API serves the 90 of
+2021–2024 (2025 is the sealed test season). It needs `make up-full`, which adds the namenode, datanode, HttpFS, a
+Spark master and two workers. Give Docker about 14 GB. Step-by-step commands, outputs and the
 targets that write `results/` are in **[docs/reproduce.md](docs/reproduce.md)**.
 
 1. **Jolpica-F1** (races, results, qualifying, pit stops, laps):

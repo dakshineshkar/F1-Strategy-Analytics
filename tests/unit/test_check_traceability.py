@@ -52,6 +52,7 @@ FILES = {
     "web/src/components/Tower.tsx": "",
     "docker/web/Dockerfile": "",
     "docker-compose.yml": "",
+    "results/report.pdf": "%PDF-",
 }
 
 
@@ -76,7 +77,8 @@ def test_paths_bases_and_the_previous_folder(tmp_path: Path) -> None:
     got = _statuses(
         tmp_path,
         "`lake/paths.py`, `features/gaps.py`, `stints.py`, `config.py`, `test_keys.py`, "
-        "`docker-compose.yml`, `docker/web/Dockerfile`, `web/src/components/`",
+        "`docker-compose.yml`, `docker/web/Dockerfile`, `web/src/components/`, "
+        "`results/report.pdf`",
     )
     assert got == [
         ("lake/paths.py", "OK"),
@@ -87,6 +89,7 @@ def test_paths_bases_and_the_previous_folder(tmp_path: Path) -> None:
         ("docker-compose.yml", "OK"),
         ("docker/web/Dockerfile", "OK"),
         ("web/src/components/", "OK"),
+        ("results/report.pdf", "OK"),  # a file path, not module ``results/report`` attr ``pdf``
     ]
 
 

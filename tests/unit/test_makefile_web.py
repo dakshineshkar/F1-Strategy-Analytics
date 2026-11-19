@@ -70,6 +70,30 @@ def test_versions_are_pinned_exactly() -> None:
     assert lock["packages"]["node_modules/next"]["version"] == "16.4.5"
 
 
+def test_report_renderer_packages_are_dev_only_and_pinned() -> None:
+    """Step 18a: marked and mermaid render docs/report/report.pdf only, never the dashboard."""
+    pkg = json.loads((REPO / "web" / "package.json").read_text())
+    assert pkg["devDependencies"]["marked"] == "18.1.3"
+    assert pkg["devDependencies"]["mermaid"] == "12.3.0"
+    assert "marked" not in pkg["dependencies"] and "mermaid" not in pkg["dependencies"]
+    lock = json.loads((REPO / "web" / "package-lock.json").read_text())
+    for name, version in (("marked", "18.1.3"), ("mermaid", "12.3.0")):
+        entry = lock["packages"][f"node_modules/{name}"]
+        assert entry["version"] == version and entry.get("dev") is True, name
+        assert lock["packages"][""]["devDependencies"][name] == version
+    app = REPO / "web" / "src"
+    for path in app.rglob("*.ts*"):
+        text = path.read_text(encoding="utf-8")
+        assert 'from "marked"' not in text and 'from "mermaid"' not in text, path
+
+
+def test_make_report_pdf() -> None:
+    out = _make("report-pdf")
+    assert "cd web && npx playwright install chromium" in out
+    render = "node scripts/report-pdf.mjs ../docs/report/report.md ../docs/report/report.pdf"
+    assert f"cd web && {render}" in out
+
+
 def test_make_web_targets() -> None:
     dev = _make("web")
     assert "node web/scripts/check-port.mjs 127.0.0.1 3000" in dev

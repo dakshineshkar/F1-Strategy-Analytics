@@ -2403,8 +2403,39 @@
     variables of `docs/reproduce.md` §4); "What `make demo` does" lists the entrants, analysis and archive steps,
     with the 193 s timing; full-data step 5 says `make up-full` comes before `make api-up FULL=1 REPLAY=1` after a
     `make down`.
+- Step 18a, the report and the demo script (2026-11-19, documentation; #43 and #44):
+  - **`docs/report/report.md`:** the final report, 17 sections in the order of the traceability matrix, plus
+    Appendix A "Claims and sources" (62 headline numbers, each with its source file and place).
+    - Every number is copied from a committed file in `results/` or `docs/`; nothing was recomputed.
+    - Figures are the committed PNGs and the redesign screenshots.
+    - No new 2025 number. The what-if 2025 row is the README's (user decision).
+    - Section 16 (team contributions) has a "TODO: fill in" cell per member, left for the team.
+  - **`docs/report/report.pdf`** (committed, the submission file): `make report-pdf` renders it.
+    - The renderer is `web/scripts/report-pdf.mjs`: marked turns the Markdown into HTML, mermaid draws the diagram
+      inside Playwright's Chromium, and Chromium prints A4 with page numbers, PDF bookmarks and a linked table of
+      contents.
+    - Result: 18 pages (body 15, Appendix A 3), 2252.8 KiB.
+  - **New devDependencies** (user approval, exact pins): `marked` 18.1.3 and `mermaid` 12.3.0, both MIT.
+    - marked 18.2.1 was 3 days old, so the newest release at least two weeks old was pinned.
+    - `package-lock.json` is updated.
+    - The web runtime image is unaffected: a separately tagged build had no marked or mermaid files (mermaid only
+      in the copied `package.json`), and its size was 403,671,409 bytes against 403,671,405 for `f1sa-web:dev`. The
+      temporary tag was removed.
+  - **`docs/demo_script.md`:** a 10-minute and a 5-minute timed demo (full lake, 2024 R5, 10x), with pre-checks,
+    the fallback plan (sample mode with the SMOKE TEST explanation, the screenshots, stopping a hung replay) and
+    answers to likely grader questions.
+  - **Checks.**
+    - `scripts/check_traceability.py` now knows `.pdf` (it read `report.pdf` as a module attribute).
+    - Row 44's Step is `S18A, S18B`, so its references are checked rather than PENDING: OK 505, GENERATED 2,
+      MISSING 0.
+    - New tests in `test_repo_docs.py`: the sections, links and images, Appendix A values verbatim in their sources
+      and in the report body, and the PDF present. Also `test_makefile_web.py` (`make report-pdf`, dev-only pins)
+      and `web/tests/reportPdf.test.ts`.
+  - **README fix.** "Full-data mode" said the 2021–2025 lake has 90 races. It now says the lake holds 114 races
+    (2021–2025) and the API serves the 90 of 2021–2024 (2025 is the sealed test season).
 ## Next
-- S18: the report and the demo script (#44): `docs/report/`, `docs/demo_script.md`, then the demo rehearsal.
+- S18B: the demo rehearsal with `docs/demo_script.md` (full lake, then the sample-mode fallback); fill in section 16
+  (team contributions) of the report and run `make report-pdf` again.
 - Then the remaining UI redesign:
   - the Engineer, Archive, race picker, Analysis, Telemetry and Drivers pages;
   - the three F35 side bars, fixed when their pages are rebuilt, and a re-check of the archive race-status
@@ -2412,6 +2443,15 @@
   - F36 (race picker), F20 and F21 (analysis, drivers, archive and engineer layouts), F23 (session-end summary).
   - F24 API stays declined (revisit only if time allows).
 ## Known issues
+- Step 18a (2026-11-19):
+  - **Rendering limits.** The PDF's table of contents links to each section but has no page numbers (Chromium
+    cannot compute them); PDF bookmarks carry the outline. `make report-pdf` is not run in CI (Chromium), so the
+    committed PDF must be re-rendered by hand after any change to `docs/report/report.md`. The tests check the
+    Markdown, not that the PDF is current.
+  - **Parity wording.** The parity result is "maximum input difference 0.0, maximum probability difference
+    3.3e-16" (`docs/architecture.md`), not byte-identical. The report uses the docs' wording.
+  - **Screenshots.** The engineer, what-if and analysis views exist only as pre-redesign screenshots
+    (`docs/design/before/`, 2026-11-18).
 - Pinned versions reviewed on 2026-11-19 (no pin changed, freeze): Python 3.12 (security-only until 2028) and
   Java 17 LTS are kept on purpose for stability; newer minor releases exist for PySpark, Kafka, Hadoop and
   FastAPI.

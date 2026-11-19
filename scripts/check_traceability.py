@@ -39,7 +39,7 @@ MATRIX = Path("docs/traceability.md")
 BASES = ("", "src/f1sa", "tests/unit", "tests/integration", "experiments", "web")
 EXTENSIONS = (
     ".py", ".sql", ".md", ".json", ".csv", ".png", ".jsonl", ".yml", ".yaml", ".ts", ".tsx",
-    ".mjs", ".sh", ".cff", ".txt", ".toml", ".lock",
+    ".mjs", ".sh", ".cff", ".txt", ".toml", ".lock", ".pdf",
 )  # fmt: skip
 GENERATED_PREFIXES = ("data/", "models/")
 NOT_GENERATED = ("data/sample/",)
