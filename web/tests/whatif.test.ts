@@ -8,6 +8,9 @@ import {
   fetchWhatIf,
   gapOutcome,
   intervalText,
+  defenderFor,
+  pitLossSourceText,
+  rangeText,
   reasonText,
   STRATEGY_LABEL,
   timelineText,
@@ -188,5 +191,30 @@ describe("fetchWhatIf", () => {
   it("raises the API's detail on 409", async () => {
     vi.stubGlobal("fetch", async () => new Response(JSON.stringify({ detail: "not directly ahead" }), { status: 409 }));
     await expect(fetchWhatIf(2024, 5, { attacker: "a", defender: "b" })).rejects.toMatchObject({ status: 409, message: "not directly ahead" });
+  });
+});
+
+describe("one ahead/behind wording and plain-language inputs (critique F16, F18)", () => {
+  it("words the 80% range like the expected gap (positive = the attacker ahead)", () => {
+    expect(rangeText([-14.3, -6.4])).toBe("6.4–14.3 s behind");
+    expect(rangeText([0.5, 3])).toBe("0.5–3.0 s ahead");
+    expect(rangeText([-2.14, 3.4])).toBe("2.1 s behind to 3.4 s ahead");
+    expect(rangeText([3.4, -2.14])).toBe("2.1 s behind to 3.4 s ahead");
+    expect(rangeText(null)).toBe("—");
+  });
+
+  it("never shows a pit-loss source token raw", () => {
+    expect(pitLossSourceText("circuit_prior")).toBe("this circuit's earlier races");
+    expect(pitLossSourceText("global_prior")).toBe("all earlier races (no history at this circuit)");
+    expect(pitLossSourceText("new_source")).toBe("new source");
+    expect(pitLossSourceText(null)).toBe("unknown source");
+  });
+
+  it("derives the defender (the car directly ahead) and names a teammate pair", () => {
+    const order = ["verstappen", "perez", "norris"];
+    const mates = (a: string, b: string) => new Set([a, b]).size === 2 && [a, b].every((x) => x === "verstappen" || x === "perez");
+    expect(defenderFor(order, "norris", mates)).toEqual({ defender: "perez", teammate: false });
+    expect(defenderFor(order, "perez", mates)).toEqual({ defender: "verstappen", teammate: true });
+    expect(defenderFor(order, "verstappen", mates)).toEqual({ defender: null, teammate: false });
   });
 });

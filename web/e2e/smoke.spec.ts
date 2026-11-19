@@ -1,4 +1,6 @@
-import { expect, type APIRequestContext, test } from "@playwright/test";
+import { expect, test } from "@playwright/test";
+
+import { API, stopReplay, waitForIdle } from "./replay";
 
 /**
  * Smoke test against the real API in sample mode with replay enabled (`make api-up REPLAY=1`):
@@ -6,17 +8,18 @@ import { expect, type APIRequestContext, test } from "@playwright/test";
  * the tower fill (20 cars) and at least one lap update. A replay writes only data/demo/<run_id>.
  */
 
-const API = process.env.E2E_API_URL ?? "http://localhost:8000";
+/** True once this spec clicked Start: afterEach / afterAll stop the replay through the API, so it never outlives
+ * the spec (a running replay makes the replay guard refuse a later `make web-up`). */
+let started = false;
 
-async function waitForIdle(request: APIRequestContext, timeoutMs: number): Promise<boolean> {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    const body = (await (await request.get(`${API}/api/replays`)).json()) as { running: unknown[] };
-    if (body.running.length === 0) return true;
-    await new Promise((r) => setTimeout(r, 2000));
-  }
-  return false;
-}
+test.afterEach(async ({ request }) => {
+  if (started) await stopReplay(request, 2024, 5);
+  started = false;
+});
+
+test.afterAll(async ({ request }) => {
+  if (started) await stopReplay(request, 2024, 5);
+});
 
 test.beforeAll(async ({ request }) => {
   const health = await request.get(`${API}/api/health`).catch(() => null);
@@ -43,9 +46,12 @@ test("sample race: a 60× replay fills the tower and updates laps", async ({ pag
   await expect(page).toHaveURL(/\/race\/2024\/5$/);
   await expect(page.getByRole("heading", { level: 1 })).toContainText("Chinese Grand Prix");
 
+  // the replay controls live in a drawer under the status strip (redesign: demo controls, not race state)
+  await page.getByRole("button", { name: "Replay controls" }).click();
   await page.getByLabel("60×").check();
   const start = page.getByRole("button", { name: "Start replay" });
   await expect(start).toBeEnabled({ timeout: 15_000 });
+  started = true; // before the click: a stop with nothing running is a harmless 409
   await start.click();
   await expect(page.locator("#replay-status")).toContainText(/Starting|Running/, { timeout: 20_000 });
   await expect(start).toBeDisabled();
@@ -53,7 +59,9 @@ test("sample race: a 60× replay fills the tower and updates laps", async ({ pag
   // The tower fills from the stream (the stream job needs ~20-40 s to be ready).
   const rows = page.locator("table.tower tbody tr");
   await expect.poll(async () => rows.count(), { timeout: 120_000, intervals: [1000] }).toBeGreaterThanOrEqual(20);
-  await expect(page.locator(".conn")).toContainText("Live");
+  await expect(page.locator(".conn")).toContainText("Stream connected");
+  await expect(page.getByRole("region", { name: "Race status" }).locator(".ss-mode")).toContainText(/REPLAY 60×/);
+  await page.keyboard.press("Escape"); // close the replay drawer
 
   // How to read this: the legend opens by keyboard and explains the markers in text.
   const legend = page.locator("details.legend");
@@ -62,26 +70,25 @@ test("sample race: a 60× replay fills the tower and updates laps", async ({ pag
   await expect(legend).toHaveAttribute("open", "");
   await expect(legend.getByText(/Calibrated model probability that an undercut/)).toBeVisible();
   await expect(legend.getByText(/assumes a new set/)).toBeVisible();
-  await expect(legend.getByText(/just become an undercut candidate/)).toBeVisible();
+  await expect(legend.getByText(/just passed the undercut rule/)).toBeVisible();
 
-  // Column tooltips: keyboard focus shows the text and it is the button's accessible description;
-  // Escape hides it, Enter (a click) opens it again.
-  const tipButton = page.getByRole("button", { name: "About Undercut" });
+  // The tower's one key (redesign, critique F29/F30): Enter opens it, the entries are the row markers'
+  // descriptions, Escape closes it and returns focus to the button.
+  const keyButton = page.getByRole("button", { name: "Key to the timing tower" });
   const tipText = page.locator("#tip-undercut");
   await expect(tipText).toBeHidden();
-  await tipButton.focus();
-  await expect(tipButton).toHaveAccessibleDescription(/calibrated model probability/i);
-  await expect(tipText).toBeVisible();
-  await page.keyboard.press("Escape");
-  await expect(tipText).toBeHidden();
+  await keyButton.focus();
   await page.keyboard.press("Enter");
+  await expect(keyButton).toHaveAttribute("aria-expanded", "true");
   await expect(tipText).toBeVisible();
-  await expect(tipButton).toHaveAttribute("aria-expanded", "true");
+  await expect(tipText).toContainText(/calibrated model probability/i);
   await page.keyboard.press("Escape");
-  await expect(tipButton).toHaveAttribute("aria-expanded", "false");
-  for (const name of ["About Int", "About Gap", "About Age", "About tyre age", "About the undercut flag", "About Opportunity", "About Attempt"]) {
-    await expect(page.getByRole("button", { name })).toHaveAccessibleDescription(/\w+/);
-  }
+  await expect(keyButton).toHaveAttribute("aria-expanded", "false");
+  await expect(keyButton).toBeFocused();
+  await expect(tipText).toBeHidden();
+  await expect(page.locator("table.tower tbody .undercut-none, table.tower tbody .flag").first()).toHaveAccessibleDescription(/\w+/);
+  await expect(page.getByRole("button", { name: "Key to the alert types" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "About the call" })).toHaveAccessibleDescription(/highest calibrated probability/);
 
   // At least one lap update after the tower filled.
   const lapNow = page.locator(".lc-now");
@@ -96,11 +103,12 @@ test("sample race: a 60× replay fills the tower and updates laps", async ({ pag
   }
   await expect(page.locator(".tower-best")).toContainText("No sector or speed-trap data for this race");
   await expect(page.locator('table.tower td[data-col="pits"]').first()).toHaveText(/^\d+$/);
+  // the race status now lives in the status strip (one band): its code, its source in the title, the lap
   const banner = page.getByRole("region", { name: "Race status" });
   await expect(banner.locator(".race-status-code")).toHaveText(/^(GREEN|SC \/ VSC|UNKNOWN)/);
-  await expect(banner).toContainText("estimated from lap times", { timeout: 30_000 });
-  await expect(banner).toContainText(/Lap \d+/);
-  await expect(page.getByRole("button", { name: "About the race status" })).toHaveAccessibleDescription(/race-control/);
+  await expect(banner.locator(".ss-track")).toHaveAttribute("title", /estimated from lap times/, { timeout: 30_000 });
+  await expect(banner).toContainText(/Lap\s*\d+/);
+  await expect(banner.locator(".ss-model")).toContainText(/deploy_real_G3\.5_k2/);
 
   // Columns, keyboard only: the Minimal preset hides S1; pin one car (one at a time).
   const columnsBtn = page.getByRole("button", { name: /^Columns: / });
@@ -127,23 +135,25 @@ test("sample race: a 60× replay fills the tower and updates laps", async ({ pag
   await expect(page.locator(`table.tower tbody tr[data-driver="${pinnedId}"] .pin-btn`)).toHaveAttribute("aria-pressed", "true");
   await expect(pins.and(page.locator('[aria-pressed="true"]'))).toHaveCount(1);
 
-  // What-if (S15), keyboard only: the defender defaults to the car ahead; run with Enter.
+  // What-if (S15), keyboard only: no default pair; the defender is derived (the car directly ahead).
   const panel = page.getByRole("region", { name: "What-if: pit strategy" });
   const attacker = panel.getByLabel("Attacker");
+  await expect(attacker).toHaveValue("");
   await attacker.focus();
-  await page.keyboard.press("ArrowDown"); // the car in P3 (its defender is P2)
+  await page.keyboard.press("ArrowDown"); // the car in P2 (its defender is P1)
   const chosen = await attacker.inputValue();
   expect(chosen).not.toBe("");
-  await expect(panel.getByLabel("Defender (car ahead)")).not.toHaveValue("");
+  await expect(panel.locator(".wi-defender-value")).not.toHaveText("—");
   await panel.getByRole("button", { name: "Run what-if" }).focus();
   await page.keyboard.press("Enter");
-  await expect(panel.locator("#whatif-status")).toContainText(/at lap \d+/, { timeout: 20_000 });
+  await expect(panel.locator("#whatif-status")).toContainText(/from lap \d+/, { timeout: 20_000 });
   const table = panel.getByRole("table");
   for (const name of ["Pit now", "Pit next lap", "Stay out (overcut)"]) {
     await expect(table.getByRole("rowheader", { name: new RegExp(name.replace(/[()]/g, "\\$&")) }).first()).toBeVisible();
   }
   await expect(table.locator("tbody").first()).toContainText(/\d+%|Not possible/);
-  await expect(panel).toContainText("Model (calibrated LR, from the stream):");
+  await expect(panel).toContainText("Model estimate (calibrated, from the stream");
+  await expect(panel).toContainText("Share of sim runs ahead");
   await expect(panel.getByRole("alert")).toHaveText("");
 
   // Engineer view (display only, Feature 3), during the replay: keyboard tab, a focus driver,

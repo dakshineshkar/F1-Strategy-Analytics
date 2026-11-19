@@ -2,7 +2,7 @@
  * tooltips, so the two can never disagree. The wording follows the stream's definitions
  * (``streaming/events.py`` ALERT_TRIGGERS, the shared undercut rule, ``lib/tyre.ts``). */
 
-export type GlossaryGroup = "tower" | "alerts" | "whatif" | "analysis" | "engineer" | "archive" | "telemetry";
+export type GlossaryGroup = "tower" | "alerts" | "whatif" | "pipeline" | "analysis" | "engineer" | "archive" | "telemetry";
 
 export interface GlossaryEntry {
   id: string;
@@ -22,7 +22,7 @@ export const GLOSSARY = [
   {
     id: "flag",
     group: "tower",
-    term: "▲ and yellow left bar",
+    term: "Flag mark and amber row",
     label: "the undercut flag",
     text:
       "Live undercut opportunity: at its latest evaluated lap this car passes the undercut rule against the car " +
@@ -35,7 +35,16 @@ export const GLOSSARY = [
     label: "Undercut",
     text:
       "Calibrated model probability that an undercut on the car directly ahead succeeds (pitting next lap and " +
-      "coming out ahead). — means the car is not a candidate.",
+      "coming out ahead): a model estimate from the model named in the status bar. — means the car is not a candidate.",
+  },
+  {
+    id: "prevlap",
+    group: "tower",
+    term: "L9 in Gap",
+    label: "the previous-lap lap number",
+    text:
+      "The car has not crossed the line on the leader's lap yet, so its gap and interval were measured at the lap " +
+      "shown. It is not a lapped car (a lapped car shows “+1 lap” in Gap).",
   },
   {
     id: "age",
@@ -72,9 +81,19 @@ export const GLOSSARY = [
   {
     id: "lapsDown",
     group: "tower",
-    term: "+1 L, IN PIT",
-    label: "the driver tags",
-    text: "“+n L”: the car is n laps behind the leader. “IN PIT”: the car is in the pit lane now.",
+    term: "+1 lap, IN PIT",
+    label: "lapped cars and the pit tag",
+    text: "“+n lap(s)” in Gap: the car is n laps behind the leader and still racing. “IN PIT”: the car is in the pit lane now.",
+  },
+  {
+    id: "stale",
+    group: "tower",
+    term: "no timing since L19",
+    label: "cars with no timing",
+    text:
+      "The leader has completed 2 or more laps since this car last crossed the line, beyond any laps it is down: it " +
+      "has most likely stopped (the stream sends no retirement). Its row stays, dimmed, at the bottom; its last values " +
+      "and any flag are from that lap, so it is never part of the call.",
   },
   {
     id: "sectors",
@@ -132,8 +151,8 @@ export const GLOSSARY = [
     term: "Opportunity",
     label: "Opportunity",
     text:
-      `The pair has just become an undercut candidate, or its probability rose to ${THRESHOLD_PCT}% or more ` +
-      "while it stayed a candidate.",
+      `A candidate pair whose calibrated probability is ${THRESHOLD_PCT}% or more (the model's decision ` +
+      "threshold), either when it became a candidate or when its probability rose past the threshold.",
   },
   {
     id: "attempt",
@@ -141,6 +160,25 @@ export const GLOSSARY = [
     term: "Attempt",
     label: "Attempt",
     text: "The attacker of a candidate pair has pitted: the undercut is being tried now.",
+  },
+  {
+    id: "candidate",
+    group: "alerts",
+    term: "Candidate",
+    label: "Candidate",
+    text:
+      `A pair that has just passed the undercut rule with a probability below ${THRESHOLD_PCT}%: worth watching, ` +
+      "not yet an opportunity.",
+  },
+  {
+    id: "call",
+    group: "alerts",
+    term: "The call",
+    label: "the call",
+    text:
+      "The pair flagged now with the highest calibrated probability, read from the race state the page holds (so it " +
+      "is right after a late join too). The gauge puts the gap to the car ahead on a scale from 0 s to the race's pit " +
+      "loss, with the rule's 3.5 s window shaded.",
   },
   {
     id: "alertProb",
@@ -155,8 +193,10 @@ export const GLOSSARY = [
     term: "What-if rows",
     label: "the what-if",
     text:
-      "The rows compare three pit strategies with a race simulator; the model probability below them is the " +
-      "stream's calibrated outcome estimate.",
+      "A modelled comparison of pit now, pit next lap and stay out from the same race state, by a race simulator: " +
+      "the share of simulated runs in which the attacker comes out ahead, the expected gap and its 80% range. The " +
+      "simulator is less well calibrated than the model (2025 ECE 0.207 against 0.107), so compare the rows; do not " +
+      "read them as odds. The model's calibrated outcome estimate is shown separately.",
   },
   {
     id: "quicklap",
@@ -267,6 +307,17 @@ export const GLOSSARY = [
       "decision lap, which can lag by a lap.",
   },
   {
+    id: "unlisted",
+    group: "pipeline",
+    term: "Cars not yet in a snapshot",
+    label: "cars not yet in a snapshot",
+    text:
+      "Cars this page has events for (a lap, a pit stop or an alert) that no race snapshot has listed yet. A " +
+      "snapshot is pushed once per leader lap, so at a replay start a car's first lap can arrive before the snapshot " +
+      "that lists it; the car still gets its row, and the count drops to 0 when the next snapshot lists it. It is " +
+      "not a data error. A car that stays here was never in any snapshot of this race.",
+  },
+  {
     id: "archive",
     group: "archive",
     term: "Post-race (archive)",
@@ -303,6 +354,7 @@ export const GROUP_TITLE: Record<GlossaryGroup, string> = {
   tower: "Timing tower",
   alerts: "Undercut alerts",
   whatif: "What-if",
+  pipeline: "Pipeline",
   analysis: "Race analysis",
   engineer: "Engineer",
   archive: "Post-race",

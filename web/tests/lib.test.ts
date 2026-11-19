@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { toHealth, toRaces, toReplayStatus, toSnapshot } from "@/lib/api";
-import { gapSeries, layoutLabels, linePath, scales } from "@/lib/chart";
+import { gapSeries, layoutLabels, LINE_COLOURS, linePath, scales, seriesColour } from "@/lib/chart";
 import { parseApiUrl } from "@/lib/config";
 import { newIds } from "@/lib/debugLatency";
 import { driverCode, driverName, gap, lapTime, probability } from "@/lib/format";
@@ -124,5 +124,19 @@ describe("race picker and replay helpers", () => {
     expect(newIds(["a", "b", "c"], null)).toEqual(["a", "b", "c"]);
     expect(newIds(["a", "b", "c"], "b")).toEqual(["c"]);
     expect(newIds(["d", "e"], "gone")).toEqual(["d", "e"]);
+  });
+});
+
+describe("seriesColour", () => {
+  it("gives the four categorical colours in order, then the neutral grid colour (never cycled)", () => {
+    expect(LINE_COLOURS).toBe(4);
+    expect([0, 1, 2, 3].map(seriesColour)).toEqual(["var(--line-0)", "var(--line-1)", "var(--line-2)", "var(--line-3)"]);
+    expect(seriesColour(4)).toBe("var(--grid)");
+    expect(seriesColour(19)).toBe("var(--grid)");
+  });
+
+  it("treats a negative or fractional index as neutral", () => {
+    expect(seriesColour(-1)).toBe("var(--grid)");
+    expect(seriesColour(1.5)).toBe("var(--grid)");
   });
 });

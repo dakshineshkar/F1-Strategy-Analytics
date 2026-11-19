@@ -1,10 +1,13 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
+
+import { previousLapOf } from "@/lib/call";
 
 import { type EntrantIndex, teamHighlight, teammates, teamTitle } from "@/lib/entrants";
 import { driverCode, driverName, gap, lapTime, probability } from "@/lib/format";
 import { glossary, tipId } from "@/lib/legend";
+import { useFlip } from "@/lib/useFlip";
 import type { DriverRow } from "@/lib/reducer";
 import {
   type BestSoFar,
@@ -22,12 +25,16 @@ import {
   trapMark,
 } from "@/lib/tower";
 
-import { InfoTip } from "./InfoTip";
+import { GlossaryKey } from "./GlossaryKey";
+import { FlagMark, PinMark } from "./Marks";
 import { TeamBadge } from "./TeamBadge";
 import { TyreAge } from "./TyreAge";
 import { COMPOUND_LABEL, TyreGlyph } from "./TyreGlyph";
 
 export const TOWER_ROWS = 22;
+
+/** The tower's glossary entries, in column order (one key instead of a "?" per header). */
+export const TOWER_KEY = ["flag", "undercut", "prevlap", "lapsDown", "stale", "team", "pin", "int", "gap", "sectors", "pbob", "trap", "pits", "age"] as const;
 
 function MarkTag({ mark }: { mark: Mark }) {
   if (mark === null) return null;
@@ -65,9 +72,12 @@ function BestLine({
   return (
     <p className="tower-best">
       <span className="tower-best-label">Best so far</span>{" "}
-      {SECTORS.map((i) => part(`S${i + 1}`, best.sectors[i], sectorTime)).join(" · ")}
-      {" · "}
-      {part("Trap", best.speedTrap, (v) => `${speed(v)} km/h`)}
+      {SECTORS.map((i) => (
+        <span key={i} className="tower-best-part">
+          {part(`S${i + 1}`, best.sectors[i], sectorTime)}
+        </span>
+      ))}{" "}
+      <span className="tower-best-part">{part("Trap", best.speedTrap, (v) => `${speed(v)} km/h`)}</span>
     </p>
   );
 }
@@ -80,10 +90,16 @@ function onScreen(el: Element): boolean {
 }
 
 /** The timing tower: a real table in order-set order. Fixed row height and reserved space for
- * ``TOWER_ROWS`` rows, so live updates never shift the page. Every column header that needs it has
- * a focusable "?" tooltip (``InfoTip``); the per-row markers keep their visible text and a
- * screen-reader sentence and point to that header text with ``aria-describedby``, so the meaning is
- * reachable by keyboard without 20 extra tab stops per column.
+ * ``TOWER_ROWS`` rows, so live updates never shift the page. The column help lives in the panel's one
+ * "Key" (``GlossaryKey``, in ``TowerPanel``; critique F29, F30); the per-row markers keep their visible
+ * text and a screen-reader sentence and point to the key's entries with ``aria-describedby``. A row that
+ * changes place slides there (FLIP, transform only; off under reduced motion). A car still on the
+ * previous lap shows a small muted lap number in its Gap cell ("L9", no box: critique F38); a lapped car shows
+ * "+1 lap" there. A car with no timing for 2 or more leader laps (``staleLap``) keeps its row, dimmed and
+ * sorted to the bottom by the caller, with "no timing since L19" across Int and Gap and its flag dimmed.
+ *
+ * Only the live call's pair (``callPair``) is on the signal band, each row naming its role; other flagged
+ * rows keep the flag mark and the percentage in normal weight (semibold from 50%).
  *
  * With ``entrants`` (display only, ``GET …/entrants``) each driver gets a team badge, the real code and
  * surname; the badge tooltip names the team and the teammate, and hovering a row outlines both
@@ -103,8 +119,18 @@ export function TimingTower({
   pinned = null,
   onPin,
   extrasNote = null,
+  tools = null,
+  callPair = null,
+  staleLap = () => null,
 }: {
+  /** the live call's pair: the only rows on the signal band (attacker and defender, each named) */
+  callPair?: { attackerId: string; defenderId: string } | null;
+  /** the car's last lap when it has sent no timing for 2 or more leader laps (``stale.ts``), else null */
+  staleLap?: (driverId: string) => number | null;
+  /** controls shown before the key in the tower's head (the Columns disclosure) */
+  tools?: ReactNode;
   rows: DriverRow[];
+  /** laps the car is down on the leader */
   lapsDown: (driverId: string) => number;
   entrants?: EntrantIndex;
   /** The caption's source note (the post-race mode names the archive). */
@@ -121,6 +147,9 @@ export function TimingTower({
   const best = bestSoFar(rows);
   const code = (id: string) => entrants[id]?.code ?? driverCode(id);
   const pinnedIndex = pinned === null ? -1 : rows.findIndex((r) => r.driverId === pinned);
+  const leaderLap = rows[0]?.lap ?? null;
+  const body = useRef<HTMLTableSectionElement>(null);
+  useFlip(body, rows.map((r) => r.driverId).join(","));
 
   // keep the pinned row in view when its place changes (only while the tower is on screen)
   useEffect(() => {
@@ -141,7 +170,10 @@ export function TimingTower({
 
   return (
     <div className="tower-block">
-      <BestLine best={best} code={code} rows={rows} extrasNote={extrasNote} />
+      <div className="tower-tools">
+        {tools}
+        <GlossaryKey ids={TOWER_KEY} label="the timing tower" align="start" />
+      </div>
       <div className="tower-wrap" role="region" aria-labelledby="tower-title" tabIndex={0} ref={wrap}>
         <table className="tower">
           <caption id="tower-title">
@@ -150,32 +182,37 @@ export function TimingTower({
           <thead>
             <tr>
               <th scope="col" className="c-pos">
-                <abbr title="Position">Pos</abbr> <InfoTip id="flag" />
+                <abbr title="Position">Pos</abbr>
               </th>
               <th scope="col" className="c-pin">
-                Pin <InfoTip id="pin" />
+                <span className="visually-hidden">Pin</span>
               </th>
               <th scope="col" className="c-drv">
-                Driver <InfoTip id="team" /> <InfoTip id="lapsDown" />
+                Driver
               </th>
+              {show.has("undercut") ? (
+                <th scope="col" className="c-uc">
+                  Undercut
+                </th>
+              ) : null}
               {show.has("int") ? (
                 <th scope="col" className="c-num">
-                  Int <InfoTip id="int" align="end" />
+                  Int
                 </th>
               ) : null}
               {show.has("gap") ? (
-                <th scope="col" className="c-num">
-                  Gap <InfoTip id="gap" align="end" />
+                <th scope="col" className="c-num c-gap">
+                  Gap
                 </th>
               ) : null}
               {show.has("last") ? (
-                <th scope="col" className="c-num">
+                <th scope="col" className="c-num c-last">
                   Last lap
                 </th>
               ) : null}
               {show.has("s1") ? (
                 <th scope="col" className="c-sec">
-                  S1 <InfoTip id="sectors" align="end" />
+                  S1
                 </th>
               ) : null}
               {show.has("s2") ? (
@@ -185,17 +222,17 @@ export function TimingTower({
               ) : null}
               {show.has("s3") ? (
                 <th scope="col" className="c-sec">
-                  S3 <InfoTip id="pbob" align="end" />
+                  S3
                 </th>
               ) : null}
               {show.has("trap") ? (
                 <th scope="col" className="c-trap">
-                  Trap <InfoTip id="trap" align="end" />
+                  Trap
                 </th>
               ) : null}
               {show.has("pits") ? (
                 <th scope="col" className="c-pits">
-                  Pits <InfoTip id="pits" align="end" />
+                  Pits
                 </th>
               ) : null}
               {show.has("tyre") ? (
@@ -205,33 +242,36 @@ export function TimingTower({
               ) : null}
               {show.has("age") ? (
                 <th scope="col" className="c-age">
-                  Age <InfoTip id="age" align="end" />
-                </th>
-              ) : null}
-              {show.has("undercut") ? (
-                <th scope="col" className="c-num">
-                  Undercut <InfoTip id="undercut" align="end" />
+                  Age
                 </th>
               ) : null}
             </tr>
           </thead>
-          <tbody>
+          <tbody ref={body}>
             {rows.map((r) => {
               const down = lapsDown(r.driverId);
+              const staleSince = staleLap(r.driverId);
+              const prev = staleSince === null ? previousLapOf(r, leaderLap, down) : null;
+              const measured = prev === null ? undefined : `measured at lap ${prev}; the car has not crossed the line on lap ${leaderLap} yet`;
+              const role = callPair === null ? null : r.driverId === callPair.attackerId ? "attacker" : r.driverId === callPair.defenderId ? "defender" : null;
               const e = entrants[r.driverId];
               const mates = e === undefined ? [] : teammates(entrants, r.driverId);
               const isPinned = pinned === r.driverId;
               const cls = [
                 r.undercutFlag ? "is-flagged" : null,
+                role !== null ? `is-call is-call-${role}` : null,
+                staleSince !== null ? "is-stale-car" : null,
                 isPinned ? "is-pinned" : null,
                 teamHighlight(entrants, hovered, r.driverId),
               ]
                 .filter(Boolean)
                 .join(" ");
+              const strong = r.undercutProb !== null && r.undercutProb >= 0.5;
               return (
                 <tr
                   key={r.driverId}
                   data-driver={r.driverId}
+                  data-flip={r.driverId}
                   data-team={e?.constructor_id}
                   className={cls || undefined}
                   onMouseEnter={() => setHovered(r.driverId)}
@@ -248,7 +288,7 @@ export function TimingTower({
                       disabled={onPin === undefined}
                       onClick={() => onPin?.(r.driverId)}
                     >
-                      <span aria-hidden="true">{isPinned ? "★" : "☆"}</span>
+                      <PinMark on={isPinned} />
                     </button>
                   </td>
                   <td className="c-drv">
@@ -266,19 +306,68 @@ export function TimingTower({
                         IN PIT
                       </span>
                     ) : null}
-                    {down > 0 ? (
-                      <span
-                        className="tag"
-                        title={`${down} ${down === 1 ? "lap" : "laps"} behind the leader`}
-                        aria-describedby={tipId("lapsDown")}
-                      >
-                        {`+${down} L`}
-                        <span className="visually-hidden">{` (${down} ${down === 1 ? "lap" : "laps"} down)`}</span>
+                    {role !== null ? (
+                      // in the pit lane the IN PIT tag takes the room; the role stays in the row's rule
+                      // (solid for the attacker, dashed for the defender) and in the screen-reader text
+                      <span className={`call-role role-${role}${r.inPit ? " visually-hidden" : ""}`} aria-describedby={tipId("call")}>
+                        {role}
+                        <span className="visually-hidden">{role === "attacker" ? " in the undercut call" : " in the undercut call, the car directly ahead"}</span>
                       </span>
                     ) : null}
                   </td>
-                  {show.has("int") ? <td className="c-num">{r.position === 1 ? "Leader" : gap(r.gapAheadS)}</td> : null}
-                  {show.has("gap") ? <td className="c-num">{r.position === 1 ? "Leader" : gap(r.gapLeaderS)}</td> : null}
+                  {show.has("undercut") ? (
+                    <td className={strong ? "c-uc is-strong" : "c-uc"}>
+                      {r.undercutFlag ? (
+                        <span className="flag" title={glossary("flag").text} aria-describedby={tipId("flag")}>
+                          <FlagMark />
+                          <span className="visually-hidden">
+                            {staleSince === null ? "Undercut opportunity on the car ahead, " : `Flag from lap ${staleSince}, no timing since: not a call, `}
+                          </span>
+                        </span>
+                      ) : null}
+                      {r.undercutProb === null ? (
+                        <span className="undercut-none" title="Not an undercut candidate" aria-describedby={tipId("undercut")}>
+                          <span aria-hidden="true">{probability(null)}</span>
+                          <span className="visually-hidden">not a candidate</span>
+                        </span>
+                      ) : (
+                        <span aria-describedby={tipId("undercut")}>
+                          {probability(r.undercutProb)}
+                          <span className="visually-hidden"> undercut success probability</span>
+                        </span>
+                      )}
+                    </td>
+                  ) : null}
+                  {staleSince !== null && (show.has("int") || show.has("gap")) ? (
+                    <td className="c-num c-notiming" colSpan={show.has("int") && show.has("gap") ? 2 : 1} aria-describedby={tipId("stale")}>
+                      no timing since L{staleSince}
+                    </td>
+                  ) : (
+                    <>
+                      {show.has("int") ? (
+                        <td className={prev === null ? "c-num" : "c-num is-prevlap"} title={measured}>
+                          {r.position === 1 ? "Leader" : gap(r.gapAheadS)}
+                        </td>
+                      ) : null}
+                      {show.has("gap") ? (
+                        <td className={prev === null ? "c-num c-gap" : "c-num c-gap is-prevlap"} title={measured}>
+                          {r.position === 1 ? (
+                            "Leader"
+                          ) : down > 0 ? (
+                            <span aria-describedby={tipId("lapsDown")}>{`+${down} ${down === 1 ? "lap" : "laps"}`}</span>
+                          ) : (
+                            gap(r.gapLeaderS)
+                          )}
+                          {prev !== null ? (
+                            <span className="gap-lap" aria-describedby={tipId("prevlap")}>
+                              {`L${prev}`}
+                              <span className="visually-hidden">{` (measured at lap ${prev}, not lapped)`}</span>
+                            </span>
+                          ) : null}
+                        </td>
+                      ) : null}
+                    </>
+                  )}
                   {show.has("last") ? (
                     <td className="c-num" data-col="last-lap">
                       {lapTime(r.lastLapTimeS)}
@@ -308,27 +397,6 @@ export function TimingTower({
                       <TyreAge row={r} describedBy={tipId("age")} />
                     </td>
                   ) : null}
-                  {show.has("undercut") ? (
-                    <td className="c-num">
-                      {r.undercutFlag ? (
-                        <span className="flag" title={glossary("flag").text} aria-describedby={tipId("flag")}>
-                          <span aria-hidden="true">▲ </span>
-                          <span className="visually-hidden">Undercut opportunity on the car ahead, </span>
-                        </span>
-                      ) : null}
-                      {r.undercutProb === null ? (
-                        <span className="undercut-none" title="Not an undercut candidate" aria-describedby={tipId("undercut")}>
-                          <span aria-hidden="true">{probability(null)}</span>
-                          <span className="visually-hidden">not a candidate</span>
-                        </span>
-                      ) : (
-                        <span aria-describedby={tipId("undercut")}>
-                          {probability(r.undercutProb)}
-                          <span className="visually-hidden"> undercut success probability</span>
-                        </span>
-                      )}
-                    </td>
-                  ) : null}
                 </tr>
               );
             })}
@@ -338,6 +406,7 @@ export function TimingTower({
           <p className="tower-empty">No timing yet. Start a replay to fill the tower.</p>
         ) : null}
       </div>
+      <BestLine best={best} code={code} rows={rows} extrasNote={extrasNote} />
     </div>
   );
 }

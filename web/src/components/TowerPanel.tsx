@@ -90,7 +90,7 @@ export function TowerColumns({
       <button
         type="button"
         id={`${id}-btn`}
-        className="btn"
+        className="btn btn-quiet btn-small"
         aria-expanded={open}
         aria-controls={`${id}-panel`}
         onClick={() => setOpen((o) => !o)}
@@ -131,27 +131,31 @@ export function TowerColumns({
   );
 }
 
-/** The tower with its column control and the per-browser pin (live and post-race). */
+/** The tower with its column control, its key and the per-browser pin (live and post-race). */
 export function TowerPanel({
   rows,
   lapsDown,
   entrants,
   captionNote,
   extrasNote = null,
+  callPair = null,
+  staleLap,
 }: {
   rows: DriverRow[];
   lapsDown: (driverId: string) => number;
   entrants: EntrantIndex;
   captionNote?: string;
   extrasNote?: string | null;
+  /** live only: the call's pair (the only banded rows) */
+  callPair?: { attackerId: string; defenderId: string } | null;
+  /** live only: a stale car's last lap (``stale.ts``) */
+  staleLap?: (driverId: string) => number | null;
 }) {
   const prefs = useTowerPrefs();
   return (
     <>
-      <div className="tower-tools">
-        <TowerColumns visible={prefs.visible} onChange={prefs.setVisible} />
-      </div>
       <TimingTower
+        tools={<TowerColumns visible={prefs.visible} onChange={prefs.setVisible} />}
         rows={rows}
         lapsDown={lapsDown}
         entrants={entrants}
@@ -159,6 +163,8 @@ export function TowerPanel({
         pinned={prefs.pinned}
         onPin={prefs.pinToggle}
         extrasNote={extrasNote}
+        callPair={callPair}
+        {...(staleLap !== undefined ? { staleLap } : {})}
         {...(captionNote !== undefined ? { captionNote } : {})}
       />
     </>

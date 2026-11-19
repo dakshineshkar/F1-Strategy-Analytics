@@ -447,7 +447,15 @@ replay-control-check: ## Feature 7 proof: 1x->60x, pause, stop+restart == uninte
 # against the API (sample mode with replay: `make api-up REPLAY=1`).
 WEB_ENV := NEXT_TELEMETRY_DISABLED=1 NEXT_PUBLIC_API_URL=$(or $(NEXT_PUBLIC_API_URL),http://localhost:8000)
 
-.PHONY: web web-test web-build web-e2e
+.PHONY: web web-up web-test web-build web-e2e
+# `make web-up` rebuilds the web image from ./web and recreates only the compose `web` container
+# (--no-deps: the api keeps its mode and flags, nothing else restarts, no volume touched). The replay
+# guard runs first like every other target that recreates a container; FORCE=1 overrides it.
+web-up: ## Rebuild the dashboard image and recreate only the web container (api untouched); refused while a replay runs unless FORCE=1
+	$(REPLAY_GUARD)
+	$(COMPOSE) --profile core up -d --no-deps --build --force-recreate web
+	scripts/wait_for.sh -t 120 web
+
 web/node_modules: web/package-lock.json
 	cd web && npm ci --no-audit --no-fund
 	@touch web/node_modules

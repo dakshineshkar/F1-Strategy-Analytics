@@ -79,6 +79,22 @@ def test_make_web_targets() -> None:
     assert "npx playwright install chromium" in e2e and "npm run test:e2e" in e2e
 
 
+def test_make_web_up_rebuilds_only_the_web_service_behind_the_replay_guard() -> None:
+    out = _make("web-up")
+    lines = out.splitlines()
+    guard = [i for i, ln in enumerate(lines) if "src/f1sa/replay_guard.py" in ln]
+    compose = [i for i, ln in enumerate(lines) if "docker compose" in ln]
+    assert guard and compose and guard[0] < compose[0], "the replay guard runs before the recreate"
+    assert "--force" not in lines[guard[0]]
+    assert [lines[i] for i in compose] == [
+        "docker compose --profile core up -d --no-deps --build --force-recreate web"
+    ]
+    assert any(ln.rstrip().endswith("wait_for.sh -t 120 web") for ln in lines)
+    for forbidden in (" down", " -v", " restart", " rm ", "volume", "nuke", " api"):
+        assert forbidden not in out, forbidden
+    assert "--force" in _make("web-up", "FORCE=1").splitlines()[0]
+
+
 def test_make_up_waits_for_web() -> None:
     lines = [ln for ln in _make("up").splitlines() if "wait_for.sh" in ln]
     assert lines and lines[0].rstrip().endswith("kafka redis app api web")

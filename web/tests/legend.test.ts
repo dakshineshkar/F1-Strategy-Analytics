@@ -125,8 +125,8 @@ describe("Legend: How to read this", () => {
       else expect(m).toContain(shown);
     }
     for (const g of ["Timing tower", "Undercut alerts", "What-if"]) expect(m).toContain(`aria-label="${g}"><h3>${g}</h3>`);
-    // the yellow bar is shown next to its text, never alone
-    expect(m).toContain('<dt><span class="legend-bar" aria-hidden="true"></span>▲ and yellow left bar</dt>');
+    // the amber bar is shown next to its text, never alone (the ▲ glyph is gone: the font subset has none)
+    expect(m).toContain('<dt><span class="legend-bar" aria-hidden="true"></span>Flag mark and amber row</dt>');
     expect(ids(m)).toEqual([]); // no ids: the tooltips own them, so nothing is duplicated
   });
 
@@ -158,28 +158,19 @@ describe("Legend: How to read this", () => {
 describe("timing tower", () => {
   const m = html(createElement(TimingTower, { rows: ROWS, lapsDown: (id: string) => (id === "sargeant" ? 1 : 0) }));
 
-  it("has a tooltip on the Pos, Pin, Driver (team badge and tags), Int, Gap, S1, S3, Trap, Pits, Age and Undercut headers", () => {
-    expect(tipButtons(m).map((b) => b.label)).toEqual([
-      "About the undercut flag",
-      "About the pin",
-      "About the team badge",
-      "About the driver tags",
-      "About Int",
-      "About Gap",
-      "About the sector times",
-      "About PB and OB",
-      "About the speed trap",
-      "About Pits",
-      "About Age",
-      "About Undercut",
-    ]);
+  it("has one key for the whole tower and no help button in any header (critique F29, F30)", () => {
+    expect(tipButtons(m)).toEqual([]);
     const thead = m.slice(m.indexOf("<thead>"), m.indexOf("</thead>"));
-    for (const id of ["flag", "pin", "team", "lapsDown", "int", "gap", "sectors", "pbob", "trap", "pits", "age", "undercut"] as const) {
-      expect(thead).toContain(`role="tooltip" id="${tipId(id)}"`);
+    expect(thead).not.toContain("info-tip");
+    expect(thead).not.toContain("<button");
+    expect(m).toContain('aria-label="Key to the timing tower"');
+    const key = m.slice(m.indexOf('class="gkey-panel"'), m.indexOf("<table"));
+    for (const id of ["flag", "undercut", "prevlap", "lapsDown", "team", "pin", "int", "gap", "sectors", "pbob", "trap", "pits", "age"] as const) {
+      expect(key).toContain(`<dd id="${tipId(id)}">${esc(glossary(id).text)}</dd>`);
     }
   });
 
-  it("row markers point to the header tooltips and say what they are in text", () => {
+  it("row markers point to the key's entries and say what they are in text", () => {
     const body = m.slice(m.indexOf("<tbody>"));
     expect(body).toContain(`<span class="flag" title="${esc(glossary("flag").text)}" aria-describedby="tip-flag">`);
     expect(body).toContain('<span class="visually-hidden">Undercut opportunity on the car ahead, </span>');
@@ -187,7 +178,7 @@ describe("timing tower", () => {
     expect(body).toContain('<span class="visually-hidden">not a candidate</span>');
     expect(body).toMatch(/class="tyre-age tyre-age-real"[^>]*aria-describedby="tip-age"/);
     expect(body).toMatch(/class="tyre-age tyre-age-estimated"[^>]*aria-describedby="tip-age"/);
-    expect(body).toContain('aria-describedby="tip-lapsDown">+1 L');
+    expect(body).toContain('<span aria-describedby="tip-lapsDown">+1 lap</span>');
     expect(body).toContain('aria-describedby="tip-lapsDown">IN PIT');
   });
 
@@ -198,14 +189,16 @@ describe("timing tower", () => {
 });
 
 describe("alerts and what-if", () => {
-  it("the alert panel keys Opportunity, Attempt and the percentage in text and tooltips", () => {
+  it("the alert panel: the type as a word, the strength as a % and a bar, one key for the types", () => {
     const m = html(createElement(AlertFeed, { groups: GROUPS, announcement: null }));
-    expect(m).toContain(`Opportunity</span> new candidate or ≥ ${THRESHOLD_PCT}%`);
-    expect(m).toContain("Attempt</span> attacker pitted");
-    expect(m).toContain("% = success probability");
-    expect(tipButtons(m).map((b) => b.label)).toEqual(["About Opportunity", "About Attempt", "About the alert percentage"]);
-    expect(m).toContain('<span class="badge badge-attempt" aria-describedby="tip-attempt">Attempt</span>');
+    expect(m).toContain('aria-label="Key to the alert types"');
+    for (const id of ["attempt", "opportunity", "candidate", "alertProb"] as const) {
+      expect(m).toContain(`<dd id="${tipId(id)}">${esc(glossary(id).text)}</dd>`);
+    }
+    expect(glossary("opportunity").text).toContain(`${THRESHOLD_PCT}% or more`);
+    expect(m).toContain('<span class="alert-type type-attempt" aria-describedby="tip-attempt">Attempt</span>');
     expect(m).toContain('aria-describedby="tip-alertProb">62%<span class="visually-hidden"> success probability</span>');
+    expect(m).toContain('<span class="alert-bar-fill" style="transform:scaleX(0.62)"></span>');
     const own = new Set(ids(m));
     for (const ref of describedBy(m)) expect(own.has(ref), ref).toBe(true);
   });

@@ -86,9 +86,10 @@ export function PositionsChart({ series, totalLaps, names }: { series: PositionS
               {t === 0 ? "Grid" : t}
             </text>
           ))}
-          {lines.map((l, i) => {
+          {lines.map((l) => {
             const style = styles.get(l.driverId);
-            const colour = style?.colour ?? `var(--line-${i % 10})`;
+            // team colours only: a car without one is neutral, never a chart-line colour next to team colours
+            const colour = style?.colour ?? "var(--grid)";
             const chosen = focus === l.driverId;
             const dim = focus !== "" && !chosen;
             const d = pathOf(l.points, (p) => x(p.lap), (p) => y(p.position));

@@ -1,8 +1,19 @@
 /** Geometry of the gap-to-leader chart (pure, unit-tested). The chart is hand-written SVG. */
 
 import type { RaceState } from "./reducer";
+import { darkPalette, lightPalette } from "./theme";
 
 export const CHART_LAPS = 15;
+
+/** How many categorical line colours exist (``--line-0`` …); both themes have the same count. */
+export const LINE_COLOURS = Math.min(darkPalette.lines.length, lightPalette.lines.length);
+
+/** The stroke of the ``i``-th series of a multi-series chart: the categorical colours in their fixed order,
+ * then the neutral grid colour. Never cycled (a fifth series repainted in the first colour would read as the
+ * same car); a neutral series is told apart by its dash and its end label. */
+export function seriesColour(i: number): string {
+  return Number.isInteger(i) && i >= 0 && i < LINE_COLOURS ? `var(--line-${i})` : "var(--grid)";
+}
 export const GAP_CAP_S = 60;
 
 export interface Series {
@@ -42,13 +53,14 @@ export interface Frame {
   bottom: number;
 }
 
-/** Linear scales: laps left to right, gap 0 (the leader) at the top, capped at ``cap`` seconds. */
-export function scales(frame: Frame, lapRange: [number, number], maxGapS: number, cap = GAP_CAP_S) {
+/** Linear scales: laps left to right, gap 0 (the leader) at the top, capped at ``cap`` seconds. ``padX`` keeps
+ * the first and last lap off the plot's edges, so the first lap's label never meets the y-axis labels. */
+export function scales(frame: Frame, lapRange: [number, number], maxGapS: number, cap = GAP_CAP_S, padX = 0) {
   const [a, b] = lapRange;
   const yMax = Math.max(1, Math.min(cap, Math.ceil(maxGapS)));
-  const innerW = frame.width - frame.left - frame.right;
+  const innerW = frame.width - frame.left - frame.right - 2 * padX;
   const innerH = frame.height - frame.top - frame.bottom;
-  const x = (lap: number): number => frame.left + (b === a ? innerW / 2 : ((lap - a) / (b - a)) * innerW);
+  const x = (lap: number): number => frame.left + padX + (b === a ? innerW / 2 : ((lap - a) / (b - a)) * innerW);
   const y = (gap: number): number => frame.top + (Math.min(Math.max(gap, 0), yMax) / yMax) * innerH;
   return { x, y, yMax };
 }
@@ -84,4 +96,37 @@ export function layoutLabels(ys: { id: string; y: number }[], minGap: number, to
     cur.y = Math.min(cur.y, next.y - gapPx);
   }
   return placed;
+}
+
+/** The laps that get an x-axis label: every ``step``-th lap from the last one back, with ``step`` the smallest
+ * that keeps labels at least ``minPx`` apart. The last lap (the newest) is always labelled. */
+export function xTickLaps(lapRange: [number, number], innerW: number, minPx = 24): number[] {
+  const [a, b] = lapRange;
+  const n = b - a;
+  if (n <= 0) return [a];
+  const step = Math.max(1, Math.ceil(minPx / (innerW / n)));
+  const out: number[] = [];
+  for (let lap = b; lap >= a; lap -= step) out.unshift(lap);
+  return out;
+}
+
+/** The cars that get an end-of-line label: the highlighted ones, then the first ``top`` cars of the order
+ * that are not stale (no timing for 2 or more leader laps), each once, among the cars drawn. */
+export function labelledIds(
+  order: readonly string[],
+  drawn: readonly string[],
+  highlighted: readonly string[],
+  stale: ReadonlySet<string> = new Set(),
+  top = 5,
+): string[] {
+  const has = new Set(drawn);
+  const out = highlighted.filter((id) => has.has(id));
+  let n = 0;
+  for (const id of order) {
+    if (n >= top) break;
+    if (!has.has(id) || stale.has(id)) continue;
+    n += 1;
+    if (!out.includes(id)) out.push(id);
+  }
+  return out;
 }

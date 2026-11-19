@@ -5,6 +5,18 @@ The model is loaded once at start-up with the stream job's own loader
 to the metadata features), so the API reports exactly the model the detector scores with.
 Failures are reported by exception class and a fixed text; no URL, host or credential is put
 in a response.
+
+F10 (additive, Step 3 of the UI redesign): ``checks.model`` also reports ``smoke_test``,
+``trained_on``, ``model_id`` and ``stamp``.
+
+* ``smoke_test`` is the dashboard's existing rule for its SMOKE TEST stamp: the deployment folder's
+  name starts with ``sample_`` (``SAMPLE_PREFIX``, the same prefix as ``f1sa.model.deploy``). Only
+  ``make demo`` / ``model-save-sample`` write such folders, and they stamp their metadata
+  ``smoke_test: true``.
+* ``trained_on`` is the lake the model was trained on: ``sample`` when its metadata says
+  ``source: "sample"``, else ``full``. When the metadata cannot be read, the prefix rule decides.
+* ``model_id`` is the same value as ``model_version`` (both are kept).
+* ``stamp`` is the metadata's stamp text (the sample deployment's SMOKE TEST sentence), else null.
 """
 
 from __future__ import annotations
@@ -15,7 +27,7 @@ import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import redis.asyncio as aioredis
 
@@ -25,6 +37,15 @@ from f1sa.streaming.stream_job import JobError, load_model
 log = logging.getLogger(__name__)
 
 KafkaCheck = Callable[[], Awaitable[None]]
+
+SAMPLE_PREFIX = "sample_"
+"""Prefix of the sample deployment folders (``f1sa.model.deploy.SAMPLE_PREFIX``; not imported, so
+the API does not load Spark): the SMOKE TEST rule."""
+
+
+def is_smoke_model(model_version: str) -> bool:
+    """True for a sample deployment model (a smoke test, not a result)."""
+    return model_version.startswith(SAMPLE_PREFIX)
 
 
 class KafkaUnavailableError(RuntimeError):
@@ -51,6 +72,24 @@ class ModelStatus:
     feature_set: str | None = None
     g: float | None = None
     k: int | None = None
+    stamp: str | None = None
+    metadata_source: str | None = None
+    """The metadata's ``source`` (``sample`` for the sample deployment), when it was read."""
+    metadata_read: bool = False
+
+    @property
+    def model_id(self) -> str:
+        return self.model_version
+
+    @property
+    def smoke_test(self) -> bool:
+        return is_smoke_model(self.model_version)
+
+    @property
+    def trained_on(self) -> Literal["sample", "full"]:
+        if self.metadata_read:
+            return "sample" if self.metadata_source == "sample" else "full"
+        return "sample" if self.smoke_test else "full"
 
     @classmethod
     def load(cls, model_dir: Path) -> ModelStatus:
@@ -79,6 +118,9 @@ class ModelStatus:
             feature_set=_opt_str(meta.get("feature_set")),
             g=float(meta["g"]),
             k=int(meta["k"]),
+            stamp=meta["stamp"] if isinstance(meta.get("stamp"), str) else None,
+            metadata_source=_opt_str(meta.get("source")),
+            metadata_read=True,
         )
 
 

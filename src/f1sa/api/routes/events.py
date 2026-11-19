@@ -36,5 +36,7 @@ async def race_events(race: Race, deps: Deps) -> SSEResponse:
         race.round,
         heartbeat_s=deps.settings.api_sse_heartbeat_s,
         on_sent=on_sent,
+        # F09: the current API replay run's alerts so far, with the connect snapshot
+        history=lambda: deps.lap_logs.history(race.season, race.round),
     )
     return SSEResponse(stream)

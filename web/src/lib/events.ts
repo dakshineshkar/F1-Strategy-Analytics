@@ -6,7 +6,12 @@
  * Redis state: ``{type: "snapshot", season, round, lap, drivers, order, event_id: "snapshot-<lap>",
  * sse_sent_at_ms}``.
  * ``parseEvent`` returns ``null`` for anything that does not match: the reducer counts it as
- * malformed and carries on. */
+ * malformed and carries on.
+ *
+ * F09 (additive): the connect snapshot (``snapshot-0``) also carries ``recent_alerts``, the current
+ * replay run's alerts received by the API before this page subscribed (at most 50, oldest first),
+ * each in the exact shape and with the exact ``event_id`` of its live ``undercut_alert`` frame.
+ * Per-lap snapshots and ``/state`` have no such key (``recentAlerts`` is then empty). */
 
 import { type Compound, isCompound, type RaceSnapshot, toSnapshot } from "./api";
 import { isDriverId, isFiniteNumber, isInt, isObj, isStr, nullable, type Obj, UUID } from "./guard";
@@ -65,6 +70,10 @@ export interface SnapshotEvent extends Base {
   type: "snapshot";
   lap: number;
   data: RaceSnapshot;
+  /** F09: the alerts received before this page subscribed (connect snapshot only), oldest first. */
+  recentAlerts: AlertEvent[];
+  /** History items that are not a valid alert of this race (dropped, counted as malformed). */
+  recentDropped: number;
 }
 
 export type RaceEvent = LapEvent | PitEvent | AlertEvent | SessionEndEvent | SnapshotEvent;
@@ -76,6 +85,19 @@ function snapshot(msg: Obj): SnapshotEvent | null {
   const data = toSnapshot(msg);
   if (data === undefined) return null;
   const sent = nullable(msg.sse_sent_at_ms, isInt);
+  // display only: a bad history item is dropped (and counted), never the snapshot
+  const recentAlerts: AlertEvent[] = [];
+  let recentDropped = 0;
+  if (Array.isArray(msg.recent_alerts)) {
+    for (const item of msg.recent_alerts) {
+      const e = parseMessage(item);
+      if (e !== null && e.type === "undercut_alert" && e.season === data.season && e.round === data.round) {
+        recentAlerts.push(e);
+      } else {
+        recentDropped += 1;
+      }
+    }
+  }
   return {
     type: "snapshot",
     eventId: msg.event_id,
@@ -84,6 +106,8 @@ function snapshot(msg: Obj): SnapshotEvent | null {
     sseSentAtMs: sent ?? null,
     lap: msg.lap,
     data,
+    recentAlerts,
+    recentDropped,
   };
 }
 
@@ -159,6 +183,11 @@ export function parseEvent(raw: string): RaceEvent | null {
   } catch {
     return null;
   }
+  return parseMessage(msg);
+}
+
+/** One decoded race message (an SSE data object, or an item of a snapshot's ``recent_alerts``). */
+export function parseMessage(msg: unknown): RaceEvent | null {
   if (!isObj(msg) || !isStr(msg.type) || !isInt(msg.season) || !isInt(msg.round)) return null;
   if (msg.type === "snapshot") return snapshot(msg);
   if (!isStr(msg.event_id) || !UUID.test(msg.event_id) || !isObj(msg.payload)) return null;
