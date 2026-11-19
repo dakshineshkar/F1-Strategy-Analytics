@@ -1,5 +1,7 @@
 import { expect, type APIRequestContext, test } from "@playwright/test";
 
+import { API, type ReplayJob, stopReplay } from "./replay";
+
 /**
  * Replay controls (Feature 7) against the real API in sample mode with replay enabled
  * (`make api-up REPLAY=1`): start the sample race 2024 R5 at 1×, switch to 60×, pause (the lap
@@ -7,17 +9,18 @@ import { expect, type APIRequestContext, test } from "@playwright/test";
  * with the keyboard. A replay writes only data/demo/<run_id> and the race's Redis keys.
  */
 
-const API = process.env.E2E_API_URL ?? "http://localhost:8000";
+/** True once this spec clicked Start: it stops its own replay at the end, and afterEach / afterAll stop it
+ * through the API when the test failed before that. */
+let started = false;
 
-interface ReplayJob {
-  run_id: string;
-  season: number;
-  round: number;
-  state: string;
-  speed: number;
-  paused: boolean;
-  lap: number | null;
-}
+test.afterEach(async ({ request }) => {
+  if (started) await stopReplay(request, 2024, 5);
+  started = false;
+});
+
+test.afterAll(async ({ request }) => {
+  if (started) await stopReplay(request, 2024, 5);
+});
 
 async function replays(request: APIRequestContext): Promise<{ enabled: boolean; running: ReplayJob[]; recent: ReplayJob[] }> {
   return (await (await request.get(`${API}/api/replays`)).json()) as { enabled: boolean; running: ReplayJob[]; recent: ReplayJob[] };
@@ -60,6 +63,7 @@ test("sample race: start at 1×, switch to 60×, pause, resume and stop", async 
   await expect(stop).toBeDisabled();
 
   await page.getByLabel("1×").check();
+  started = true; // before the click: a stop with nothing running is a harmless 409
   await start.click();
   await expect(replayStatus).toContainText(/Starting|Running at 1×/, { timeout: 20_000 });
   await expect(start).toBeDisabled();

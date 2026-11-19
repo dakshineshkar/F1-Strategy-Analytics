@@ -27,6 +27,16 @@ unchanged):
 * ``probs_at(lap)``: the stream's published ``undercut_flag`` / ``undercut_prob`` of every driver,
   read (never written) from the driver hashes by the subscriber task when the leader's first lap
   event of that lap arrives (``read_published_probs``). Only laps seen by the subscriber have it.
+
+Alert history (F09, additive, Step 3 of the UI redesign): the log also keeps the race's
+``undercut_alert`` messages as SSE frames (``{**message, event_id, sse_sent_at_ms}``, the same id
+``sse.event_id_for`` gives the live frame), deduplicated by ``event_id`` and capped at
+``MAX_ALERTS``. ``LapLogManager.history`` serves the newest ``RECENT_ALERTS`` of them with the
+connect snapshot, but only for a log started by an API replay (``run_id`` set by the replay route
+with ``fresh=True``), so they are this run's alerts and nothing else. Before reading, it sends a
+PING on the subscriber's own connection and waits for its PONG: Redis answers in order, so every
+message published before the caller subscribed has then been recorded. The history is in memory:
+an API restart loses it (and stops the API's replays with it).
 """
 
 from __future__ import annotations
@@ -37,6 +47,8 @@ import json
 import logging
 import math
 import time
+import uuid
+from collections import OrderedDict
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from typing import Any
@@ -45,8 +57,10 @@ import anyio
 import redis.asyncio as aioredis
 from redis.exceptions import RedisError
 
+from f1sa.api.sse import event_id_for
 from f1sa.serving import keys as K
 from f1sa.sim.whatif import LapRecord
+from f1sa.streaming.redis_sink import now_ms
 
 log = logging.getLogger(__name__)
 
@@ -55,6 +69,12 @@ MAX_RACES = 4
 IDLE_S = 1800.0
 POLL_S = 1.0
 SUBSCRIBE_TIMEOUT_S = 5.0
+MAX_ALERTS = 1000
+"""Alerts kept per run (a race has a few hundred at most; 141 for the sample 2024 R5)."""
+RECENT_ALERTS = 50
+"""Alerts sent with the connect snapshot (newest, oldest first)."""
+BARRIER_TIMEOUT_S = 1.0
+ALERT_REASONS = ("opportunity", "attempt")
 
 
 def _int(v: Any) -> int | None:
@@ -107,9 +127,15 @@ class LapLog:
     _probs: dict[int, Probs] = field(default_factory=dict, repr=False)
     _max_lap: int = 0
     _new_laps: list[int] = field(default_factory=list, repr=False)
+    run_id: str | None = None
+    """The API replay this log was started for (``fresh=True``); None for any other log."""
+    max_alerts: int = MAX_ALERTS
+    _alerts: OrderedDict[str, dict[str, Any]] = field(default_factory=OrderedDict, repr=False)
 
-    def observe(self, msg: Mapping[str, Any]) -> bool:
-        """Apply one message (the stored JSON envelope); ``False`` if it was skipped."""
+    def observe(self, msg: Mapping[str, Any], event_id: str | None = None) -> bool:
+        """Apply one message (the stored JSON envelope, or an SSE frame that carries its
+        ``event_id``); ``False`` if it was skipped. An ``undercut_alert`` needs ``event_id`` (the
+        argument or the frame's) and is recorded once per id."""
         if msg.get("season") != self.season or msg.get("round") != self.round:
             self.skipped += 1
             return False
@@ -118,6 +144,8 @@ class LapLog:
             self.ended = True
             self.messages += 1
             return True
+        if kind == "undercut_alert":
+            return self._alert(msg, event_id)
         payload = msg.get("payload")
         if kind not in ("lap", "pit_in", "pit_out") or not isinstance(payload, Mapping):
             self.skipped += 1
@@ -157,6 +185,34 @@ class LapLog:
                 self._new_laps.append(lap)
         self._prune(driver)
         return True
+
+    def _alert(self, msg: Mapping[str, Any], event_id: str | None) -> bool:
+        eid = event_id if event_id is not None else msg.get("event_id")
+        payload = msg.get("payload")
+        if not isinstance(eid, str) or not eid or not _valid_alert(payload):
+            self.skipped += 1
+            return False
+        self.messages += 1
+        if eid in self._alerts:
+            return True
+        frame = dict(msg)
+        frame["event_id"] = eid
+        if _int(frame.get("sse_sent_at_ms")) is None:
+            frame["sse_sent_at_ms"] = now_ms()
+        self._alerts[eid] = frame
+        while len(self._alerts) > self.max_alerts:
+            self._alerts.popitem(last=False)
+        return True
+
+    def recent_alerts(self, n: int = RECENT_ALERTS) -> list[dict[str, Any]]:
+        """The newest ``n`` alert frames recorded, oldest first (copies)."""
+        if n <= 0:
+            return []
+        return [dict(f) for f in list(self._alerts.values())[-n:]]
+
+    @property
+    def alert_count(self) -> int:
+        return len(self._alerts)
 
     def _prune(self, driver: str) -> None:
         laps = self._laps.get(driver, {})
@@ -229,6 +285,40 @@ class LapLog:
         return out
 
 
+def _valid_alert(payload: Any) -> bool:
+    """The fields the dashboard reads from an alert payload are present and well-formed."""
+    if not isinstance(payload, Mapping) or payload.get("reason") not in ALERT_REASONS:
+        return False
+    if not isinstance(payload.get("trigger"), str):
+        return False
+    ids = []
+    for key in ("attacker_id", "defender_id"):
+        v = payload.get(key)
+        try:
+            ids.append(K.validate_driver_id(v) if isinstance(v, str) else None)
+        except K.InvalidKeyError:
+            return False
+    lap = _int(payload.get("decision_lap"))
+    return None not in ids and ids[0] != ids[1] and lap is not None and lap >= 1
+
+
+def _text(v: Any) -> str | None:
+    if isinstance(v, bytes):
+        return v.decode("utf-8", errors="replace")
+    return v if isinstance(v, str) else None
+
+
+def _pong_token(response: Any) -> str | None:
+    """The token of a PING reply on a subscribed connection (RESP3: the bare token; RESP2:
+    ``["pong", token]``), else None."""
+    text = _text(response)
+    if text is not None:
+        return text
+    if isinstance(response, list) and len(response) == 2 and _text(response[0]) == "pong":
+        return _text(response[1])
+    return None
+
+
 def _flag(v: Any) -> bool:
     text = v.decode() if isinstance(v, bytes) else v
     return text == "1"
@@ -271,6 +361,9 @@ class _Entry:
     last_used: float
     task: asyncio.Task[None] | None = None
     subscribed: asyncio.Event = field(default_factory=asyncio.Event)
+    pubsub: Any = None
+    """The subscriber's Pub/Sub connection while it is subscribed (the history barrier pings it)."""
+    pongs: dict[str, asyncio.Future[None]] = field(default_factory=dict)
 
 
 class LapLogManager:
@@ -304,20 +397,27 @@ class LapLogManager:
         """The race's log, created if needed, without starting a subscriber (for the SSE feed)."""
         return self._entry(season, round_, fresh=False).log
 
-    def start_soon(self, season: int, round_: int, *, fresh: bool = False) -> LapLog:
+    def start_soon(
+        self, season: int, round_: int, *, fresh: bool = False, run_id: str | None = None
+    ) -> LapLog:
         """The race's log with its subscriber task scheduled (not awaited). ``fresh`` drops an
-        older log of the race first; an ended log is not restarted unless ``fresh``."""
+        older log of the race first and tags the new one with ``run_id`` (an API replay start);
+        an ended log is not restarted unless ``fresh``."""
         entry = self._entry(season, round_, fresh=fresh)
+        if fresh:
+            entry.log.run_id = run_id
         if (entry.task is None or entry.task.done()) and not entry.log.ended:
             entry.subscribed = asyncio.Event()
             entry.task = asyncio.create_task(
-                self._run(entry.log, entry.subscribed), name=f"laplog-{season}-{round_}"
+                self._run(entry, entry.subscribed), name=f"laplog-{season}-{round_}"
             )
         return entry.log
 
-    async def ensure(self, season: int, round_: int) -> LapLog:
+    async def ensure(
+        self, season: int, round_: int, *, fresh: bool = False, run_id: str | None = None
+    ) -> LapLog:
         """``start_soon``, then wait (at most ``SUBSCRIBE_TIMEOUT_S``) until it is subscribed."""
-        log_ = self.start_soon(season, round_)
+        log_ = self.start_soon(season, round_, fresh=fresh, run_id=run_id)
         entry = self._races[(season, round_)]
         if entry.task is not None and not entry.task.done():
             with contextlib.suppress(TimeoutError):
@@ -343,6 +443,42 @@ class LapLogManager:
             )
         return entry
 
+    async def history(
+        self, season: int, round_: int, n: int = RECENT_ALERTS
+    ) -> list[dict[str, Any]]:
+        """The race's newest ``n`` alert frames of the current API replay run, oldest first; ``[]``
+        when the log was not started by an API replay. While the subscriber runs, a PING/PONG on
+        its connection first makes sure every message published before this call is recorded
+        (at most ``BARRIER_TIMEOUT_S``; on a timeout or a Redis error the alerts recorded so far
+        are returned)."""
+        entry = self._races.get((season, round_))
+        if entry is None or entry.log.run_id is None:
+            return []
+        entry.last_used = self._clock()
+        await self._barrier(entry)
+        return entry.log.recent_alerts(n)
+
+    async def _barrier(self, entry: _Entry) -> None:
+        if entry.task is None or entry.task.done() or entry.pubsub is None:
+            return
+        token = f"f1sa-history-{uuid.uuid4().hex}"
+        fut: asyncio.Future[None] = asyncio.get_running_loop().create_future()
+        entry.pongs[token] = fut
+        try:
+            await entry.pubsub.ping(token)
+            await asyncio.wait_for(asyncio.shield(fut), BARRIER_TIMEOUT_S)
+        except (TimeoutError, RedisError, OSError) as exc:
+            log.warning(
+                "history barrier incomplete",
+                extra={
+                    "season": entry.log.season,
+                    "round": entry.log.round,
+                    "exc_class": type(exc).__name__,
+                },
+            )
+        finally:
+            entry.pongs.pop(token, None)
+
     def _drop(self, key: tuple[int, int]) -> None:
         entry = self._races.pop(key, None)
         if entry is not None and entry.task is not None and not entry.task.done():
@@ -350,17 +486,32 @@ class LapLogManager:
             self._cancelled.add(entry.task)
             entry.task.add_done_callback(self._cancelled.discard)
 
-    async def _run(self, log_: LapLog, subscribed: asyncio.Event) -> None:
+    async def _run(self, entry: _Entry, subscribed: asyncio.Event) -> None:
+        log_ = entry.log
         channel = K.events_channel(log_.season, log_.round)
         pubsub: Any = self.client.pubsub(ignore_subscribe_messages=True)
         try:
             await pubsub.subscribe(channel)
+            entry.pubsub = pubsub
             subscribed.set()
             while not log_.ended:
-                msg = await pubsub.get_message(ignore_subscribe_messages=True, timeout=POLL_S)
+                # get_message, minus its PING handling: redis-py 8 on RESP3 with decoded responses
+                # returns a subscribed PING's reply as a bare string, which handle_message drops;
+                # RESP2 gives ["pong", token]. Both are recognised here as the barrier's token.
+                response = await pubsub.parse_response(block=False, timeout=POLL_S)
+                token = _pong_token(response)
+                if token is not None:
+                    self._pong(entry, token)
+                    continue
+                msg = (
+                    None
+                    if response is None
+                    else await pubsub.handle_message(response, ignore_subscribe_messages=True)
+                )
                 if msg is None or msg.get("type") != "message":
                     await asyncio.sleep(0.05)
                     continue
+                entry.last_used = self._clock()  # a race that still receives messages is in use
                 data = msg.get("data")
                 raw = data.decode("utf-8", errors="replace") if isinstance(data, bytes) else data
                 try:
@@ -368,7 +519,7 @@ class LapLogManager:
                 except ValueError:
                     parsed = None
                 if isinstance(parsed, dict):
-                    log_.observe(parsed)
+                    log_.observe(parsed, event_id_for(raw, parsed))
                     for lap in log_.take_new_laps():
                         log_.set_probs(
                             lap, await read_published_probs(self.client, log_.season, log_.round)
@@ -381,12 +532,22 @@ class LapLogManager:
                 extra={"channel": channel, "exc_class": type(exc).__name__},
             )
         finally:
+            entry.pubsub = None
+            for fut in entry.pongs.values():
+                if not fut.done():
+                    fut.set_result(None)  # nothing more can arrive: the barrier is over
             subscribed.set()
             with anyio.CancelScope(shield=True):
                 with contextlib.suppress(RedisError, OSError):
                     await pubsub.unsubscribe(channel)
                 with contextlib.suppress(RedisError, OSError):
                     await pubsub.aclose()
+
+    @staticmethod
+    def _pong(entry: _Entry, token: str) -> None:
+        fut = entry.pongs.get(token)
+        if fut is not None and not fut.done():
+            fut.set_result(None)
 
     async def aclose(self) -> None:
         """Stop every subscriber and wait for them (API shutdown)."""

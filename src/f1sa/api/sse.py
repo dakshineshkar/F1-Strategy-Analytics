@@ -38,6 +38,15 @@ driver hash + the order set, one pipeline, ``api/state.py``) and sends it as::
   so they need no SCAN, except while the last snapshot found no driver (a race that had not
   started at connect): then they SCAN again, so the first lap's snapshot holds every hash.
 
+Alert history (F09, additive): the **connect** snapshot (``snapshot-0``) also carries
+``recent_alerts``, the race's newest alerts of the current API replay run (at most 50, oldest
+first), each in the exact shape and with the exact ``event_id`` of its live ``undercut_alert``
+frame. They come from the API's own recorder (``api/lap_log.py``: the Pub/Sub subscriber the
+replay start runs), read after this stream subscribed and after the Redis state; an alert in both
+the history and the live stream has the same id, so the client keeps it once. It is ``[]`` when the
+race has no state in Redis (a cleared or expired race) or no API replay recorded it. Per-lap
+snapshots do not carry the key; every other snapshot field is unchanged.
+
 The alert stream only says when a pair *becomes* a candidate, so these snapshots are what clears a
 stale ``undercut_flag`` in the browser. A snapshot that cannot be read (Redis error, a hash that
 breaks the contract) is skipped and logged; the event stream goes on.
@@ -55,7 +64,7 @@ import json
 import logging
 import re
 import uuid
-from collections.abc import AsyncIterator, Callable, Mapping
+from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
 from typing import Any
 
 import anyio
@@ -87,6 +96,9 @@ ID_NAMESPACE = uuid.uuid5(uuid.NAMESPACE_URL, "f1sa:race-events")
 _UUID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
 
 OnSent = Callable[[str, Mapping[str, Any]], None]
+History = Callable[[], Awaitable[list[dict[str, Any]]]]
+"""The race's recent alert frames for the connect snapshot (``LapLogManager.history``)."""
+RECENT_ALERTS_KEY = "recent_alerts"
 
 
 def event_id_for(raw: str, message: Mapping[str, Any]) -> str:
@@ -119,6 +131,7 @@ class EventStream:
         heartbeat_s: float,
         on_sent: OnSent | None = None,
         clock_ms: Callable[[], int] = now_ms,
+        history: History | None = None,
     ) -> None:
         if not heartbeat_s > 0:
             raise ValueError(f"heartbeat_s must be > 0, got {heartbeat_s}")
@@ -129,6 +142,7 @@ class EventStream:
         self.heartbeat_s = heartbeat_s
         self.on_sent = on_sent
         self.clock_ms = clock_ms
+        self.history = history
         self.pubsub: Any = None
         self.closed = False
         self.sent = 0
@@ -164,16 +178,41 @@ class EventStream:
             self.snapshot_lap = lap
         self.known_drivers |= set(state.drivers) | {o.driver_id for o in state.order}
         self._last_snapshot_empty = not state.drivers
+        extra: dict[str, Any] = {}
+        if lap == 0 and self.history is not None:
+            extra[RECENT_ALERTS_KEY] = await self._recent_alerts(bool(state.drivers))
         event_id = f"snapshot-{lap}"
         data = {
             "type": SNAPSHOT,
             "lap": lap,
             **state.model_dump(),
+            **extra,
             "event_id": event_id,
             "sse_sent_at_ms": self.clock_ms(),
         }
         self.snapshots += 1
         return format_event(SNAPSHOT, event_id, data)
+
+    async def _recent_alerts(self, has_state: bool) -> list[dict[str, Any]]:
+        """The connect snapshot's alert history: ``[]`` without race state (never an old run's
+        alerts beside a cleared race) or when it cannot be read."""
+        if not has_state or self.history is None:
+            return []
+        try:
+            frames = await self.history()
+        except (RedisError, OSError) as exc:
+            log.warning(
+                "alert history skipped",
+                extra={"channel": self.channel, "exc_class": type(exc).__name__},
+            )
+            return []
+        return [
+            f
+            for f in frames
+            if f.get("type") == "undercut_alert"
+            and f.get("season") == self.season
+            and f.get("round") == self.round
+        ]
 
     def _note(self, msg: Mapping[str, Any]) -> int | None:
         """Remember the event's driver; the lap number of a ``lap`` event that needs a snapshot."""

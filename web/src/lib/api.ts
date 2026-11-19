@@ -66,6 +66,14 @@ export interface HealthModel {
   feature_set: string | null;
   g: number | null;
   k: number | null;
+  /** F10, additive: the sample deployment model is scoring (a smoke test). ``null`` from an older API. */
+  smoke_test: boolean | null;
+  /** F10: the lake the model was trained on; ``null`` from an older API. */
+  trained_on: "sample" | "full" | null;
+  /** F10: the same value as ``model_version``; ``null`` from an older API. */
+  model_id: string | null;
+  /** F10: the metadata's SMOKE TEST stamp text, or null. */
+  stamp: string | null;
 }
 
 export interface Health {
@@ -222,6 +230,10 @@ export function toHealthModel(checks: unknown): HealthModel | null {
     feature_set: isStr(m.feature_set) ? m.feature_set : null,
     g: num(m.g),
     k: num(m.k),
+    smoke_test: isBool(m.smoke_test) ? m.smoke_test : null,
+    trained_on: m.trained_on === "sample" || m.trained_on === "full" ? m.trained_on : null,
+    model_id: isStr(m.model_id) && m.model_id !== "" ? m.model_id : null,
+    stamp: isStr(m.stamp) && m.stamp !== "" ? m.stamp : null,
   };
 }
 

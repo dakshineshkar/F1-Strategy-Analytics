@@ -7,6 +7,9 @@
  *   and loaded from ``GET /state`` on a reconnect. It replaces the tower values (stale
  *   ``undercut_flag`` / ``undercut_prob`` included) and the order, and keeps the client-built lap
  *   history and alert groups (Pub/Sub has no history, so they cannot be reloaded).
+ *   The connect snapshot (F09) also brings the alerts the API received before this page subscribed
+ *   (``recentAlerts``): each joins its pair's group marked ``history``, deduplicated by ``event_id``
+ *   with the live alerts, and never touches the rows (the hashes already hold the flags).
  * - **SSE events** between snapshots:
  *   - `lap` updates the driver's latest lap, compound, tyre age and last lap time. Gaps come from
  *     ``race_time_s`` at the same lap number, the ``timing_gaps`` definition the stream job uses:
@@ -90,7 +93,13 @@ export interface AlertGroup {
   count: number;
   /** Increases with every alert, so the feed can sort newest first. */
   seq: number;
+  /** F09: the group's latest alert came from a connect snapshot's history, not live: ``before_open`` (the
+   * page's first snapshot: received by the API before this page opened) or ``while_away`` (a reconnect's
+   * snapshot: received while the page was disconnected). Never "new". Null or absent for a live alert. */
+  history?: AlertHistory | null;
 }
+
+export type AlertHistory = "before_open" | "while_away";
 
 export interface Announcement {
   id: string;
@@ -336,6 +345,7 @@ function applyAlert(state: RaceState, e: AlertEvent): RaceState {
     gapS: e.gapS,
     count: (previous?.count ?? 0) + 1,
     seq,
+    history: null,
   };
   const { row, unknown } = ensureRow(state, e.attackerId);
   let drivers: Record<string, DriverRow> = {
@@ -360,6 +370,42 @@ function applyAlert(state: RaceState, e: AlertEvent): RaceState {
     announcements,
     unknownDrivers: state.unknownDrivers + (unknown ? 1 : 0),
   };
+}
+
+/** F09: one alert from the connect snapshot's history. It only updates its pair's group (count, seq, the
+ * decision lap and gap of the alert): the snapshot's driver hashes already hold the current flags, so the
+ * rows are not touched, nothing is announced (it is not news), and no row is created for an unknown car. */
+function applyHistoryAlert(state: RaceState, e: AlertEvent, kind: AlertHistory): RaceState {
+  const key = alertKey(e.attackerId, e.defenderId);
+  const seq = state.alertSeq + 1;
+  const previous = state.alerts[key];
+  const group: AlertGroup = {
+    key,
+    attackerId: e.attackerId,
+    defenderId: e.defenderId,
+    reason: e.reason,
+    trigger: e.trigger,
+    prob: e.prob,
+    threshold: e.threshold,
+    decisionLap: e.decisionLap,
+    gapS: e.gapS,
+    count: (previous?.count ?? 0) + 1,
+    seq,
+    history: kind,
+  };
+  return { ...state, alerts: { ...state.alerts, [key]: group }, alertSeq: seq };
+}
+
+/** F09: the connect snapshot's alert history, oldest first, after the snapshot's state. Deduplicated by
+ * ``event_id`` against every event this page applied (``seen``), so an alert that also arrives live, or
+ * again in the history of a later reconnect's snapshot, is counted once. */
+function applyRecentAlerts(state: RaceState, alerts: readonly AlertEvent[], kind: AlertHistory): RaceState {
+  let next = state;
+  for (const e of alerts) {
+    if (e.season !== state.season || e.round !== state.round || next.seen.includes(e.eventId)) continue;
+    next = { ...applyHistoryAlert(next, e, kind), seen: remember(next.seen, e.eventId) };
+  }
+  return next;
 }
 
 function timingValues(t: TimingHash): TimingValues {
@@ -448,8 +494,14 @@ function applyEvent(state: RaceState, raw: string): RaceState {
     return { ...state, foreign: state.foreign + 1 };
   }
   if (state.sessionEnded) return { ...state, foreign: state.foreign + 1 };
-  // Snapshots replace state; their ids repeat across connections, so they are not deduplicated.
-  if (e.type === "snapshot") return applySnapshot(state, e.data);
+  // Snapshots replace state; their ids repeat across connections, so they are not deduplicated. The
+  // connect snapshot's alert history (F09) is, item by item.
+  if (e.type === "snapshot") {
+    // the page's first snapshot holds what came before it opened; a later one, what it missed while away
+    const kind: AlertHistory = state.snapshots === 0 ? "before_open" : "while_away";
+    const next = applyRecentAlerts(applySnapshot(state, e.data), e.recentAlerts, kind);
+    return e.recentDropped > 0 ? { ...next, malformed: next.malformed + e.recentDropped } : next;
+  }
   if (state.seen.includes(e.eventId)) return { ...state, duplicates: state.duplicates + 1 };
   let next: RaceState;
   switch (e.type) {

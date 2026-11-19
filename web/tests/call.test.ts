@@ -74,12 +74,14 @@ const health = (version: string | null, extra: Record<string, unknown> = {}): He
 
 describe("model identity and the SMOKE TEST rule", () => {
   it("keeps checks.model from /api/health (it was dropped before: critique F10)", () => {
-    expect(health("deploy_real_G3.5_k2")?.model).toEqual({ model_version: "deploy_real_G3.5_k2", feature_set: "real", g: 3.5, k: 2 });
+    // F10's fields are null from an API that does not send them
+    const none = { smoke_test: null, trained_on: null, model_id: null, stamp: null };
+    expect(health("deploy_real_G3.5_k2")?.model).toEqual({ model_version: "deploy_real_G3.5_k2", feature_set: "real", g: 3.5, k: 2, ...none });
     expect(health(null)?.model).toBeNull();
     // an older API or a malformed model block keeps the health check usable
     expect(toHealth({ status: "ok", lake: { scheme: "file", mode: "sample", synthetic: true } })?.model).toBeNull();
     expect(toHealthModel({ model: { model_version: "" } })).toBeNull();
-    expect(toHealthModel({ model: { model_version: "m", feature_set: 3, g: "x", k: null } })).toEqual({ model_version: "m", feature_set: null, g: null, k: null });
+    expect(toHealthModel({ model: { model_version: "m", feature_set: 3, g: "x", k: null } })).toEqual({ model_version: "m", feature_set: null, g: null, k: null, ...none });
     expect(toHealthModel(null)).toBeNull();
   });
 

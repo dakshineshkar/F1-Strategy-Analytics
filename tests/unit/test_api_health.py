@@ -156,3 +156,134 @@ async def test_unreadable_lake_gives_nulls_and_keeps_status(tmp_path: Path) -> N
     async with hdfs.client() as c:
         lake = (await c.get("/api/health")).json()["lake"]
     assert lake == {"scheme": "hdfs", "mode": None, "synthetic": None}
+
+
+# ------------------------------------------------------------- F10: smoke-test fields (additive)
+NEW_MODEL_FIELDS = {"smoke_test", "trained_on", "model_id", "stamp"}
+PRE_F10_MODEL_FIELDS = {
+    "ok",
+    "error",
+    "model_version",
+    "git_sha",
+    "git_dirty",
+    "scorer_sha256",
+    "created_utc",
+    "feature_set",
+    "g",
+    "k",
+}
+SMOKE = (
+    "SMOKE TEST: trained on the 2 sample races (Jolpica laps, SYNTHETIC tyres); demo only, "
+    "not findings"
+)
+
+
+def test_sample_prefix_is_the_deploy_modules() -> None:
+    from f1sa.api.health import SAMPLE_PREFIX, is_smoke_model
+    from f1sa.model.deploy import SAMPLE_PREFIX as DEPLOY_PREFIX
+
+    assert SAMPLE_PREFIX == DEPLOY_PREFIX == "sample_"
+    assert is_smoke_model("sample_deploy_real_G3.5_k2") and not is_smoke_model(
+        "deploy_real_G3.5_k2"
+    )
+
+
+def test_model_status_f10_fields(tmp_path: Path) -> None:
+    sample = ModelStatus.load(
+        model_folder(
+            tmp_path / "sample_deploy_real_G3.5_k2", source="sample", smoke_test=True, stamp=SMOKE
+        )
+    )
+    assert sample.ok and sample.smoke_test and sample.trained_on == "sample"
+    assert sample.model_id == sample.model_version == "sample_deploy_real_G3.5_k2"
+    assert sample.stamp == SMOKE
+    full = ModelStatus.load(model_folder(tmp_path / "deploy_real_G3.5_k2"))
+    assert full.ok and not full.smoke_test and full.trained_on == "full" and full.stamp is None
+    # unreadable metadata: the prefix rule decides trained_on too
+    gone = ModelStatus.load(tmp_path / "sample_deploy_missing")
+    assert not gone.ok and gone.smoke_test and gone.trained_on == "sample" and gone.stamp is None
+    gone_full = ModelStatus.load(tmp_path / "deploy_missing")
+    assert not gone_full.smoke_test and gone_full.trained_on == "full"
+
+
+@pytest.mark.parametrize("name", ["deploy_real_G3.5_k2", "sample_deploy_real_G3.5_k2"])
+def test_smoke_rule_agrees_with_the_real_deployment_metadata(name: str) -> None:
+    import json
+
+    meta_path = (
+        Path(__file__).resolve().parents[2] / "models" / "undercut" / name / "lr" / "metadata.json"
+    )
+    if not meta_path.is_file():
+        pytest.skip(f"{meta_path} not present (models are not committed)")
+    meta = json.loads(meta_path.read_text(encoding="utf-8"))
+    m = ModelStatus.load(meta_path.parent.parent)
+    assert m.ok
+    assert m.smoke_test is (meta.get("smoke_test") is True)
+    assert m.trained_on == ("sample" if meta.get("source") == "sample" else "full")
+    assert m.stamp == meta.get("stamp")
+
+
+async def test_health_f10_fields_and_contract(tmp_path: Path) -> None:
+    """Every pre-existing field keeps its name and value; F10 adds four keys to checks.model."""
+    write_file_lake(tmp_path / "lake")  # sample lake
+    settings = make_settings(tmp_path)
+    for name, extra, smoke, trained, stamp in (
+        ("deploy_real_G3.5_k2", {}, False, "full", None),
+        (
+            "sample_deploy_real_G3.5_k2",
+            {"source": "sample", "smoke_test": True, "stamp": SMOKE},
+            True,
+            "sample",
+            SMOKE,
+        ),
+    ):
+        d = model_folder(
+            tmp_path / name, git_sha="abc", created_utc="2026-11-01T00:00:00Z", **extra
+        )
+        api = make_api(settings, model=ModelStatus.load(d))
+        async with api.client() as c:
+            resp = await c.get("/api/health")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert set(body) == {"status", "checks", "lake"}
+        assert body["status"] == "ok"
+        assert body["lake"] == {"scheme": "file", "mode": "sample", "synthetic": True}
+        assert body["checks"]["redis"] == {"ok": True, "error": None}
+        assert body["checks"]["kafka"] == {"ok": True, "error": None}
+        model = body["checks"]["model"]
+        assert set(model) == PRE_F10_MODEL_FIELDS | NEW_MODEL_FIELDS
+        sha = hashlib.sha256((d / "lr" / "scorer.json").read_bytes()).hexdigest()
+        assert {k: model[k] for k in PRE_F10_MODEL_FIELDS} == {
+            "ok": True,
+            "error": None,
+            "model_version": name,
+            "git_sha": "abc",
+            "git_dirty": None,
+            "scorer_sha256": sha,
+            "created_utc": "2026-11-01T00:00:00Z",
+            "feature_set": "real",
+            "g": 3.5,
+            "k": 2,
+        }
+        assert {k: model[k] for k in NEW_MODEL_FIELDS} == {
+            "smoke_test": smoke,
+            "trained_on": trained,
+            "model_id": name,
+            "stamp": stamp,
+        }
+
+
+async def test_health_f10_fields_when_the_model_is_missing(tmp_path: Path) -> None:
+    settings = make_settings(tmp_path)
+    api = make_api(settings, model=ModelStatus.load(tmp_path / "sample_deploy_real_G3.5_k2"))
+    async with api.client() as c:
+        resp = await c.get("/api/health")
+    assert resp.status_code == 503
+    model = resp.json()["checks"]["model"]
+    assert model["ok"] is False and model["model_version"] == "sample_deploy_real_G3.5_k2"
+    assert (model["smoke_test"], model["trained_on"], model["model_id"], model["stamp"]) == (
+        True,
+        "sample",
+        "sample_deploy_real_G3.5_k2",
+        None,
+    )

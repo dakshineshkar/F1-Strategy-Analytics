@@ -1,5 +1,7 @@
 import { expect, type APIRequestContext, type Page, test } from "@playwright/test";
 
+import { API, stopReplay } from "./replay";
+
 /**
  * The live race view's layout contract (redesign Step 2, docs/design/DESIGN.md), against the real API in
  * either lake mode with replay enabled. It starts a 10× replay of 2024 R5 when none is running (a start
@@ -25,9 +27,10 @@ import { expect, type APIRequestContext, type Page, test } from "@playwright/tes
  * moved rows only.
  */
 
-const API = process.env.E2E_API_URL ?? "http://localhost:8000";
 const RACE = "/race/2024/5";
-/** True once this spec started a replay: it stops it at the end, so the other specs find the API idle. */
+/** True once this spec started a replay: it stops it at the end (afterAll runs even after a failed test), so the
+ * other specs and a later `make web-up` find the API idle. Its tests share one replay, so there is no afterEach
+ * stop. */
 let started = false;
 
 async function ensureReplay(request: APIRequestContext): Promise<void> {
@@ -109,7 +112,8 @@ async function expectRacePitLoss(page: Page, request: APIRequestContext): Promis
 }
 
 test.afterAll(async ({ request }) => {
-  if (started) await request.post(`${API}/api/races/2024/5/replay/stop`).catch(() => null);
+  if (started) await stopReplay(request, 2024, 5);
+  started = false;
 });
 
 test.beforeAll(async ({ request }) => {

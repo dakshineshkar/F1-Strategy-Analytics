@@ -393,6 +393,13 @@ main:focus { outline: none; }
 .alert-tyres { display: inline-flex; align-items: center; gap: var(--sp-1); }
 .alert-tyre { display: inline-flex; align-items: center; gap: 2px; color: var(--text); }
 .alert-sim { grid-column: 2; grid-row: 1; min-height: 1.5rem; }
+/* F09: the quiet label above alerts that came with the connect snapshot (received before the page opened):
+ * muted ink on the surface, a hairline below, never the signal colour */
+.alert-divider {
+  height: 1.5rem; box-sizing: border-box; display: flex; align-items: flex-end; padding: 0 0 3px;
+  border-bottom: 1px solid var(--rule); font: 500 var(--fs-2xs)/1.2 var(--font-ui); color: var(--muted);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
 /* the late-join list (pairs flagged now) scrolls inside the feed's reserved box, so a long one is never cut */
 .feed-empty { height: 100%; overflow-y: auto; }
 .feed-empty p { margin: 0 0 var(--sp-2); font-size: var(--fs-sm); }

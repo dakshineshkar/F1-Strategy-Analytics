@@ -142,6 +142,22 @@ class ModelCheckOut(CheckOut):
     feature_set: str | None = None
     g: float | None = None
     k: int | None = None
+    smoke_test: bool = Field(
+        default=False,
+        description="additive (F10): the sample deployment model (folder prefix sample_) is "
+        "scoring: a smoke test, not a result",
+    )
+    trained_on: Literal["sample", "full"] = Field(
+        default="full",
+        description="additive (F10): the lake the model was trained on (metadata source; the "
+        "prefix rule when unreadable)",
+    )
+    model_id: str | None = Field(
+        default=None, description="additive (F10): the same value as model_version"
+    )
+    stamp: str | None = Field(
+        default=None, description="additive (F10): the metadata's SMOKE TEST stamp text, or null"
+    )
 
 
 class HealthChecks(_Out):

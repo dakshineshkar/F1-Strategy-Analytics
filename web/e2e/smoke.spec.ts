@@ -1,4 +1,6 @@
-import { expect, type APIRequestContext, test } from "@playwright/test";
+import { expect, test } from "@playwright/test";
+
+import { API, stopReplay, waitForIdle } from "./replay";
 
 /**
  * Smoke test against the real API in sample mode with replay enabled (`make api-up REPLAY=1`):
@@ -6,17 +8,18 @@ import { expect, type APIRequestContext, test } from "@playwright/test";
  * the tower fill (20 cars) and at least one lap update. A replay writes only data/demo/<run_id>.
  */
 
-const API = process.env.E2E_API_URL ?? "http://localhost:8000";
+/** True once this spec clicked Start: afterEach / afterAll stop the replay through the API, so it never outlives
+ * the spec (a running replay makes the replay guard refuse a later `make web-up`). */
+let started = false;
 
-async function waitForIdle(request: APIRequestContext, timeoutMs: number): Promise<boolean> {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    const body = (await (await request.get(`${API}/api/replays`)).json()) as { running: unknown[] };
-    if (body.running.length === 0) return true;
-    await new Promise((r) => setTimeout(r, 2000));
-  }
-  return false;
-}
+test.afterEach(async ({ request }) => {
+  if (started) await stopReplay(request, 2024, 5);
+  started = false;
+});
+
+test.afterAll(async ({ request }) => {
+  if (started) await stopReplay(request, 2024, 5);
+});
 
 test.beforeAll(async ({ request }) => {
   const health = await request.get(`${API}/api/health`).catch(() => null);
@@ -48,6 +51,7 @@ test("sample race: a 60× replay fills the tower and updates laps", async ({ pag
   await page.getByLabel("60×").check();
   const start = page.getByRole("button", { name: "Start replay" });
   await expect(start).toBeEnabled({ timeout: 15_000 });
+  started = true; // before the click: a stop with nothing running is a harmless 409
   await start.click();
   await expect(page.locator("#replay-status")).toContainText(/Starting|Running/, { timeout: 20_000 });
   await expect(start).toBeDisabled();

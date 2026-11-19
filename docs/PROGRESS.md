@@ -2294,18 +2294,114 @@
     - only `make web-up` and `make api-up` were used (replays started and stopped through the API);
     - the api ran in sample mode for the e2e suite and is back on `make api-up FULL=1 REPLAY=1` (health:
       hdfs full, `deploy_real_G3.5_k2`; replay enabled; no replay running).
+- UI redesign Step 3 (2026-11-19, branch `redesign/ui`; not committed): F09 alert history and F10 smoke-test flag,
+  both additive in the API, plus the e2e replay cleanup. The stream job, the Redis contract, the stream's decisions
+  and alerts, and `results/` are unchanged (`git diff --stat` lists no file under `src/f1sa/streaming`, `serving`,
+  `archive` or `results/`).
+  - **F09 source (read-only survey first).**
+    - Redis holds no alert history; adding one would change the contract.
+    - `data/demo/<run_id>/decisions.jsonl` is written only when the stream job stops.
+    - Kafka carries the producer's events, not the alerts.
+    - **Chosen:** the API's own race-channel recorder, `api/lap_log.py`.
+      - The replay start already ran one Pub/Sub subscriber per race for the what-if. It now also keeps the
+        race's `undercut_alert` frames, deduplicated by `event_id` and capped at 1000 per run.
+      - The route tags the fresh log with the run id; only such a log serves history.
+      - API-only, no stream-job change.
+  - **Connect snapshot.**
+    - `snapshot-0` gets `recent_alerts`: at most 50, oldest first, each the exact live frame with the same
+      `event_id`.
+    - It is `[]` when the race has no Redis state, or when the API did not start the run.
+    - Per-lap snapshots and every other field are unchanged.
+    - **Barrier:** before reading, `history()` sends a PING on the subscriber's own Pub/Sub connection and
+      waits for its reply (≤ 1 s), so every earlier message is recorded.
+    - **Found while building:** redis-py 8 on RESP3 with decoded responses returns a subscribed PING's reply as
+      a bare string, and `get_message` drops it. The subscriber therefore reads raw replies
+      (`parse_response` + `handle_message`). Checked against the real Redis.
+  - **Client.**
+    - `events.ts` parses `recent_alerts` with the live alert parser. Bad or foreign items are dropped and counted
+      in `malformed`.
+    - The reducer applies them after the snapshot, deduplicated against `seen`. They are marked
+      `history: before_open` (the page's first snapshot) or `while_away` (a reconnect). They never set a row's
+      flag, are never announced and are never "new".
+    - The feed shows them below a quiet divider in muted ink, "Received before you opened the page" ("Received
+      while reconnecting" after a reconnect); the row fit subtracts the divider.
+    - The call's "gap at decision" now fills after a late join.
+  - **F10.** `checks.model` adds four fields, and the top-level `lake` object is unchanged:
+    - `smoke_test`: the UI's rule, folder prefix `sample_`;
+    - `trained_on`: `sample` from the metadata's `source`, else `full`;
+    - `model_id`: the same value as `model_version`;
+    - `stamp`: the metadata stamp or null.
+
+    The UI takes SMOKE TEST from `smoke_test`, with the prefix as the fallback only.
+  - **e2e cleanup.**
+    - New `web/e2e/replay.ts` (`waitForIdle`, `stopReplay`).
+    - `smoke.spec` and `replay-controls.spec` stop their replay in `afterEach`/`afterAll` (the started flag is
+      set before the click).
+    - `race-layout.spec` keeps `afterAll` only: its four tests share one replay. `afterAll` runs after a failed
+      test too.
+    - `latency.spec` starts no replay.
+  - **Tests.**
+    - **Python:**
+      - new `tests/unit/test_api_alert_history.py` (13), including a snapshot contract test: every pre-existing
+        key has the same name and value with and without history;
+      - `test_api_health.py` +6, including a health contract test: every pre-existing field, among them
+        `lake.scheme/mode/synthetic` and `checks.model.model_version`, is unchanged, and the rule is checked
+        against the real deployed metadata of both folders;
+      - new integration test `tests/integration/test_alert_history_live.py` (2, real Redis: the barrier with
+        the API's client settings, and an alert published before subscribing is in `snapshot-0` once).
+    - **Vitest 512 -> 524:** new `history.test.ts`, covering dedup of history and live, a reconnect repeating
+      the history, `while_away`, never new, malformed items, the divider markup, and `smoke_test` overriding
+      the prefix both ways. `call.test.ts` expects the four new nullable fields.
+    - **Playwright:** new `latejoin.spec.ts`. It starts a 10× replay through the API and opens the page at
+      lap 12, wrapping the page's EventSource. The feed already shows the history below the divider. After the
+      next live alert, every pair's count equals its distinct event ids and no pair is shown twice.
+  - **Evidence.**
+    - **Python:**
+      - `uv run pytest tests/unit -q`: **2333 passed**;
+      - ruff, format and mypy clean;
+      - integration: alert history 2 and `test_api.py` 4 passed.
+    - **Web:** lint and typecheck clean; Vitest 524 passed; `contrast-report --check`: all pairs meet AA.
+    - **Playwright** (sample lake, `make api-up REPLAY=1`, `make web-up`, `E2E_NO_SERVER=1 npx playwright
+      test`): 9 passed, 1 skipped (latency, by design); `/api/replays` running `[]` afterwards.
+      - Late join at lap 12: 41 history alerts (26 pairs), 2 live, 0 counted twice.
+    - **`make archive-equivalence SEASON=2024 ROUND=5 LAPS=5,22,45`: EQUIVALENT.**
+      - The rebuild is identical.
+      - Alerts are 113 / 19 / 9 = 141 and decisions 409, equal to parity.
+      - Redis equals the bundle at laps 5, 22 and 45 and after `session_end`, and every message is equal.
+    - **`make experiments-sample`:** OK 7, OK (metadata differs) 1, DIFF 0, MISSING 0, NEW 2 (the what-if
+      files, as before).
+    - **`results/`:** `sha256 results/stream_parity_full.csv` = `aad8df67…`, and `git status results/` is
+      clean.
+  - **Screenshots** (`docs/design/after/`, full lake, a 10× replay of 2024 R5, page opened at lap 45):
+    - `d-dark-latejoin` (223 KB) and `m-dark-latejoin` (76 KB);
+    - the feed holds 38 pairs below "Received before you opened the page";
+    - the call shows "gap at decision (lap 41) 1.4 s" and "pit loss 23.1 s".
+  - **Services.** Only make targets were used: `make api-up REPLAY=1`, `make web-up`, `make archive-equivalence`
+    and `make experiments-sample`. Replays were started and stopped through the API. The api ends on
+    `make api-up FULL=1 REPLAY=1`:
+    - health ok, `lake` hdfs/full, `deploy_real_G3.5_k2`, `smoke_test` false, `trained_on` full;
+    - replay enabled, no replay running.
 ## Next
 - UI redesign: approve Step 2, then the race picker (F36), analysis, drivers, archive and engineer layouts
   (F20, F21), the session-end summary (F23).
-- After the race view is approved, as a separate change: F09 alert history API-side (the connect snapshot,
-  from Redis or an API ring buffer, with no stream-job change) and F10 `checks.model.smoke_test` in health.
-  Each needs an API test, plus the 113/19/9 check and archive equivalence. F24 API is declined (revisit only
-  if time allows).
+- Review and commit Step 3 (F09 alert history, F10 health fields, e2e replay cleanup). F24 API is declined
+  (revisit only if time allows).
   Fix the three F35 side bars when their pages are rebuilt, and re-check the archive race-status banner
   (inventory, "Detector findings carried to later steps").
 - S18: report, docs and demo rehearsal (#44): `docs/report/`, `docs/demo_script.md`.
 - Push and watch the first CI run of the `e2e` job on GitHub (runner build time and disk are unmeasured).
 ## Known issues
+- Step 3 alert history (2026-11-19):
+  - The history is in memory in the API. An API restart loses it; the restart also stops the API's replays, so
+    no live run is affected. A page opened afterwards on the old run's leftover keys gets `[]`, plus the Step 2c
+    "No alerts since you opened" text and the flagged-now list.
+  - Runs the API did not start (`make stream-demo`, `make archive-equivalence`) send `recent_alerts: []`.
+  - The history is the newest 50, so after a late join in a long race the "N×" counts cover only the alerts
+    received.
+  - A stopped run's log is dropped by the lap-log sweep: 30 min without messages or use, once another race is
+    opened, at most 4 races. From then on its history is `[]`.
+  - The "N more below" count ignores the divider's height when the list is scrolled (approximate by under one
+    row).
 - UI final fixes (2026-11-19):
   - On a phone, after a stop or the finish, the strip's "Open the post-race archive" button takes a third strip
     line, so the call starts at 220 px (188 px while a replay streams). The e2e check runs during a replay.

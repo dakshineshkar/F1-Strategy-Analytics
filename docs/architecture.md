@@ -791,7 +791,7 @@ Docs: `/api/docs`, `/api/openapi.json`.
 
 | Endpoint | Status codes |
 |---|---|
-| `GET /api/health` | 200 all checks pass; 503 with `checks.{redis,kafka,model}.ok/error` naming the failure; `lake: {scheme, mode: sample\|full\|null, synthetic}` is informational |
+| `GET /api/health` | 200 all checks pass; 503 with `checks.{redis,kafka,model}.ok/error` naming the failure; `lake: {scheme, mode: sample\|full\|null, synthetic}` is informational; `checks.model` also carries the additive F10 fields `smoke_test`, `trained_on`, `model_id`, `stamp` (below) |
 | `GET /api/races` | 200 `[{season, round, name, laps, synthetic}]`; 503 clean zone unavailable |
 | `GET …/state` | 200; 404 the race has no keys; 422 bad season/round; 500 a hash breaks the contract; 503 Redis down |
 | `GET …/entrants` | 200 `{season, round, entrants: [...]}` sorted by grid; 404 no entrants partition (or 2025 sealed); 422; 500 a stored row is malformed; 503 clean zone unavailable |
@@ -829,7 +829,8 @@ Docs: `/api/docs`, `/api/openapi.json`.
   - **`event: snapshot`** (pushed, never polled). The API reads the race's full state from Redis (every
     driver hash plus the order zset, **one** `pipeline(transaction=False)`, `api/state.py`, shared with
     `GET /state`) and sends `event: snapshot`, `id: snapshot-<lap>`, with data `{type: "snapshot", season,
-    round, lap, drivers, order, tyres, event_id, sse_sent_at_ms}`:
+    round, lap, drivers, order, tyres, timing, event_id, sse_sent_at_ms}` (plus `recent_alerts` on
+    `snapshot-0` only, F09 below):
     - once right after connect (`snapshot-0`; the drivers are found with one SCAN);
     - once per race lap, **before** the first `lap` event whose lap number is higher than the last
       snapshot's (Fix D, 2026-11-15; it used to follow that frame).
@@ -847,6 +848,35 @@ Docs: `/api/docs`, `/api/openapi.json`.
     `undercut_flag` in the browser. A snapshot that cannot be read is skipped and logged, and the event
     stream goes on. Snapshots are not latency samples. Tested: one per leader lap plus one after connect,
     not one per event; one pipeline and no SCAN per lap; stale flags refreshed.
+  - **Alert history on the connect snapshot (F09, additive, Step 3 of the UI redesign, 2026-11-19).**
+    `snapshot-0` (and only `snapshot-0`) also carries `recent_alerts`: the current API replay run's newest
+    alerts, at most 50 (`RECENT_ALERTS`), oldest first. Each item is exactly the live `undercut_alert` SSE frame
+    (the stored message plus `event_id` and `sse_sent_at_ms`) with the same `event_id`, so the client
+    deduplicates history and live by id. Every other snapshot field keeps its name and meaning, and per-lap
+    snapshots do not carry the key (tested in `tests/unit/test_api_alert_history.py`).
+    - **Source:** the API's own recorder, `api/lap_log.py` (`LapLog` / `LapLogManager`). The replay-start route
+      already ran one Pub/Sub subscriber per race for the what-if; it now also records the race's
+      `undercut_alert` messages (deduplicated by id, capped at 1000 per run). The SSE `on_sent` path feeds the
+      same log. The route starts the subscriber with `fresh=True` and the run id: a new run drops the race's
+      older log, and only a log tagged with a run id serves history.
+    - **Why this source:** no stream-job change and no Redis contract change.
+      - Redis holds only each car's current flag, and Pub/Sub keeps nothing.
+      - The run folder's `decisions.jsonl` is written only when the stream job stops.
+      - Kafka holds the producer's events, not the alerts.
+    - **Ordering.** The stream subscribes first, then reads the Redis state, then the history. Before reading,
+      `LapLogManager.history` sends a PING with a unique token on the subscriber's own Pub/Sub connection and
+      waits (≤ 1 s) for the reply. Redis answers in order, so every message published before the page
+      subscribed has then been recorded. An alert published in between arrives both ways, with one id.
+      - redis-py 8 on RESP3 with decoded responses returns a subscribed PING's reply as a bare string, which
+        `get_message` drops, so the subscriber reads raw replies (`parse_response` + `handle_message`).
+      - Tested against the real Redis in `tests/integration/test_alert_history_live.py`.
+    - **What it holds:** only alerts already emitted for this run: no future laps, no other run (the log is
+      reset per API replay start), no other race (checked twice). It is `[]` when the race has no state in
+      Redis (a cleared or expired race), and `[]` for a run the API did not start (`make stream-demo`,
+      `make archive-equivalence`).
+    - **Limits.** The history is in memory, so an API restart loses it. A restart also stops the API's
+      replays, so no live run is affected. A stopped run's log is dropped by the idle/LRU sweep (30 min
+      without messages or use, at most 4 races).
   - `event_id` is `payload.event_id` (the producer's uuid4) for lap / pit_in / pit_out. `undercut_alert`
     and `session_end` have no id in the Step 12 payload (streaming/ is unchanged), so they get
     `uuid5(ns, raw message)`: deterministic, unique per message (`published_at` has ms).
@@ -997,6 +1027,13 @@ browser ── GET /api/races, /api/health ────────────�
   - A snapshot (pushed `event: snapshot` or a reconnect's `/state`) replaces the 9 hash fields (stale
     undercut flags included) and the order zset. It keeps the client-built lap history (the last 20 laps)
     and the alert groups. Snapshot ids repeat across connections, so snapshots are not deduplicated.
+  - F09: the connect snapshot's `recent_alerts` join their pair groups, oldest first, marked `history`.
+    - The kind is `before_open` on the page's first snapshot and `while_away` after a reconnect.
+    - Each item is deduplicated by `event_id` against every event applied (`seen`), so a live copy, or the
+      same history in a later reconnect's snapshot, counts once.
+    - A history alert never sets a row's flag (the hashes do), is never announced, and is never "new".
+    - The feed shows the history below a quiet divider, "Received before you opened the page" (or "Received
+      while reconnecting"), in muted ink, not the signal colour.
   - A lap event updates the latest lap. Its gaps come from `race_time_s` at the same lap number (the
     `timing_gaps` definition: leader = Jolpica P1, the car ahead = P − 1). The order follows the stream
     job's live rank (`live_state.live_order`).
@@ -1116,6 +1153,18 @@ browser ── GET /api/races, /api/health ────────────�
     Styles use only the shared tokens.
 - **Synthetic data:** the banner strip shows **SYNTHETIC DEMO DATA** whenever `/api/health` reports
   `lake.mode = "sample"`, and the picker tags each synthetic race.
+- **SMOKE TEST stamp (F10, Step 3, 2026-11-19).** `/api/health` `checks.model` carries four additive fields.
+  The top-level `lake` object is unchanged and stays the only "lake" field.
+
+  | Field | Meaning |
+  |---|---|
+  | `smoke_test: bool` | The sample deployment model is scoring. The rule is the one the dashboard used before: the deployment folder's name (`model_version`) starts with `sample_` (`SAMPLE_PREFIX`, as in `model/deploy.py`). Only `model-save-sample` / `make demo` write such folders, and they stamp their metadata `smoke_test: true`; a test checks the two agree for both deployed folders. |
+  | `trained_on: "sample" \| "full"` | The lake the model was trained on: `sample` when the metadata says `source: "sample"`, else `full`. If the metadata is unreadable, the prefix rule decides. |
+  | `model_id: str` | The same value as `model_version`, which is unchanged. |
+  | `stamp: str \| null` | The metadata's SMOKE TEST sentence, or null. |
+
+  The UI takes the stamp from `smoke_test`. It falls back to the name prefix only when the field is missing
+  (an older API).
 - **Timing-tower extras (Feature 5, display only)** (`TowerPanel.tsx`, `TimingTower.tsx`, `RaceStatusBanner.tsx`,
   `lib/tower.ts`, `lib/timing.ts`, `lib/raceStatus.ts`; live and post-race):
   - columns S1, S2, S3, Trap and Pits. Each sector and the trap of the car's last lap carries a text tag "PB"

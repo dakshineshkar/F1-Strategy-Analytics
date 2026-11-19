@@ -5,7 +5,7 @@
 
 import type { Health, Replay } from "./api";
 import { type EntrantIndex, teammates } from "./entrants";
-import { type AlertGroup, alertKey, type Connection, type DriverRow, type RaceState } from "./reducer";
+import { type AlertGroup, type AlertHistory, alertKey, type Connection, type DriverRow, type RaceState } from "./reducer";
 import { leaderLap, staleIds } from "./stale";
 
 /** The rule's gap threshold G (the deployed primary model, G = 3.5 s; the health check names the live one). */
@@ -18,7 +18,8 @@ export const BASE_RATE_2025 = 0.347;
 /** 2025 ECE (10 bins) of the what-if simulator and of the calibrated model, from results/whatif_consistency.csv. */
 export const SIM_ECE_2025 = 0.207;
 export const MODEL_ECE_2025 = 0.107;
-/** Prefix of the sample deployment model (``SAMPLE_PREFIX``, src/f1sa/model/deploy.py), which is a smoke test. */
+/** Prefix of the sample deployment model (``SAMPLE_PREFIX``, src/f1sa/model/deploy.py), which is a smoke test.
+ * Only a fallback since F10: the API's ``checks.model.smoke_test`` decides when it is present. */
 export const SMOKE_MODEL_PREFIX = "sample_";
 
 // ------------------------------------------------------------------ model identity
@@ -33,11 +34,13 @@ export interface ModelIdentity {
 
 export const isSmokeModel = (version: string): boolean => version.startsWith(SMOKE_MODEL_PREFIX);
 
-/** The scoring model from ``/api/health`` (null while unknown or when the API reports none). */
+/** The scoring model from ``/api/health`` (null while unknown or when the API reports none). The SMOKE TEST
+ * stamp follows the API's ``smoke_test`` (F10); an older API without the field falls back to the name prefix. */
 export function modelIdentity(health: Health | null): ModelIdentity | null {
   const m = health?.model ?? null;
   if (m === null) return null;
-  return { version: m.model_version, featureSet: m.feature_set, g: m.g, k: m.k, smoke: isSmokeModel(m.model_version) };
+  const smoke = m.smoke_test ?? isSmokeModel(m.model_version);
+  return { version: m.model_version, featureSet: m.feature_set, g: m.g, k: m.k, smoke };
 }
 
 /** "real features, G 3.5 s, k 2" (whatever of it is known). */
@@ -216,16 +219,58 @@ export const TRIGGER_TEXT: Record<AlertGroup["trigger"], string> = {
 };
 
 /** An alert from the leader's lap or the one before (it arrived within the last lap): the only alerts the feed
- * marks in the signal colour. After the finish (``ended``) nothing is live, so no alert is new. */
-export const alertIsNew = (g: Pick<AlertGroup, "decisionLap">, maxLap: number, ended = false): boolean =>
-  !ended && maxLap > 0 && g.decisionLap >= maxLap - 1;
+ * marks in the signal colour. After the finish (``ended``) nothing is live, so no alert is new; nor is an
+ * alert from the connect snapshot's history (F09: it arrived before the page opened). */
+export const alertIsNew = (g: Pick<AlertGroup, "decisionLap" | "history">, maxLap: number, ended = false): boolean =>
+  !ended && (g.history ?? null) === null && maxLap > 0 && g.decisionLap >= maxLap - 1;
+
+/** F09: the quiet label above alerts that came with a connect snapshot's history, not live. */
+export const HISTORY_TEXT: Record<AlertHistory, string> = {
+  before_open: "Received before you opened the page",
+  while_away: "Received while reconnecting",
+};
+
+export type FeedItem =
+  | { kind: "alert"; group: AlertGroup }
+  | { kind: "divider"; key: string; history: AlertHistory; text: string };
+
+/** The feed's rows in display order (``groups`` newest first): a divider before each run of history alerts of
+ * one kind. History alerts are older than every live one after the first connect, so normally there is one
+ * divider, above the bottom block; a reconnect's missed alerts get their own. */
+export function feedItems(groups: readonly AlertGroup[]): FeedItem[] {
+  const out: FeedItem[] = [];
+  let prev: AlertHistory | null = null;
+  for (const g of groups) {
+    const h = g.history ?? null;
+    if (h !== null && h !== prev) out.push({ kind: "divider", key: `history:${h}:${g.key}`, history: h, text: HISTORY_TEXT[h] });
+    out.push({ kind: "alert", group: g });
+    prev = h;
+  }
+  return out;
+}
+
+/** Dividers before the ``n``-th alert row of ``items`` (the ones inside a window of ``n`` alert rows). */
+export function dividersWithin(items: readonly FeedItem[], n: number): number {
+  let alerts = 0;
+  let dividers = 0;
+  for (const it of items) {
+    if (it.kind === "alert") {
+      alerts += 1;
+      if (alerts >= n) break;
+    } else {
+      dividers += 1;
+    }
+  }
+  return dividers;
+}
 
 /** The accessible text of an alert pair's counter ("4×"). */
 export const alertCountText = (count: number): string => `${count} ${count === 1 ? "alert" : "alerts"} for this pair`;
 
 // ------------------------------------------------------------------ the call's states
-/** The gap the rule saw when it flagged the pair: the decision lap and gap of this page's alert for the pair.
- * Null when that alert arrived before the page opened (the snapshot carries no alert history). */
+/** The gap the rule saw when it flagged the pair: the decision lap and gap of this page's alert for the pair, live
+ * or from the connect snapshot's history (F09). Null when this page holds no alert for the pair (none in the
+ * history either: a run the API did not record, or older than the history it sends). */
 export function decisionGap(call: Pick<CallPair, "alert">): { lap: number; gapS: number } | null {
   return call.alert === null ? null : { lap: call.alert.decisionLap, gapS: call.alert.gapS };
 }

@@ -2,7 +2,7 @@
 
 import { useRef, useState } from "react";
 
-import { alertCountText, alertIsNew, alertKind, type CallPair, TRIGGER_TEXT } from "@/lib/call";
+import { alertCountText, alertIsNew, alertKind, type CallPair, dividersWithin, feedItems, HISTORY_TEXT, TRIGGER_TEXT } from "@/lib/call";
 import type { EntrantIndex } from "@/lib/entrants";
 import { driverCode, driverName, probability } from "@/lib/format";
 import { tipId } from "@/lib/legend";
@@ -19,6 +19,8 @@ const pct = (p: number) => Math.max(0, Math.min(100, Math.round(p * 100)));
  * footer, in px at the default root size. */
 const ROW_PX = 68;
 const FOOTER_PX = 32;
+/** The history divider's height (``.alert-divider``, 1.5rem). */
+const DIVIDER_PX = 24;
 
 function Tyre({ row }: { row: DriverRow | undefined }) {
   if (row === undefined) return null;
@@ -40,8 +42,10 @@ function Tyre({ row }: { row: DriverRow | undefined }) {
  * "Simulate" opens the what-if with that pair. The list sits in reserved, scrollable space; rows that move
  * when a newer alert arrives slide there (FLIP, transform only), so nothing jumps.
  *
- * Without alert history (a page opened mid-race or after a reconnect: alerts are not in the snapshot,
- * critique F09) it says since when it has listened, and lists the pairs flagged now from the race state.
+ * A page opened mid-race gets the run's earlier alerts with its connect snapshot (F09): they sit below a quiet
+ * divider, "Received before you opened the page" (after a reconnect, "Received while reconnecting"), are never
+ * new and never announced. Without any history (a run the API did not start, or a restarted API) it says since
+ * when it has listened, and lists the pairs flagged now from the race state.
  * The polite live region speaks only the reducer's announcements (attempts and threshold crossings). */
 export function AlertFeed({
   groups,
@@ -73,13 +77,17 @@ export function AlertFeed({
   const list = useRef<HTMLOListElement>(null);
   const now = useRef<HTMLUListElement>(null);
   // a short list in its own scroll box: every move slides, however far (an updated pair rises to the top)
-  useFlip(list, groups.map((g) => `${g.key}:${g.seq}`).join(","), Infinity);
+  const items = feedItems(groups);
+  useFlip(list, items.map((it) => (it.kind === "alert" ? `${it.group.key}:${it.group.seq}` : it.key)).join(","), Infinity);
   useFlip(now, flaggedNow.map((p) => `${p.attackerId}>${p.defenderId}`).join(","), Infinity);
   const code = (id: string) => entrants[id]?.code ?? driverCode(id);
   const name = (id: string) => entrants[id]?.family_name ?? driverName(id);
   // whole rows only: the list is as tall as the rows that fit, and a footer says how many are below
   const { ref: box, height, rowPx } = useRowBox<HTMLDivElement>(ROW_PX);
-  const visible = height > 0 ? fitRows(height, rowPx, groups.length, FOOTER_PX) : groups.length;
+  // the dividers above the last whole row take their height from the box first
+  const first = height > 0 ? fitRows(height, rowPx, groups.length, FOOTER_PX) : groups.length;
+  const visible = height > 0 ? fitRows(height - dividersWithin(items, first) * DIVIDER_PX, rowPx, groups.length, FOOTER_PX) : groups.length;
+  const listPx = visible * rowPx + dividersWithin(items, visible) * DIVIDER_PX;
   const [scrollPx, setScrollPx] = useState(0);
   const below = rowsBelow(groups.length, visible, scrollPx, rowPx);
   const overflowing = groups.length > visible;
@@ -127,14 +135,26 @@ export function AlertFeed({
             <ol
               className="alerts"
               ref={list}
-              style={height > 0 ? { height: `${visible * rowPx}px` } : undefined}
+              style={height > 0 ? { height: `${listPx}px` } : undefined}
               onScroll={(e) => setScrollPx(e.currentTarget.scrollTop)}
             >
-              {groups.map((g) => {
+              {items.map((it) => {
+                if (it.kind === "divider") {
+                  return (
+                    <li key={it.key} data-flip={it.key} className={`alert-divider alert-divider-${it.history}`}>
+                      {it.text}
+                    </li>
+                  );
+                }
+                const g = it.group;
                 const k = alertKind(g);
                 const fresh = alertIsNew(g, maxLap, ended);
                 return (
-                  <li key={g.key} data-flip={g.key} className={`alert alert-${k.kind}${fresh ? " is-new" : ""}`}>
+                  <li
+                    key={g.key}
+                    data-flip={g.key}
+                    className={`alert alert-${k.kind}${fresh ? " is-new" : ""}${g.history ? " is-history" : ""}`}
+                  >
                     <p className="alert-line">
                       <span className={`alert-type type-${k.kind}`} aria-describedby={tipId(k.kind)}>
                         {k.label}
@@ -179,7 +199,10 @@ export function AlertFeed({
                           <span className="visually-hidden">{`, ${alertCountText(g.count)}`}</span>
                         </span>
                       ) : null}
-                      <span className="visually-hidden">{`. ${name(g.attackerId)} on ${name(g.defenderId)}`}</span>
+                      <span className="visually-hidden">
+                        {`. ${name(g.attackerId)} on ${name(g.defenderId)}`}
+                        {g.history ? `, ${HISTORY_TEXT[g.history].toLowerCase()}` : ""}
+                      </span>
                     </p>
                     {onSimulate !== undefined ? (
                       <button
