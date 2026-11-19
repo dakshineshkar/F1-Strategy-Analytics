@@ -47,7 +47,7 @@ test("sample race: a 60× replay fills the tower and updates laps", async ({ pag
   await expect(page.getByRole("heading", { level: 1 })).toContainText("Chinese Grand Prix");
 
   // the replay controls live in a drawer under the status strip (redesign: demo controls, not race state)
-  await page.getByRole("button", { name: "Replay controls" }).click();
+  await page.getByRole("button", { name: "Replay controls", exact: true }).click();
   await page.getByLabel("60×").check();
   const start = page.getByRole("button", { name: "Start replay" });
   await expect(start).toBeEnabled({ timeout: 15_000 });
@@ -135,15 +135,62 @@ test("sample race: a 60× replay fills the tower and updates laps", async ({ pag
   await expect(page.locator(`table.tower tbody tr[data-driver="${pinnedId}"] .pin-btn`)).toHaveAttribute("aria-pressed", "true");
   await expect(pins.and(page.locator('[aria-pressed="true"]'))).toHaveCount(1);
 
-  // What-if (S15), keyboard only: no default pair; the defender is derived (the car directly ahead).
+  // What-if (S15). Until the viewer picks a car, the attacker follows The Call (polish round): with a call
+  // the Attacker is the call's attacker and the Defender its defender, without one it is empty. Which case
+  // applies depends on the replay's timing, so each check reads the panel and the call in one snapshot and
+  // polls until they agree (both change at each lap). Option labels are "CODE · Name"; the defender is the
+  // car directly ahead in the race order, i.e. the option before the chosen one (P2's defender is the leader,
+  // who has no option).
   const panel = page.getByRole("region", { name: "What-if: pit strategy" });
   const attacker = panel.getByLabel("Attacker");
-  await expect(attacker).toHaveValue("");
-  await attacker.focus();
-  await page.keyboard.press("ArrowDown"); // the car in P2 (its defender is P1)
-  const chosen = await attacker.inputValue();
-  expect(chosen).not.toBe("");
-  await expect(panel.locator(".wi-defender-value")).not.toHaveText("—");
+  const codeOf = (label: string | null | undefined) => (label ?? "").split(" · ")[0]?.trim() ?? "";
+  const snapshot = () =>
+    page.evaluate(() => {
+      const sel = document.querySelector<HTMLSelectElement>("#whatif select");
+      const i = sel?.selectedIndex ?? -1;
+      const callCodes = Array.from(document.querySelectorAll("#the-call .call-pair .call-code"), (e) => e.textContent?.trim() ?? "");
+      return {
+        value: sel?.value ?? "",
+        selected: i >= 0 ? (sel?.options[i]?.text ?? "") : "",
+        ahead: i >= 2 ? (sel?.options[i - 1]?.text ?? null) : null,
+        defender: document.querySelector("#whatif .wi-defender-value")?.textContent?.trim() ?? "",
+        call: callCodes.length === 2 ? { attacker: callCodes[0] ?? "", defender: callCodes[1] ?? "" } : null,
+      };
+    });
+  await expect
+    .poll(async () => {
+      const s = await snapshot();
+      if (s.call === null) return s.value === "" ? "ok" : `no call, but the attacker is ${s.value}`;
+      const got = `${codeOf(s.selected)}>${codeOf(s.defender)}`;
+      return got === `${s.call.attacker}>${s.call.defender}` ? "ok" : `call ${s.call.attacker}>${s.call.defender}, what-if ${got}`;
+    }, { timeout: 30_000, intervals: [250] })
+    .toBe("ok");
+
+  // An explicit choice: a car other than the call's attacker, with a car ahead that has an option of its own.
+  const chosen = await page.evaluate(() => {
+    const sel = document.querySelector<HTMLSelectElement>("#whatif select");
+    const callAttacker = document.querySelector("#the-call .call-pair .call-code")?.textContent?.trim() ?? null;
+    const options = Array.from(sel?.options ?? []).slice(2);
+    return options.find((o) => o.text.split(" · ")[0]?.trim() !== callAttacker)?.value ?? "";
+  });
+  expect(chosen, "a car in P3 or below that is not the call's attacker").not.toBe("");
+  await attacker.selectOption(chosen);
+  // the defender follows the car directly ahead of the chosen attacker
+  await expect
+    .poll(async () => {
+      const s = await snapshot();
+      if (s.value !== chosen) return `the attacker changed to ${s.value}`;
+      if (s.defender === "—" || s.defender === "") return "no defender";
+      return s.ahead === null || s.defender === s.ahead ? "ok" : `defender ${s.defender}, car ahead ${s.ahead}`;
+    }, { timeout: 15_000, intervals: [250] })
+    .toBe("ok");
+  // ...and the selection no longer follows The Call: it stays on the chosen car over the next laps
+  await expect(panel.locator("#whatif-status")).not.toContainText("preselected from the call");
+  const lapAtChoice = Number((await page.locator(".lc-now").textContent())?.trim() ?? "0");
+  await expect
+    .poll(async () => Number((await page.locator(".lc-now").textContent())?.trim() ?? "0"), { timeout: 30_000, intervals: [500] })
+    .toBeGreaterThanOrEqual(lapAtChoice + 2);
+  await expect(attacker).toHaveValue(chosen);
   await panel.getByRole("button", { name: "Run what-if" }).focus();
   await page.keyboard.press("Enter");
   await expect(panel.locator("#whatif-status")).toContainText(/from lap \d+/, { timeout: 20_000 });
