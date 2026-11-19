@@ -71,7 +71,10 @@ export const noSectorData = (rows: readonly DriverRow[]): boolean =>
   rows.every((r) => r.timing.sectors.every((x) => x === null) && r.timing.speedTrapKph === null);
 
 // ------------------------------------------------------------------ columns and presets
+/** Canonical column order. Undercut % sits next to the driver, so the call's number is never the column a
+ * narrow screen scrolls away (critique F01). */
 export const COLUMNS = [
+  { id: "undercut", label: "Undercut" },
   { id: "int", label: "Int" },
   { id: "gap", label: "Gap" },
   { id: "last", label: "Last lap" },
@@ -82,7 +85,6 @@ export const COLUMNS = [
   { id: "pits", label: "Pits" },
   { id: "tyre", label: "Tyre" },
   { id: "age", label: "Age" },
-  { id: "undercut", label: "Undercut" },
 ] as const;
 export type ColumnId = (typeof COLUMNS)[number]["id"];
 export const COLUMN_IDS: readonly ColumnId[] = COLUMNS.map((c) => c.id);
@@ -90,7 +92,7 @@ export const COLUMN_IDS: readonly ColumnId[] = COLUMNS.map((c) => c.id);
 export const FIXED_COLUMNS = ["Pos", "Driver"] as const;
 
 export const PRESETS = {
-  minimal: ["gap", "last", "tyre", "undercut"],
+  minimal: ["undercut", "gap", "last", "tyre"],
   full: COLUMN_IDS,
 } as const satisfies Record<string, readonly ColumnId[]>;
 export type PresetId = keyof typeof PRESETS;

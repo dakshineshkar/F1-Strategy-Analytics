@@ -45,6 +45,8 @@ test("sample race: start at 1×, switch to 60×, pause, resume and stop", async 
 
   await page.goto("/race/2024/5");
   await expect(page.getByRole("heading", { level: 1 })).toContainText("Chinese Grand Prix");
+  // the replay controls live in a drawer under the status strip (redesign); it stays open while used
+  await page.getByRole("button", { name: "Replay controls" }).click();
   const replayStatus = page.locator("#replay-status");
   const lapLine = page.locator(".replay-lap");
   const start = page.getByRole("button", { name: "Start replay" });

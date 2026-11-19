@@ -3,8 +3,10 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 
 import { DataBanner } from "@/components/DataBanner";
-import { themeCss } from "@/lib/theme";
+import { ThemeSwitch } from "@/components/ThemeSwitch";
+import { dark, light, themeBootScript, themeCss } from "@/lib/theme";
 
+import { fontBody, fontNum, fontUi } from "./fonts";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -16,16 +18,19 @@ export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   themeColor: [
-    { media: "(prefers-color-scheme: dark)", color: "#0c0f13" },
-    { media: "(prefers-color-scheme: light)", color: "#f3f0e8" },
+    { media: "(prefers-color-scheme: dark)", color: dark.bg },
+    { media: "(prefers-color-scheme: light)", color: light.bg },
   ],
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="en">
+    // data-theme is set before the first paint by the boot script (dark by default; without script the
+    // :root tokens are dark), so the client's <html> has an attribute the server markup does not.
+    <html lang="en" className={`${fontUi.variable} ${fontBody.variable} ${fontNum.variable}`} suppressHydrationWarning>
       <head>
-        {/* Colour tokens from src/lib/theme.ts (the same values the contrast tests check). */}
+        <script dangerouslySetInnerHTML={{ __html: themeBootScript }} />
+        {/* Design tokens from src/lib/theme.ts (the same values the contrast tests check). */}
         <style dangerouslySetInnerHTML={{ __html: themeCss }} />
       </head>
       <body>
@@ -34,9 +39,14 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         </a>
         <header className="topbar">
           <Link href="/" className="brand">
-            <span className="brand-mark" aria-hidden="true">▮▮</span> PIT WALL
+            <svg className="brand-mark" viewBox="0 0 12 12" width="12" height="12" aria-hidden="true" focusable="false">
+              <rect x="0" y="2" width="4" height="8" />
+              <rect x="6" y="2" width="4" height="8" />
+            </svg>
+            Pit Wall
             <span className="brand-sub">F1 Strategy Analytics</span>
           </Link>
+          <ThemeSwitch />
         </header>
         <DataBanner />
         <main id="main" tabIndex={-1}>

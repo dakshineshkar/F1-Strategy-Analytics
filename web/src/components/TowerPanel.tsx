@@ -90,7 +90,7 @@ export function TowerColumns({
       <button
         type="button"
         id={`${id}-btn`}
-        className="btn"
+        className="btn btn-quiet btn-small"
         aria-expanded={open}
         aria-controls={`${id}-panel`}
         onClick={() => setOpen((o) => !o)}
@@ -131,7 +131,7 @@ export function TowerColumns({
   );
 }
 
-/** The tower with its column control and the per-browser pin (live and post-race). */
+/** The tower with its column control, its key and the per-browser pin (live and post-race). */
 export function TowerPanel({
   rows,
   lapsDown,
@@ -148,10 +148,8 @@ export function TowerPanel({
   const prefs = useTowerPrefs();
   return (
     <>
-      <div className="tower-tools">
-        <TowerColumns visible={prefs.visible} onChange={prefs.setVisible} />
-      </div>
       <TimingTower
+        tools={<TowerColumns visible={prefs.visible} onChange={prefs.setVisible} />}
         rows={rows}
         lapsDown={lapsDown}
         entrants={entrants}

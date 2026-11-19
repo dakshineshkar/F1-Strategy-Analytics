@@ -25,10 +25,10 @@ test("2024 R5: the page renders the replayed events until session_end", async ({
 
   await page.goto("/race/2024/5");
   await expect(page.getByRole("heading", { level: 1 })).toContainText("Chinese Grand Prix");
-  await expect(page.locator(".conn")).toContainText("Live", { timeout: 60_000 });
+  await expect(page.locator(".conn")).toContainText("Stream connected", { timeout: 60_000 });
   writeFileSync(READY, `${Date.now()}\n`);
 
-  await expect(page.locator(".conn")).toContainText("Closed (session ended)", { timeout: TIMEOUT_MS });
+  await expect(page.locator(".conn")).toContainText("Session ended", { timeout: TIMEOUT_MS });
   await expect.poll(async () => page.locator("table.tower tbody tr").count()).toBeGreaterThanOrEqual(20);
   // Let the last paints post their samples.
   await page.waitForTimeout(3_000);

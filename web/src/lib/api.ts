@@ -59,9 +59,19 @@ export interface Lake {
   synthetic: boolean | null;
 }
 
+/** The scoring model, from ``checks.model`` (display only: the model id the race view labels its
+ * probabilities with). Null when the API reports no model or an older API omits it. */
+export interface HealthModel {
+  model_version: string;
+  feature_set: string | null;
+  g: number | null;
+  k: number | null;
+}
+
 export interface Health {
   status: "ok" | "degraded";
   lake: Lake;
+  model: HealthModel | null;
 }
 
 export type ReplayState = "starting" | "running" | "paused" | "stopped" | "finished" | "failed";
@@ -197,7 +207,22 @@ export function toHealth(v: unknown): Health | undefined {
   if (scheme !== "file" && scheme !== "hdfs") return undefined;
   if (mode !== "sample" && mode !== "full" && mode !== null) return undefined;
   if (synthetic !== null && !isBool(synthetic)) return undefined;
-  return { status: v.status, lake: { scheme, mode, synthetic } };
+  return { status: v.status, lake: { scheme, mode, synthetic }, model: toHealthModel(v.checks) };
+}
+
+/** ``checks.model`` when it names a model; anything missing or malformed is "no model" (the health check
+ * stays usable for the lake banner). */
+export function toHealthModel(checks: unknown): HealthModel | null {
+  if (!isObj(checks) || !isObj(checks.model)) return null;
+  const m = checks.model;
+  if (!isStr(m.model_version) || m.model_version === "") return null;
+  const num = (x: unknown): number | null => (isFiniteNumber(x) ? x : null);
+  return {
+    model_version: m.model_version,
+    feature_set: isStr(m.feature_set) ? m.feature_set : null,
+    g: num(m.g),
+    k: num(m.k),
+  };
 }
 
 const REPLAY_STATES: readonly ReplayState[] = ["starting", "running", "paused", "stopped", "finished", "failed"];

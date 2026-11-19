@@ -242,8 +242,9 @@ describe("columns and presets", () => {
     expect(presetOf(COLUMN_IDS)).toBe("full");
     expect(presetOf(["gap"])).toBeNull();
     expect(normaliseColumns(["s1", "gap", "s1", "nope"])).toEqual(["gap", "s1"]);
-    expect(toggleColumn(PRESETS.minimal, "s1", true)).toEqual(["gap", "last", "s1", "tyre", "undercut"]);
-    expect(toggleColumn(PRESETS.minimal, "gap", false)).toEqual(["last", "tyre", "undercut"]);
+    // canonical order: Undercut sits next to the driver (redesign, critique F01)
+    expect(toggleColumn(PRESETS.minimal, "s1", true)).toEqual(["undercut", "gap", "last", "s1", "tyre"]);
+    expect(toggleColumn(PRESETS.minimal, "gap", false)).toEqual(["undercut", "last", "tyre"]);
   });
 
   it("are kept per browser; nothing saved, a bad value or blocked storage gives the default", () => {
@@ -320,9 +321,9 @@ describe("the rendered tower", () => {
 
   it("hides the columns that are not visible (Pos, Pin and Driver always stay)", () => {
     const m = html({ visible: PRESETS.minimal });
-    expect(m).not.toContain(">S1 ");
+    expect(m).not.toContain('<th scope="col" class="c-sec">S1</th>');
     expect(m).not.toContain('data-col="pits"');
-    expect(m).toContain(">Pin ");
+    expect(m).toContain('<span class="visually-hidden">Pin</span>');
     expect(m).toContain("Driver");
     expect(m).toContain("Last lap");
   });
@@ -331,7 +332,7 @@ describe("the rendered tower", () => {
     const m = html({ pinned: "lando_norris", onPin: () => undefined });
     expect(m).toContain('aria-pressed="true" aria-label="Pin NOR"');
     expect(m).toContain('aria-pressed="false" aria-label="Pin VER"');
-    expect(m).toMatch(/<tr data-driver="lando_norris" class="is-pinned">/);
+    expect(m).toMatch(/<tr data-driver="lando_norris" data-flip="lando_norris" class="is-pinned">/);
     expect(m).toContain('<span class="visually-hidden">, pinned</span>');
     expect((m.match(/aria-pressed="true"/g) ?? []).length).toBe(1);
   });

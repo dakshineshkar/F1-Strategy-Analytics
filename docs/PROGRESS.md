@@ -2126,11 +2126,91 @@
   - **Critique:**
     - F37 is marked fixed;
     - new **F38 (P2)**: mark cars still on the previous lap, so cross-lap gap inversions read correctly.
+- UI redesign Step 2 (2026-11-18, branch `redesign/ui` from `5e50881`; not committed, awaiting approval).
+  Display only: no change to the reducer logic, the SSE contract, the stream job, the API, Python, the Redis
+  contract or `results/`.
+  - **Part A:** `docs/design/inventory.md`, one row per screen and state (data, source, findings F01–F38).
+    Four findings need an additive server/API change for a full fix (F09 alert history, F10 smoke flag, F23
+    summary after a late join, F24 causal gap history); none was made.
+  - **Part B:** `docs/design/DESIGN.md` and the tokens in `web/src/lib/theme.ts` (the single source):
+    - OKLCH colours with derived hex fallbacks;
+    - dark by default with a Dark/Light/Auto switch, applied before the first paint;
+    - one signal amber, blue/orange gain/loss;
+    - type, space, radii, elevation and motion tokens.
+    - Fonts are self-hosted with `next/font/local` in `web/src/fonts/`: Barlow Semi Condensed, Barlow and IBM
+      Plex Mono, Latin subset, 8 files, each family's `OFL.txt`.
+    - Contrast: 178 of 178 pairs pass AA (`web/scripts/contrast-report.mjs`, `web/tests/theme.test.ts`).
+    - The dataviz validator passes the chart lines in both themes. The signal set passes in light; in dark it
+      fails only the lightness band, on purpose (text-bearing colours). Tyre compounds fail by convention and
+      always carry a glyph and a letter.
+  - **Part C:** the live race view, rebuilt.
+    - The status strip: mode, SMOKE TEST, lap, track status, model id, connection, the replay drawer.
+    - "The call": the flagged pair, the model estimate with its model id and the base rate, the gap against
+      pit loss gauge, the reasons, Simulate.
+    - The alert feed, including the late-join list of the pairs flagged now.
+    - The tower: every column at 1440 px, Undercut next to the driver, the L-tag for cars on the previous lap,
+      one Key, FLIP moves.
+    - The what-if as a modelled comparison, plus the mobile layout.
+    - Critique items fixed in this view: F01, F02, F03, F05, F06, F07, F09 (client side), F10 (prefix rule), F11,
+      F12, F13, F14, F15, F16, F17, F18, F19, F22, F24 (axis), F25, F26, F27, F28, F29, F30, F31, F33, F34, F38.
+  - **Tests:**
+    - Vitest 348 -> 454. New: `call.test.ts`, the theme tests, the what-if wording tests. DOM-only selector
+      updates in `legend`, `tower`, `gapchart` and `theme`.
+    - The `next/font/local` stub is aliased in `vitest.config.ts`.
+    - New Playwright spec `web/e2e/race-layout.spec.ts`. The smoke, replay-controls and latency specs got
+      selector-only updates.
+    - `make web-e2e` (sample mode): 7 passed, 1 skipped (latency, by design).
+  - Screenshots in `docs/design/after/` (6 files, each under 400 KB).
+  - **Services** (user approved):
+    - the web container was stopped while testing, then restarted with its original image (it does not
+      contain the redesign);
+    - 10× and 60× replays of 2024 R5 were run;
+    - the api ran in sample mode (with the real model, then the sample model) and was restored to
+      `make api-up FULL=1 REPLAY=1`.
+  - **Follow-up decisions (2026-11-19):**
+    - **F24:** the gap chart says "History from when you opened the page (from lap N)". The window's laps
+      before that are a hatched band labelled "Before you opened the page, not received", and there is an
+      honest empty state. It is live only (a `live` prop); the archive is unchanged.
+    - **Violet:** checked against the other series (all pairs, CVD) and the 35 team colours the API serves
+      (2021–2024). It clashed: the OB tag against PB blue (deutan ΔE 2.1) and three line colours against team
+      blues (down to ΔE 4.6).
+      - The lines are now four colours that pass the validator on all pairs in both themes. One is violet,
+        used only in the lap-times chart, which shows no team colour. They are never cycled
+        (`seriesColour`): a fifth series is neutral.
+      - The archive gap chart and the positions fallback are neutral.
+      - The OB tag has no hue: text ink, 2px outline, bold. The `--best` token was removed.
+    - **`make web-up`** (new): rebuilds the web image and recreates only the web container, behind the
+      replay guard. Tested in `tests/unit/test_makefile_web.py`. Run: the web container now serves the
+      redesign and is healthy; the api is untouched (FULL=1 REPLAY=1).
+    - **`.impeccable/`:** the surface brief is to be committed; `config.local.json`, `hook.cache.json` and
+      logs are gitignored. The runtime folders ignore themselves.
+    - **Detector:** the five `side-tab` hits are recorded in the inventory.
+    - **Tests:** Vitest 454; `gapchart` and `seriesColour` tests and the four-line ΔE test were added; the 8
+      contrast cases for `--best` were removed. The Makefile tests pass.
 ## Next
+- UI redesign: approve Step 2, then the race picker (F36), analysis, drivers, archive and engineer layouts
+  (F20, F21), the session-end summary (F23).
+- After the race view is approved, as a separate change: F09 alert history API-side (the connect snapshot,
+  from Redis or an API ring buffer, with no stream-job change) and F10 `checks.model.smoke_test` in health.
+  Each needs an API test, plus the 113/19/9 check and archive equivalence. F24 API is declined (revisit only
+  if time allows).
+  Fix the three F35 side bars when their pages are rebuilt, and re-check the archive race-status banner
+  (inventory, "Detector findings carried to later steps").
 - S18: report, docs and demo rehearsal (#44): `docs/report/`, `docs/demo_script.md`.
-- UI redesign: include critique F38 (mark cars still on the previous lap).
 - Push and watch the first CI run of the `e2e` job on GitHub (runner build time and disk are unmeasured).
 ## Known issues
+- UI redesign Step 2:
+  - SMOKE TEST is inferred from the `sample_` prefix of `model_version` (health does not expose the model's
+    `smoke_test` stamp).
+  - After a late join the alert feed lists the pairs flagged now, not the alerts sent before the page opened.
+  - Line colours are cut to four, validated on all pairs. A lap-times chart with more than four drivers draws
+    the rest in neutral, with a dash and an end label.
+  - The archive gap chart is neutral (Highlight draws one car in text colour).
+  - The pages not yet redesigned use the legacy token aliases and still have their own accent bars (F35).
+    `impeccable detect` reports them as five `side-tab` hits in `web/src/app/globals.css`, none suppressed:
+    - three are real (F35): analysis race-control rows, engineer calls, archive alert rows;
+    - two are intentional: the archive race-status banner, whose border style shows the track status.
+    The list is in docs/design/inventory.md, "Detector findings carried to later steps".
 - Feature 7:
   - A pause or a speed change applies before the producer's next event. Events already sent still reach the
     dashboard for up to about 1 s (Kafka and the 500 ms trigger), and longer while the stream job catches up

@@ -232,16 +232,19 @@ export function EngineerPanel({
   order,
   maxLap,
   entrants,
+  suggested = null,
 }: {
   season: number;
   round: number;
   order: readonly string[];
   maxLap: number;
   entrants: EntrantIndex;
+  /** the focus to start from when this browser has none locked: the live call's attacker (critique F19) */
+  suggested?: string | null;
 }) {
   const stored = useSyncExternalStore(subscribeStorage, () => loadFocus(), () => null);
   const [picked, setPicked] = useState<string | null>(null);
-  const locked = picked ?? stored;
+  const locked = picked ?? stored ?? suggested;
   const [data, setData] = useState<Engineer | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [fresh, setFresh] = useState<EngineerCall[]>([]);

@@ -9,6 +9,7 @@ import {
   type AnalysisLap,
   type NeutralRange,
 } from "@/lib/analysis";
+import { seriesColour } from "@/lib/chart";
 import { lapTime } from "@/lib/format";
 import { innerX, innerY, linear, niceTicks, pathOf } from "@/lib/plot";
 import { useWidth } from "@/lib/useWidth";
@@ -110,7 +111,7 @@ export function LapTimesChart({
           {series.map((s, i) => {
             const last = s.points[s.points.length - 1];
             return (
-              <g key={s.driverId} style={{ color: `var(--line-${i % 10})` }}>
+              <g key={s.driverId} style={{ color: seriesColour(i) }}>
                 <path
                   d={pathOf(s.points, (p) => x(p.lap), (p) => y(p.time))}
                   fill="none"

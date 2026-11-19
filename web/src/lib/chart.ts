@@ -1,8 +1,19 @@
 /** Geometry of the gap-to-leader chart (pure, unit-tested). The chart is hand-written SVG. */
 
 import type { RaceState } from "./reducer";
+import { darkPalette, lightPalette } from "./theme";
 
 export const CHART_LAPS = 15;
+
+/** How many categorical line colours exist (``--line-0`` …); both themes have the same count. */
+export const LINE_COLOURS = Math.min(darkPalette.lines.length, lightPalette.lines.length);
+
+/** The stroke of the ``i``-th series of a multi-series chart: the categorical colours in their fixed order,
+ * then the neutral grid colour. Never cycled (a fifth series repainted in the first colour would read as the
+ * same car); a neutral series is told apart by its dash and its end label. */
+export function seriesColour(i: number): string {
+  return Number.isInteger(i) && i >= 0 && i < LINE_COLOURS ? `var(--line-${i})` : "var(--grid)";
+}
 export const GAP_CAP_S = 60;
 
 export interface Series {

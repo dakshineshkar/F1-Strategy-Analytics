@@ -211,6 +211,40 @@ export function intervalText(interval: [number, number] | null): string {
   return `${signed(interval[0])} to ${signed(interval[1])} s`;
 }
 
+/** The 80% range in the same ahead/behind words as the expected gap (critique F18): "6.4–14.3 s behind",
+ * "0.5–3.0 s ahead", or "2.1 s behind to 3.4 s ahead" when it spans level. Positive = the attacker ahead. */
+export function rangeText(interval: [number, number] | null): string {
+  if (interval === null) return DASH;
+  const [lo, hi] = interval[0] <= interval[1] ? interval : [interval[1], interval[0]];
+  const f = (x: number) => Math.abs(x).toFixed(1);
+  if (hi <= 0) return `${f(hi)}–${f(lo)} s behind`;
+  if (lo >= 0) return `${f(lo)}–${f(hi)} s ahead`;
+  return `${f(lo)} s behind to ${f(hi)} s ahead`;
+}
+
+/** Plain words for the pit-loss source (the API's tokens are never shown raw). */
+export const PIT_LOSS_SOURCE_TEXT: Record<string, string> = {
+  circuit_prior: "this circuit's earlier races",
+  global_prior: "all earlier races (no history at this circuit)",
+  none: "no earlier race",
+};
+
+export function pitLossSourceText(source: string | null): string {
+  if (source === null) return "unknown source";
+  return PIT_LOSS_SOURCE_TEXT[source] ?? source.replace(/_/g, " ");
+}
+
+/** The what-if's defender for ``attacker``: the API simulates only the car directly ahead, so it is derived,
+ * never picked (critique F16). ``teammate`` says the rule would never flag this pair. */
+export function defenderFor(
+  order: readonly string[],
+  attacker: string,
+  isTeammate: (a: string, b: string) => boolean,
+): { defender: string | null; teammate: boolean } {
+  const defender = defaultDefender(order, attacker);
+  return { defender, teammate: defender !== null && isTeammate(attacker, defender) };
+}
+
 export function timelineText(s: Strategy): string {
   return `attacker in L${s.attacker_pit_lap}, defender in L${s.defender_pit_lap}, compared on L${s.evaluation_lap}`;
 }
