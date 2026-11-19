@@ -13,12 +13,15 @@ const GROUNDS = ["bg", "surface", "surface2", "raised"];
 function rows(t) {
   const out = [];
   for (const fg of TEXT) for (const bg of GROUNDS) out.push([`${fg}`, bg, t[fg], t[bg], 4.5]);
-  for (const fg of ["text", "muted", "signalInk"]) out.push([fg, "signalWash", t[fg], t.signalWash, 4.5]);
+  // the call's band: the row text, the previous-lap lap number (faint) and the role word (signalInk)
+  for (const fg of ["text", "muted", "faint", "signalInk"]) out.push([fg, "signalWash", t[fg], t.signalWash, 4.5]);
   out.push(["signalOn", "signal", t.signalOn, t.signal, 4.5]);
   out.push(["faint (placeholder)", "surface2", t.faint, t.surface2, 4.5]);
   for (const fg of UI) for (const bg of GROUNDS) out.push([`${fg} (mark)`, bg, t[fg], t[bg], 3]);
   out.push(["signalMark (mark)", "signalWash", t.signalMark, t.signalWash, 3]);
   out.push(["focus (mark)", "signalWash", t.focus, t.signalWash, 3]);
+  // the gauge's trend arrow over the shaded rule window
+  for (const fg of ["gain", "loss"]) out.push([`${fg} (mark)`, "signalWash", t[fg], t.signalWash, 3]);
   t.lines.forEach((c, i) => {
     for (const bg of ["bg", "surface", "surface2"]) out.push([`line-${i} (mark)`, bg, c, t[bg], 3]);
   });

@@ -1,12 +1,13 @@
 "use client";
 
-import { useRef } from "react";
+import { useRef, useState } from "react";
 
-import { alertKind, type CallPair, TRIGGER_TEXT } from "@/lib/call";
+import { alertCountText, alertIsNew, alertKind, type CallPair, TRIGGER_TEXT } from "@/lib/call";
 import type { EntrantIndex } from "@/lib/entrants";
 import { driverCode, driverName, probability } from "@/lib/format";
 import { tipId } from "@/lib/legend";
 import type { AlertGroup, Announcement, DriverRow } from "@/lib/reducer";
+import { fitRows, rowsBelow, useRowBox } from "@/lib/useFitRows";
 import { useFlip } from "@/lib/useFlip";
 
 import { GlossaryKey } from "./GlossaryKey";
@@ -14,6 +15,10 @@ import { PairArrow } from "./Marks";
 import { COMPOUND_LABEL, TyreGlyph } from "./TyreGlyph";
 
 const pct = (p: number) => Math.max(0, Math.min(100, Math.round(p * 100)));
+/** A row's fixed height on desktop (``--row`` on ``.feed`` in globals.css, read at run time) and the "N more"
+ * footer, in px at the default root size. */
+const ROW_PX = 68;
+const FOOTER_PX = 32;
 
 function Tyre({ row }: { row: DriverRow | undefined }) {
   if (row === undefined) return null;
@@ -45,8 +50,14 @@ export function AlertFeed({
   entrants = {},
   flaggedNow = [],
   sinceLap = null,
+  maxLap = 0,
+  ended = false,
   onSimulate,
 }: {
+  /** the leader's lap: alerts from it or the lap before are marked new (the only ones in the signal colour) */
+  maxLap?: number;
+  /** the race has finished: no alert is new, so the feed holds no signal colour */
+  ended?: boolean;
   groups: AlertGroup[];
   announcement: Announcement | null;
   /** current per-car state, for both cars' tyres */
@@ -66,6 +77,12 @@ export function AlertFeed({
   useFlip(now, flaggedNow.map((p) => `${p.attackerId}>${p.defenderId}`).join(","), Infinity);
   const code = (id: string) => entrants[id]?.code ?? driverCode(id);
   const name = (id: string) => entrants[id]?.family_name ?? driverName(id);
+  // whole rows only: the list is as tall as the rows that fit, and a footer says how many are below
+  const { ref: box, height, rowPx } = useRowBox<HTMLDivElement>(ROW_PX);
+  const visible = height > 0 ? fitRows(height, rowPx, groups.length, FOOTER_PX) : groups.length;
+  const [scrollPx, setScrollPx] = useState(0);
+  const below = rowsBelow(groups.length, visible, scrollPx, rowPx);
+  const overflowing = groups.length > visible;
 
   return (
     <section className="panel alert-panel" aria-labelledby="alerts-h">
@@ -79,7 +96,7 @@ export function AlertFeed({
       <div className="visually-hidden" aria-live="polite" aria-atomic="true">
         {announcement?.text ?? ""}
       </div>
-      <div className="feed" role="region" aria-label="Undercut alert list" tabIndex={0}>
+      <div className="feed" role="region" aria-label="Undercut alert list" tabIndex={0} ref={box}>
         {groups.length === 0 ? (
           <div className="feed-empty">
             <p className="muted">
@@ -106,62 +123,94 @@ export function AlertFeed({
             ) : null}
           </div>
         ) : (
-          <ol className="alerts" ref={list}>
-            {groups.map((g) => {
-              const k = alertKind(g);
-              return (
-                <li key={g.key} data-flip={g.key} className={`alert alert-${k.kind}`}>
-                  <p className="alert-line">
-                    <span className={`alert-type type-${k.kind}`} aria-describedby={tipId(k.kind)}>
-                      {k.label}
-                    </span>
-                    <span className="alert-pair">
-                      <span className="code">{code(g.attackerId)}</span>
-                      <PairArrow size={12} />
-                      <span className="visually-hidden"> attacking </span>
-                      <span className="code">{code(g.defenderId)}</span>
-                    </span>
-                    <span className="alert-strength">
-                      <span className="alert-prob num" aria-describedby={tipId("alertProb")}>
-                        {probability(g.prob)}
-                        <span className="visually-hidden"> success probability</span>
+          <>
+            <ol
+              className="alerts"
+              ref={list}
+              style={height > 0 ? { height: `${visible * rowPx}px` } : undefined}
+              onScroll={(e) => setScrollPx(e.currentTarget.scrollTop)}
+            >
+              {groups.map((g) => {
+                const k = alertKind(g);
+                const fresh = alertIsNew(g, maxLap, ended);
+                return (
+                  <li key={g.key} data-flip={g.key} className={`alert alert-${k.kind}${fresh ? " is-new" : ""}`}>
+                    <p className="alert-line">
+                      <span className={`alert-type type-${k.kind}`} aria-describedby={tipId(k.kind)}>
+                        {k.label}
                       </span>
-                      <span className="alert-bar" aria-hidden="true">
-                        <span className="alert-bar-fill" style={{ transform: `scaleX(${pct(g.prob) / 100})` }} />
-                        <span className="alert-bar-mark" />
+                      {/* a fixed slot, so the pair never moves when an alert stops being new */}
+                      <span className="alert-new">{fresh ? "new" : ""}</span>
+                      <span className="alert-pair">
+                        <span className="code">{code(g.attackerId)}</span>
+                        <PairArrow size={12} />
+                        <span className="visually-hidden"> attacking </span>
+                        <span className="code">{code(g.defenderId)}</span>
                       </span>
-                    </span>
-                  </p>
-                  <p className="alert-meta">
-                    <span className="kv">
-                      <span className="k">lap</span> <span className="num">{g.decisionLap}</span>
-                    </span>
-                    <span className="kv">
-                      <span className="k">gap</span> <span className="num">{g.gapS.toFixed(1)} s</span>
-                    </span>
-                    <span className="kv alert-tyres">
-                      <Tyre row={rows[g.attackerId]} />
-                      <span className="k">vs</span>
-                      <Tyre row={rows[g.defenderId]} />
-                    </span>
-                    <span className="kv alert-trigger">{TRIGGER_TEXT[g.trigger]}</span>
-                    {g.count > 1 ? <span className="kv num">{g.count}×</span> : null}
-                    <span className="visually-hidden">{`. ${name(g.attackerId)} on ${name(g.defenderId)}`}</span>
-                  </p>
-                  {onSimulate !== undefined ? (
-                    <button
-                      type="button"
-                      className="btn btn-quiet btn-small alert-sim"
-                      onClick={() => onSimulate(g.attackerId, g.defenderId)}
-                      aria-label={`Simulate ${code(g.attackerId)} on ${code(g.defenderId)}`}
-                    >
-                      Simulate
-                    </button>
-                  ) : null}
-                </li>
-              );
-            })}
-          </ol>
+                      <span className="alert-strength">
+                        <span className="alert-prob num" aria-describedby={tipId("alertProb")}>
+                          {probability(g.prob)}
+                          <span className="visually-hidden"> success probability</span>
+                        </span>
+                        <span className="alert-bar" aria-hidden="true">
+                          <span className="alert-bar-fill" style={{ transform: `scaleX(${pct(g.prob) / 100})` }} />
+                          <span className="alert-bar-mark" />
+                        </span>
+                      </span>
+                    </p>
+                    <p className="alert-meta">
+                      <span className="kv">
+                        <span className="k">lap</span> <span className="num">{g.decisionLap}</span>
+                      </span>
+                      <span className="kv">
+                        <span className="k">gap</span> <span className="num">{g.gapS.toFixed(1)} s</span>
+                      </span>
+                      <span className="kv alert-tyres">
+                        <Tyre row={rows[g.attackerId]} />
+                        <span className="k">vs</span>
+                        <Tyre row={rows[g.defenderId]} />
+                      </span>
+                      <span className="kv alert-trigger">{TRIGGER_TEXT[g.trigger]}</span>
+                      {g.count > 1 ? (
+                        <span className="kv alert-count" title={alertCountText(g.count)}>
+                          <span className="num" aria-hidden="true">
+                            {g.count}×
+                          </span>
+                          <span className="visually-hidden">{`, ${alertCountText(g.count)}`}</span>
+                        </span>
+                      ) : null}
+                      <span className="visually-hidden">{`. ${name(g.attackerId)} on ${name(g.defenderId)}`}</span>
+                    </p>
+                    {onSimulate !== undefined ? (
+                      <button
+                        type="button"
+                        className="btn btn-quiet btn-small alert-sim"
+                        onClick={() => onSimulate(g.attackerId, g.defenderId)}
+                        aria-label={`Simulate ${code(g.attackerId)} on ${code(g.defenderId)}`}
+                      >
+                        Simulate
+                      </button>
+                    ) : null}
+                  </li>
+                );
+              })}
+            </ol>
+            {overflowing ? (
+              <p className="feed-more">
+                {below > 0 ? (
+                  <button
+                    type="button"
+                    className="btn btn-quiet btn-small"
+                    onClick={() => list.current?.scrollBy({ top: visible * rowPx })}
+                  >
+                    {below} more below
+                  </button>
+                ) : (
+                  <span className="muted">end of the list</span>
+                )}
+              </p>
+            ) : null}
+          </>
         )}
       </div>
     </section>

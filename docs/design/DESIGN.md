@@ -70,9 +70,10 @@ blue and loss is orange: a colourblind-safe pair, never red/green, and always wi
 - **OKLCH with hex fallbacks.** Each colour is authored in OKLCH; `oklchToHex()` derives its hex, and the CSS
   declares both (`--x:#hex;--x:oklch(…);`), so a browser without OKLCH keeps the hex. Every colour is inside
   the sRGB gamut (tested), so the two are the same colour.
-- **The amber is reserved.** It appears only on the call, the alert feed and flagged tower rows. Focus rings,
-  buttons, selected controls, links and chart series never use it (critique F05). No chart line has an amber
-  hue (60–100°, tested).
+- **The amber is reserved.** It appears only on the call (its solid fill only on "Simulate this pair"), the
+  call's two rows in the tower, and alerts from the leader's lap or the one before (2026-11-19: other flagged rows
+  and older alerts are neutral). Focus rings, buttons, selected controls, links and chart series never use it
+  (critique F05). No chart line has an amber hue (60–100°, tested).
 - **Team colours are data only:** a small swatch with the team's text code, never a background, a border
   theme or a brand treatment.
 - **The legacy names** (`--accent`, `--accent-ink`, `--accent-bg`, `--ok`, `--warn`, `--info`, `--banner-*`,
@@ -134,8 +135,8 @@ cleared it.
   state. It appears only in the lap-times chart, which shows no team colours.
 - **OB has no hue.** The OB tag was violet (`--best`). No colour clears, in the dark theme, all of these at
   once: PB blue, the compounds and every 2021–2024 team colour (ΔE 15 normal vision, 6 colour-blind with its
-  letters). The best found was ΔE 10.9. The tag is now text ink with a 2px outline and bold letters. PB keeps
-  a 1px gain-blue outline. OB against PB is now ΔE 21.7 normal and 18.0 colour-blind in dark (it was 12.1 and
+  letters). The best found was ΔE 10.9. The tag is now text ink with a 2px outline and bold letters. PB is now
+  the quiet tag: gain-blue letters, no outline, normal weight (2026-11-19). OB against PB is now ΔE 21.7 normal and 18.0 colour-blind in dark (it was 12.1 and
   2.1), and 28.6 and 27.5 in light (it was 14.4 and 0.7). An outlined two-letter tag does not read as a team
   badge, which is a filled swatch with a three-letter code.
 
@@ -154,7 +155,8 @@ cleared it.
   `--sp-8` 32, `--sp-10` 40 px. Tight inside a group, wider between groups, more space above a heading than
   below it.
 - **Tower rows:** `--row-h` 28 px, fixed (every control in a row is still at least 24 px). Space is reserved
-  for 22 rows, so a fuller grid never moves the panels below. At 1440×900 the tower block ends at 852 px.
+  for the race's field (`--tower-rows`: the entrants count, at least 20), so the panel has no empty strip and a
+  car joining the tower never moves the panels below. At 1440×900 the tower's table ends at 799 px.
 - **Radii** (small, technical): `--radius-sm` 2 px (chips, bars, the gauge track), `--radius-md` 4 px (controls,
   panels), `--radius-lg` 6 px (popovers). One radius per nesting level; a panel inside a panel is not allowed.
 - **Elevation** (minimal): surfaces step lighter on dark (`bg` → `surface` → `surface-2` → `raised`) and are
@@ -176,10 +178,14 @@ Motion conveys state, never decoration.
   displaced.
 - **Only `transform` and `opacity` animate.** Never `width`, `height`, `top`, `left`, margins or
   `transition: all`. Bars that show a value (the gauge marker, range bars) move with `transform`.
-- **New alerts never move what the viewer is reading.** The feed is a reserved, scrollable list; a row that
-  moves because a newer alert arrived slides there (the same FLIP, uncapped inside the list's own box), and
-  the browser's scroll anchoring keeps the position when the viewer has scrolled. The tower's FLIP is capped at
-  8 rows (a longer move jumps).
+- **New alerts never move what the viewer is reading.** The feed is a reserved, scrollable list of fixed-height
+  rows that always ends on a whole row (the list is as tall as the rows that fit; a "N more below" footer scrolls
+  it); a row that moves because a newer alert arrived slides there (the same FLIP, uncapped inside the list's own
+  box), and the browser's scroll anchoring keeps the position when the viewer has scrolled. The tower's FLIP is
+  capped at 8 rows (a longer move jumps).
+- **The call keeps its height while a replay streams.** A call appearing or disappearing never moves the feed:
+  without a call the panel holds the closest pair. It shrinks to one line only when nothing streams (no replay,
+  no lap yet) or after the finish (decision 2026-11-19).
 - **Values never move their neighbours.** The gauge marker, tick and window move by `transform`; changing
   values sit in fixed, left-aligned slots (the status strip's cells, the call's blocks, the alert fields).
   Measured over 20 s of a 10× replay (`web/e2e/race-layout.spec.ts`): no layout-shift entry outside the
@@ -194,12 +200,13 @@ Motion conveys state, never decoration.
 | Component | Rules |
 |---|---|
 | **Theme switch** | Dark / Light / Auto in the top bar: a native radio group named "Theme" (arrow keys), no animation. |
-| **Status strip** | One band under the top bar, always visible on race pages. Mode chip (REPLAY 10×, PAUSED, STOPPED, FINISHED, or LIVE), SMOKE TEST and SYNTHETIC DEMO DATA stamps when they apply, race, lap n / N, track status, the scoring model's id, the connection state and the Replay control. Values are separate cells, never a dot-joined string. One band at mobile width. |
-| **The call** | The current best pair: attacker → defender with team swatches, the calibrated probability labelled "model estimate" with the model id, the 2025 base rate beside it, the gauge, two or three reasons (tyre ages, gap trend, pit loss and its source in words) and the rule checks, plus "Simulate this pair". The only panel that uses the signal fill. When no car is flagged it says why. |
-| **Gauge** (signature move) | A horizontal bullet scale from 0 s to the race's pit loss: the rule window (0 to G = 3.5 s) shaded, a tick at G, the current gap as a signal-coloured marker, and the gap trend as an arrow in gain blue (closing) or loss orange (opening) with its s/lap value in text. `role="img"` with a title and a text description; every value is also written out. |
-| **Alert feed** | Directly under the call, in reserved space. Type and strength are distinct: the type is a word (Attempt, Opportunity, Candidate below 50%), the strength a short bar plus the percentage. Each row carries both cars' compound and tyre age. Values never break from their labels. A late joiner sees "No alerts since you opened this page (lap N)" and the pairs flagged now. |
-| **Timing tower** | Every column visible at 1440 px, Undercut % next to the driver, a quiet "L9" tag on a car whose latest lap is behind the leader's (with its gap measured at lap 9), flagged rows on the signal wash with an authored flag mark and text. Header help lives in one key, not one "?" per header. |
-| **What-if** | Results are a modelled comparison of pit now / pit next lap / stay out from the same state: "share of sim runs ahead", the expected gap and its 80% range as a bar. The caveat sits next to the numbers. No default pair: it starts from the call or an alert. The defender list holds only cars ahead that are not teammates. |
+| **Status strip** | One band under the top bar, always visible on race pages. Mode chip (REPLAY 10×, PAUSED, STOPPED, FINISHED, or LIVE), SMOKE TEST and SYNTHETIC DEMO DATA stamps when they apply, race, lap n / N, the leader's lap progress ("2 of 20 crossed": running cars that crossed the line on the leader's lap), track status, the scoring model's id, the connection state and the Replay control. Values are separate cells, never a dot-joined string. On a phone (2026-11-19 screenshot review) the race head and the strip wrap onto two lines each and never scroll sideways or cut a value: the head is the race's name and the page links, then the mode and view tabs; the strip is the race state (mode, lap, track) with the Replay button, then the progress, the model id and the connection. Some labels take a short form on a phone ("Analysis", "Replay", "Connected"; the "Model" key word is visually hidden), and the full text stays the accessible name. The call starts within 200 px while a replay streams (188 px at 390×844 on the full lake). The sample deployment's stamps (SMOKE TEST in the strip, the SYNTHETIC DEMO DATA notice, which wraps rather than being cut) add a line each, so there the budget is 240 px (user decision 2026-11-19). After a stop or the finish the strip's "Open the post-race archive" button takes a third line (220 px). |
+| **The call** | The one loud element. Four states. **Call:** the current best pair: attacker → defender with team swatches, the calibrated probability labelled "model estimate" with the model id, the 2025 base rate beside it, the gauge ("gap now"), the tyres, the rule line ("gap at decision (lap N)" from this page's alert, or "not received" after a late join) and the rule checks, plus "Simulate this pair" (the only solid signal button). **No call while a replay streams:** the panel keeps its height and shows the closest pair, why it is not a call ("gap 4.1 s, outside the 3.5 s rule window"), its gauge in a muted style, "N cars flagged, none qualifies" when the only flags belong to cars with no timing, and a neutral "Simulate closest pair". **Idle or before lap 1:** one line. **After the finish** (replay finished, `session_end`, or the leader on the last lap): "Race ended at lap N", no pit instruction, no Simulate, "Open the post-race archive". A car with no timing for 2 or more leader laps is never part of the call. |
+| **Gauge** (signature move) | A horizontal bullet scale from 0 s to max(5 s, gap × 1.5): the rule window (0 to 3.5 s) shaded and labelled "rule window 3.5 s", a tick at its edge, the gap now as a signal-coloured marker, and the gap trend as an arrow from the gap now to next lap's gap if the trend holds, in gain blue (closing) or loss orange (opening), with its s/lap value and next lap's gap in text. The pit loss is a different quantity, so it is text in the caption, never on the axis. It is the race's pit loss (one value per race from the engineer API, kept whichever pair the call shows), fetched as soon as the page knows the leader's lap, so a late joiner sees it before the next crossing, at any width. No abbreviation ("G") on the gauge. `role="img"` with a title and a text description; every value is also written out. |
+| **Alert feed** | Directly under the call, in reserved space. Type and strength are distinct: the type is a word in a neutral outline (Attempt 2 px, Opportunity solid, Candidate dotted), the strength a short bar plus the percentage (semibold from 50%). Only an alert from the leader's lap or the one before is in the signal colour, with the word "new"; after the finish no alert is new, so the finished feed has no signal colour (decision 2026-11-19). A pair's counter ("4×") has a title and the accessible text "4 alerts for this pair". Each row carries both cars' compound and tyre age; the meta wraps onto a second line rather than clipping, and a value never breaks from its label. The list ends on a whole row with "N more below". A late joiner sees "No alerts since you opened this page (lap N)" and the pairs flagged now. |
+| **Timing tower** | Every column visible at 1440 px with no cell cut off, Undercut % next to the driver. Only the call's pair is on the signal band, the attacker with a solid left rule and the word "attacker", the defender with a dashed rule and "defender"; other flagged rows keep the flag mark and the percentage in normal weight (semibold from 50%). A car still on the previous lap shows a small muted lap number in its Gap cell ("L9", no box); a lapped car shows "+1 lap" in Gap. A car with no timing for 2 or more leader laps (after allowing for laps down; the stream sends no retirement) keeps its row, in faint text at the bottom, with "no timing since L19" across Int and Gap and its flag faint. PB / OB tags start on lap 2. Header help lives in one key, not one "?" per header. |
+| **What-if** | Results are a modelled comparison of pit now / pit next lap / stay out from the same state: "share of sim runs ahead", the expected gap and its 80% range as a bar. A one-line caveat sits next to the numbers and the full explanation is behind "How to read this". The attacker is preselected from the call (it follows the call until the viewer picks) but nothing runs until Run; before a run there is no table, only a one-line state, and the panel's height follows its content (one status line reserved, no empty error line). The defender is the car directly ahead; a teammate pair is named before the run. |
+| **Gap chart** | Highlight starts on "The call (A → D)" and follows the call until the viewer picks another car or None. End-of-line labels for the highlighted cars and the top 5 running cars, placed so they never overlap; every other line is thin, grey and unlabelled. The first lap sits clear of the y-axis labels, and lap labels thin out on a narrow chart. Before the page has received a lap frame (a late join holds only the snapshot) the live chart is one line, "First lap arrives at the next crossing.", not an empty 0–1 s axis. |
 
 ## Honesty rules
 
@@ -233,11 +240,14 @@ the flag and gauge marks, compound swatches) need 3:1.
 
 | Theme | Pairs | Pass | Fail | Lowest text pair | Lowest mark pair |
 |---|---|---|---|---|---|
-| Dark | 89 | 89 | 0 | 5.46:1 | 3.07:1 (`line-3` on `surface-2`) |
-| Light | 89 | 89 | 0 | 4.61:1 | 3.00:1 (`signal-mark` on `raised`) |
+| Dark | 92 | 92 | 0 | 5.46:1 | 3.07:1 (`line-3` on `surface-2`) |
+| Light | 92 | 92 | 0 | 4.61:1 | 3.00:1 (`signal-mark` on `raised`) |
 
 The tightest light pair, `signal-mark` on `raised` (3.00:1), is legal but has no margin: signal marks are not
 placed on the raised ground (the status strip) in the light theme.
+
+Three pairs were added on 2026-11-19 for the call's band: `faint` on `signal-wash` (the previous-lap lap number of a
+banded row) and `gain`/`loss` marks on `signal-wash` (the gauge's trend arrow over the shaded rule window).
 
 ### Palette validator (dataviz `validate_palette.js`)
 
@@ -315,9 +325,9 @@ Raw validator output (2026-11-18; the line sets re-run 2026-11-19):
 ```
 
 <details>
-<summary>Full contrast table (178 pairs)</summary>
+<summary>Full contrast table (184 pairs)</summary>
 
-### Dark theme: 89 pairs, 89 pass, 0 fail
+### Dark theme: 92 pairs, 92 pass, 0 fail
 Lowest text pair 5.46:1 (needs 4.5), lowest mark pair 3.07:1 (needs 3).
 
 | Foreground | Ground | Colours | Ratio | Needs | AA |
@@ -352,6 +362,7 @@ Lowest text pair 5.46:1 (needs 4.5), lowest mark pair 3.07:1 (needs 3).
 | danger | raised | `#f97676` on `#23272c` | 5.64 | 4.5 | pass |
 | text | signalWash | `#ebedf0` on `#382709` | 12.24 | 4.5 | pass |
 | muted | signalWash | `#b5bbc2` on `#382709` | 7.42 | 4.5 | pass |
+| faint | signalWash | `#9fa5ad` on `#382709` | 5.79 | 4.5 | pass |
 | signalInk | signalWash | `#fbc044` on `#382709` | 8.70 | 4.5 | pass |
 | signalOn | signal | `#1d1406` on `#f8b734` | 10.23 | 4.5 | pass |
 | faint (placeholder) | surface2 | `#9fa5ad` on `#1b1e23` | 6.73 | 4.5 | pass |
@@ -381,6 +392,8 @@ Lowest text pair 5.46:1 (needs 4.5), lowest mark pair 3.07:1 (needs 3).
 | loss (mark) | raised | `#f67654` on `#23272c` | 5.46 | 3 | pass |
 | signalMark (mark) | signalWash | `#f8b734` on `#382709` | 8.08 | 3 | pass |
 | focus (mark) | signalWash | `#cbeff9` on `#382709` | 11.80 | 3 | pass |
+| gain (mark) | signalWash | `#6bb9f8` on `#382709` | 6.78 | 3 | pass |
+| loss (mark) | signalWash | `#f67654` on `#382709` | 5.22 | 3 | pass |
 | line-0 (mark) | bg | `#0ca3be` on `#0c0f12` | 6.40 | 3 | pass |
 | line-0 (mark) | surface | `#0ca3be` on `#13161a` | 6.05 | 3 | pass |
 | line-0 (mark) | surface2 | `#0ca3be` on `#1b1e23` | 5.57 | 3 | pass |
@@ -412,7 +425,7 @@ Lowest text pair 5.46:1 (needs 4.5), lowest mark pair 3.07:1 (needs 3).
 | compound unknown (mark) | surface | `#a9b3c0` on `#13161a` | 8.55 | 3 | pass |
 | compound unknown (mark) | surface2 | `#a9b3c0` on `#1b1e23` | 7.88 | 3 | pass |
 
-### Light theme: 89 pairs, 89 pass, 0 fail
+### Light theme: 92 pairs, 92 pass, 0 fail
 Lowest text pair 4.61:1 (needs 4.5), lowest mark pair 3.00:1 (needs 3).
 
 | Foreground | Ground | Colours | Ratio | Needs | AA |
@@ -447,6 +460,7 @@ Lowest text pair 4.61:1 (needs 4.5), lowest mark pair 3.00:1 (needs 3).
 | danger | raised | `#b32322` on `#dde0e4` | 4.99 | 4.5 | pass |
 | text | signalWash | `#171b20` on `#fceabe` | 14.54 | 4.5 | pass |
 | muted | signalWash | `#484e55` on `#fceabe` | 7.07 | 4.5 | pass |
+| faint | signalWash | `#585e66` on `#fceabe` | 5.50 | 4.5 | pass |
 | signalInk | signalWash | `#875814` on `#fceabe` | 5.14 | 4.5 | pass |
 | signalOn | signal | `#1d1406` on `#f8b734` | 10.23 | 4.5 | pass |
 | faint (placeholder) | surface2 | `#585e66` on `#e6e8eb` | 5.33 | 4.5 | pass |
@@ -476,6 +490,8 @@ Lowest text pair 4.61:1 (needs 4.5), lowest mark pair 3.00:1 (needs 3).
 | loss (mark) | raised | `#a73301` on `#dde0e4` | 5.09 | 3 | pass |
 | signalMark (mark) | signalWash | `#a07a0c` on `#fceabe` | 3.34 | 3 | pass |
 | focus (mark) | signalWash | `#13335a` on `#fceabe` | 10.71 | 3 | pass |
+| gain (mark) | signalWash | `#0c60a3` on `#fceabe` | 5.49 | 3 | pass |
+| loss (mark) | signalWash | `#a73301` on `#fceabe` | 5.66 | 3 | pass |
 | line-0 (mark) | bg | `#25984d` on `#eef0f3` | 3.24 | 3 | pass |
 | line-0 (mark) | surface | `#25984d` on `#fbfcfd` | 3.60 | 3 | pass |
 | line-0 (mark) | surface2 | `#25984d` on `#e6e8eb` | 3.01 | 3 | pass |

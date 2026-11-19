@@ -19,6 +19,7 @@ import {
   DEFAULT_COLUMNS,
   loadColumns,
   loadPin,
+  MARKS_FROM_LAP,
   normaliseColumns,
   PIN_KEY,
   PRESETS,
@@ -171,6 +172,24 @@ describe("best so far and the PB / OB marks", () => {
     expect(trapMark(ver, best)).toBeNull(); // 310 vs its own 312
     expect(sectorMark(pia, 0, best)).toBeNull();
     expect(trapMark(pia, best)).toBeNull();
+  });
+
+  it("no PB / OB on lap 1 (every first time is trivially a best); they start on lap 2", () => {
+    expect(MARKS_FROM_LAP).toBe(2);
+    const first = towerRows(
+      run([
+        lap("max_verstappen", 1, 95, 1, tower(28.1, 28.1, { speed_trap_kph: 315, pb_speed_trap_kph: 315 })),
+        lap("lando_norris", 1, 96, 2, tower(28.3, 28.3)),
+      ]),
+    );
+    const best = bestSoFar(first);
+    for (const r of first) {
+      for (const i of [0, 1, 2] as const) expect(sectorMark(r, i, best)).toBeNull();
+      expect(trapMark(r, best)).toBeNull();
+    }
+    expect(renderToStaticMarkup(createElement(TimingTower, { rows: first, lapsDown: () => 0 }))).not.toContain("tag mark");
+    const second = towerRows(run([lap("max_verstappen", 2, 190, 1, tower(28.0, 28.0))]));
+    expect(sectorMark(second[0]!, 0, bestSoFar(second))).toBe("OB");
   });
 });
 

@@ -3,19 +3,25 @@
 import type { Compound } from "@/lib/api";
 import {
   BASE_RATE_2025,
+  type CallLayout,
   type CallPair,
   closestPair,
+  closestReason,
+  decisionGap,
   flaggedPairs,
   type ModelIdentity,
   modelDetail,
   noCallReason,
   RULE_GAP_S,
+  staleFlaggedCount,
 } from "@/lib/call";
 import type { Engineer, EngineerCar } from "@/lib/engineer";
 import { type EntrantIndex } from "@/lib/entrants";
 import { driverCode, driverName, probability } from "@/lib/format";
 import { tipId } from "@/lib/legend";
 import type { DriverRow, RaceState } from "@/lib/reducer";
+import { leaderLap, staleIds } from "@/lib/stale";
+import type { RacePitLoss } from "@/lib/useCallContext";
 import { pitLossSourceText } from "@/lib/whatif";
 
 import { CallGauge } from "./CallGauge";
@@ -67,160 +73,329 @@ function TyreText({ t }: { t: ReturnType<typeof tyreOf> }) {
   );
 }
 
-/** The live undercut call (critique F03): the best pair flagged now, with the calibrated probability as a
- * model estimate with its model id and the 2025 base rate, the gap-against-pit-loss gauge, the reasons
- * (tyres, trend, pit loss), the rule checks it passed, and "Simulate this pair". With no flagged pair it
- * says why and shows the closest pair, muted. The only panel in the signal colour. */
+/** The engineer view of ``pair``'s attacker, when the one loaded is about that car and its car ahead. */
+function contextFor(pair: CallPair | null, context: Engineer | null) {
+  const ctx = pair !== null && context !== null && context.focus_id === pair.attackerId ? context : null;
+  const matches = ctx !== null && ctx.pair_ahead !== null && ctx.pair_ahead.front_id === pair?.defenderId;
+  return { ctx, matches };
+}
+
+/** The gauge of ``pair``. The pit loss is the race's (``pitLoss``), whichever car the engineer view was loaded
+ * for; the trend needs the view of this very pair. */
+function PairGauge({
+  pair,
+  context,
+  pitLoss,
+  g,
+  muted,
+}: {
+  pair: CallPair;
+  context: Engineer | null;
+  pitLoss: RacePitLoss | null;
+  g: number;
+  muted: boolean;
+}) {
+  const { ctx, matches } = contextFor(pair, context);
+  return (
+    <CallGauge
+      gapS={pair.gapS ?? ctx?.pair_ahead?.gap_s ?? 0}
+      pitLossS={pitLoss?.s ?? null}
+      pitLossText={pitLoss === null ? null : pitLossSourceText(pitLoss.source)}
+      trend={matches ? (ctx?.pair_ahead?.trend_s_per_lap ?? null) : null}
+      trendLaps={matches ? (ctx?.pair_ahead?.trend_laps ?? null) : null}
+      g={g}
+      muted={muted}
+    />
+  );
+}
+
+/** The live undercut call (critique F03): the best pair flagged now (cars with no timing for 2 or more leader
+ * laps excluded), with the calibrated probability as a model estimate with its model id and the 2025 base rate,
+ * the gap gauge ("gap now"), the reasons (tyres, the rule and the gap at decision), and "Simulate this pair".
+ * The only panel in the signal colour.
+ *
+ * Without a call it keeps its reserved height while a replay streams and shows the closest pair instead (muted,
+ * with why it is not a call); while nothing streams it shrinks to one line (``layout="compact"``). After the
+ * finish it says the race ended, gives no pit instruction and offers the post-race archive. */
 export function TheCall({
   state,
   entrants,
   model,
   context,
+  pitLoss = null,
   onSimulate,
   replayIdle,
   onOpenReplay,
+  layout = "full",
+  ended = false,
+  onArchive = null,
 }: {
   state: RaceState;
   entrants: EntrantIndex;
   model: ModelIdentity | null;
-  /** the engineer view of the call's attacker (trend, tyres, pit loss); null while loading or unavailable */
+  /** the engineer view of the shown pair's attacker (trend, tyres, pit loss); null while loading or unavailable */
   context: Engineer | null;
+  /** the race's pit loss (``useCallContext``): the same for every pair, so it never depends on which car was loaded */
+  pitLoss?: RacePitLoss | null;
   onSimulate: (pair: CallPair) => void;
   /** no replay is running and the tower is empty: the call explains how to start one */
   replayIdle: boolean;
   onOpenReplay: () => void;
+  layout?: CallLayout;
+  /** the race has finished (``raceEnded``) */
+  ended?: boolean;
+  /** open the post-race archive; null when this race has no archive */
+  onArchive?: (() => void) | null;
 }) {
-  const pairs = flaggedPairs(state);
-  const call = pairs[0] ?? null;
-  const ctx = call !== null && context !== null && context.focus_id === call.attackerId ? context : null;
-  const pairMatches = ctx?.pair_ahead !== null && ctx?.pair_ahead?.front_id === call?.defenderId;
-  const lap = state.maxLap > 0 ? state.maxLap : null;
+  const stale = staleIds(state);
+  const pairs = flaggedPairs(state, stale);
+  const call = ended ? null : (pairs[0] ?? null);
+  const lapNow = leaderLap(state);
+  const lap = lapNow > 0 ? lapNow : null;
+  const g = model?.g ?? RULE_GAP_S;
+  const cls = ["panel", "call", call !== null ? "has-call" : null, layout === "compact" ? "is-compact" : null, ended ? "is-ended" : null]
+    .filter(Boolean)
+    .join(" ");
 
   return (
-    <section id="the-call" className={`panel call${call !== null ? " has-call" : ""}`} aria-labelledby="call-h" tabIndex={-1}>
+    <section id="the-call" className={cls} aria-labelledby="call-h" tabIndex={-1}>
       <div className="call-head">
         <h2 id="call-h">
           The call <InfoTip id="call" />
         </h2>
         <span className="call-meta">
           {lap !== null ? <span className="num">Lap {lap}</span> : null}
-          {pairs.length > 1 ? <span>{pairs.length - 1} more flagged</span> : null}
+          {pairs.length > 1 && call !== null ? <span>{pairs.length - 1} more flagged</span> : null}
           {model?.smoke ? <span className="stamp stamp-smoke">SMOKE TEST</span> : null}
         </span>
       </div>
 
-      {call === null ? (
-        <NoCall state={state} entrants={entrants} replayIdle={replayIdle} onOpenReplay={onOpenReplay} />
+      {ended ? (
+        <Ended lap={lap} onArchive={onArchive} />
+      ) : call !== null ? (
+        <FullCall call={call} state={state} entrants={entrants} model={model} context={context} pitLoss={pitLoss} g={g} onSimulate={onSimulate} />
+      ) : layout === "compact" || state.order.length === 0 ? (
+        <Compact state={state} entrants={entrants} replayIdle={replayIdle} onOpenReplay={onOpenReplay} g={g} stale={stale} />
       ) : (
-        <div className="call-body">
-          <p className="call-pair">
-            <Car id={call.attackerId} entrants={entrants} role="attacker" />
-            <span className="call-arrow">
-              <PairArrow size={16} />
-              <span className="visually-hidden">undercutting</span>
-            </span>
-            <Car id={call.defenderId} entrants={entrants} role="defender, the car directly ahead" />
-          </p>
-
-          <div className="call-estimate">
-            <p className="call-prob" aria-describedby={tipId("undercut")}>
-              <span className="call-prob-num num">{probability(call.prob)}</span>
-              <span className="call-prob-label">
-                model estimate that pitting next lap brings {driverCode(call.attackerId)} out ahead
-              </span>
-            </p>
-            <p className="call-context">
-              <span>
-                2025 base rate <span className="num">{probability(BASE_RATE_2025)}</span> of attempts
-              </span>
-              <span className="call-model">
-                {model === null ? (
-                  "model id unavailable (health check)"
-                ) : (
-                  <>
-                    <span className="num">{model.version}</span>
-                    {modelDetail(model) ? <span className="call-model-detail">{modelDetail(model)}</span> : null}
-                  </>
-                )}
-              </span>
-            </p>
-          </div>
-
-          <CallGauge
-            gapS={call.gapS ?? ctx?.pair_ahead?.gap_s ?? 0}
-            pitLossS={ctx?.rejoin.pit_loss_s ?? null}
-            pitLossText={ctx === null ? null : pitLossSourceText(ctx.rejoin.pit_loss_source)}
-            trend={pairMatches ? (ctx?.pair_ahead?.trend_s_per_lap ?? null) : null}
-            trendLaps={pairMatches ? (ctx?.pair_ahead?.trend_laps ?? null) : null}
-            g={model?.g ?? RULE_GAP_S}
-          />
-
-          <dl className="call-reasons">
-            <div>
-              <dt>Tyres</dt>
-              <dd>
-                <TyreText t={tyreOf(state.drivers[call.attackerId], ctx?.focus ?? null)} />
-                <span className="call-vs">against</span>
-                <TyreText t={tyreOf(state.drivers[call.defenderId], pairMatches ? (ctx?.ahead ?? null) : null)} />
-              </dd>
-            </div>
-            <div>
-              <dt>Rule</dt>
-              <dd>
-                passed at lap {call.lap ?? "—"}: within {model?.g ?? RULE_GAP_S} s, not teammates, nobody between, green lap
-              </dd>
-            </div>
-          </dl>
-
-          <div className="call-actions">
-            <button type="button" className="btn btn-primary" onClick={() => onSimulate(call)}>
-              Simulate this pair
-            </button>
-            <span className="call-hint">pit now, next lap or stay out, from this lap</span>
-          </div>
-        </div>
+        <NoCall state={state} entrants={entrants} context={context} pitLoss={pitLoss} g={g} stale={stale} onSimulate={onSimulate} />
       )}
     </section>
   );
 }
 
+function FullCall({
+  call,
+  state,
+  entrants,
+  model,
+  context,
+  pitLoss,
+  g,
+  onSimulate,
+}: {
+  call: CallPair;
+  state: RaceState;
+  entrants: EntrantIndex;
+  model: ModelIdentity | null;
+  context: Engineer | null;
+  pitLoss: RacePitLoss | null;
+  g: number;
+  onSimulate: (pair: CallPair) => void;
+}) {
+  const { ctx, matches } = contextFor(call, context);
+  const decision = decisionGap(call);
+  return (
+    <div className="call-body">
+      <p className="call-pair">
+        <Car id={call.attackerId} entrants={entrants} role="attacker" />
+        <span className="call-arrow">
+          <PairArrow size={16} />
+          <span className="visually-hidden">undercutting</span>
+        </span>
+        <Car id={call.defenderId} entrants={entrants} role="defender, the car directly ahead" />
+      </p>
+
+      <div className="call-estimate">
+        <p className="call-prob" aria-describedby={tipId("undercut")}>
+          <span className="call-prob-num num">{probability(call.prob)}</span>
+          <span className="call-prob-label">model estimate that pitting next lap brings {driverCode(call.attackerId)} out ahead</span>
+        </p>
+        <p className="call-context">
+          <span>
+            2025 base rate <span className="num">{probability(BASE_RATE_2025)}</span> of attempts
+          </span>
+          <span className="call-model">
+            {model === null ? (
+              "model id unavailable (health check)"
+            ) : (
+              <>
+                <span className="num">{model.version}</span>
+                {modelDetail(model) ? <span className="call-model-detail">{modelDetail(model)}</span> : null}
+              </>
+            )}
+          </span>
+        </p>
+      </div>
+
+      <PairGauge pair={call} context={context} pitLoss={pitLoss} g={g} muted={false} />
+
+      <dl className="call-reasons">
+        <div>
+          <dt>Tyres</dt>
+          <dd>
+            <TyreText t={tyreOf(state.drivers[call.attackerId], ctx?.focus ?? null)} />
+            <span className="call-vs">against</span>
+            <TyreText t={tyreOf(state.drivers[call.defenderId], matches ? (ctx?.ahead ?? null) : null)} />
+          </dd>
+        </div>
+        <div>
+          <dt>Rule</dt>
+          <dd>
+            <span>
+              {decision === null ? (
+                <>gap at decision: not received (before you opened the page)</>
+              ) : (
+                <>
+                  gap at decision (lap {decision.lap}) <span className="num">{decision.gapS.toFixed(1)} s</span>
+                </>
+              )}
+            </span>
+            <span className="call-rule-checks">within {g} s, not teammates, nobody between, green lap</span>
+          </dd>
+        </div>
+      </dl>
+
+      <div className="call-actions">
+        <button type="button" className="btn btn-primary" onClick={() => onSimulate(call)}>
+          Simulate this pair
+        </button>
+        <span className="call-hint">pit now, next lap or stay out, from this lap</span>
+      </div>
+    </div>
+  );
+}
+
+/** No call while a replay streams: the reserved space holds the closest pair, muted, and why it is not a call. */
 function NoCall({
+  state,
+  entrants,
+  context,
+  pitLoss,
+  g,
+  stale,
+  onSimulate,
+}: {
+  state: RaceState;
+  entrants: EntrantIndex;
+  context: Engineer | null;
+  pitLoss: RacePitLoss | null;
+  g: number;
+  stale: ReadonlySet<string>;
+  onSimulate: (pair: CallPair) => void;
+}) {
+  const close = closestPair(state, entrants, stale);
+  const staleFlags = staleFlaggedCount(state, stale);
+  const code = (id: string) => entrants[id]?.code ?? driverCode(id);
+  return (
+    <div className="call-body call-empty">
+      <p className="call-none">No undercut call</p>
+      {close === null || close.gapS === null ? (
+        <p className="call-explain">{noCallReason(state, entrants, g)}</p>
+      ) : (
+        <>
+          <p className="call-closest">
+            <span className="call-closest-k">Closest pair</span>
+            <span className="call-closest-pair">
+              <span className="code">{code(close.attackerId)}</span>
+              <PairArrow size={12} />
+              <span className="visually-hidden"> on </span>
+              <span className="code">{code(close.defenderId)}</span>
+            </span>
+            <span className="call-closest-why">{closestReason(close, g)}</span>
+          </p>
+          <PairGauge pair={close} context={context} pitLoss={pitLoss} g={g} muted />
+        </>
+      )}
+      {staleFlags > 0 ? (
+        <p className="call-explain call-stale-flags">
+          {staleFlags} {staleFlags === 1 ? "car" : "cars"} flagged, none qualifies: no timing from {staleFlags === 1 ? "it or the car ahead" : "them or the cars ahead"} for 2 or more laps
+        </p>
+      ) : null}
+      {close !== null && close.gapS !== null ? (
+        <div className="call-actions">
+          <button type="button" className="btn" onClick={() => onSimulate(close)}>
+            Simulate closest pair
+          </button>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+/** One line while nothing streams (no replay, no lap yet): the feed moves up into the space. */
+function Compact({
   state,
   entrants,
   replayIdle,
   onOpenReplay,
+  g,
+  stale,
 }: {
   state: RaceState;
   entrants: EntrantIndex;
   replayIdle: boolean;
   onOpenReplay: () => void;
+  g: number;
+  stale: ReadonlySet<string>;
 }) {
-  if (replayIdle && state.order.length === 0) {
+  if (state.order.length === 0) {
     return (
       <div className="call-body call-empty">
-        <p className="call-none">No replay of this race is running.</p>
-        <p className="call-explain">
-          Start one from the replay controls: the tower fills lap by lap, and the call names the pair the model and the
-          rule flag.
+        <p className="call-line">
+          <span className="call-none">{replayIdle ? "No replay of this race is running." : "Waiting for the first lap."}</span>
+          {replayIdle ? (
+            <button type="button" className="btn btn-small" onClick={onOpenReplay}>
+              Open replay controls
+            </button>
+          ) : null}
         </p>
-        <button type="button" className="btn btn-primary" onClick={onOpenReplay}>
-          Open replay controls
-        </button>
       </div>
     );
   }
-  const close = closestPair(state, entrants);
+  const close = closestPair(state, entrants, stale);
+  const code = (id: string) => entrants[id]?.code ?? driverCode(id);
   return (
     <div className="call-body call-empty">
-      <p className="call-none">No undercut call</p>
-      <p className="call-explain">{noCallReason(state, entrants)}</p>
-      {close !== null && close.gapS !== null ? (
-        <p className="call-closest">
-          Closest pair: <span className="code">{entrants[close.attackerId]?.code ?? driverCode(close.attackerId)}</span>{" "}
-          on <span className="code">{entrants[close.defenderId]?.code ?? driverCode(close.defenderId)}</span>,{" "}
-          <span className="num">{close.gapS.toFixed(1)} s</span>
-        </p>
-      ) : null}
+      <p className="call-line">
+        <span className="call-none">No undercut call</span>
+        {close !== null && close.gapS !== null ? (
+          <span className="call-line-text">
+            closest pair <span className="code">{code(close.attackerId)}</span> on <span className="code">{code(close.defenderId)}</span>:{" "}
+            {closestReason(close, g)}
+          </span>
+        ) : (
+          <span className="call-line-text">{noCallReason(state, entrants, g)}</span>
+        )}
+      </p>
+    </div>
+  );
+}
+
+/** After the finish: no pit instruction, no Simulate; the post-race archive holds the whole race. */
+function Ended({ lap, onArchive }: { lap: number | null; onArchive: (() => void) | null }) {
+  return (
+    <div className="call-body call-empty">
+      <p className="call-line">
+        <span className="call-none">Race ended{lap !== null ? ` at lap ${lap}` : ""}</span>
+        <span className="call-line-text">The live call stops at the chequered flag.</span>
+      </p>
+      {onArchive !== null ? (
+        <button type="button" className="btn btn-small call-archive" onClick={onArchive}>
+          Open the post-race archive
+        </button>
+      ) : (
+        <p className="call-explain">The post-race archive of this race is not built yet.</p>
+      )}
     </div>
   );
 }

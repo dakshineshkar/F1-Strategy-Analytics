@@ -1,16 +1,18 @@
 "use client";
 
 import Link from "next/link";
-import { type KeyboardEvent, type ReactNode, useCallback, useEffect, useRef, useState } from "react";
+import { type CSSProperties, type KeyboardEvent, type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 
 import { tabKeyTarget } from "@/lib/analysis";
 import { api, type Race } from "@/lib/api";
 import { type RaceMode, raceSearch } from "@/lib/archive";
-import { type CallPair, flaggedPairs, modelIdentity, modeOf } from "@/lib/call";
+import { type CallPair, callLayout, closestPair, flaggedPairs, modelIdentity, modeOf, raceEnded } from "@/lib/call";
 import { useLatencyReporter } from "@/lib/debugLatency";
 import { indexEntrants } from "@/lib/entrants";
-import { alertGroups, lapsDown, towerRows } from "@/lib/reducer";
+import { unlistedCars } from "@/lib/pipeline";
+import { alertGroups } from "@/lib/reducer";
 import { isActive, INITIAL_RUN, type RunTracker, trackRun } from "@/lib/replays";
+import { displayRows, lapProgress, lapsBehind, leaderLap as leaderLapOf, staleIds, staleSince } from "@/lib/stale";
 import { useArchiveAvailable } from "@/lib/useArchive";
 import { useCallContext } from "@/lib/useCallContext";
 import { useEntrants } from "@/lib/useEntrants";
@@ -22,7 +24,9 @@ import { useReplays } from "@/lib/useReplays";
 import { AlertFeed } from "./AlertFeed";
 import { EngineerPanel } from "./EngineerPanel";
 import { GapChart } from "./GapChart";
+import { InfoTip } from "./InfoTip";
 import { Legend } from "./Legend";
+import { PhoneLabel } from "./PhoneLabel";
 import { PostRaceView } from "./PostRaceView";
 import { ReplayControl } from "./ReplayControl";
 import { ReplayDrawer, StatusStrip } from "./StatusStrip";
@@ -182,18 +186,29 @@ function LiveRaceView({
     return () => ctl.abort();
   }, [season, round]);
 
-  const rows = towerRows(state);
+  // cars with no timing for 2 or more leader laps: kept, at the bottom, never in the call (stale.ts)
+  const stale = staleIds(state);
+  const rows = displayRows(state, stale);
   const raceStatus = useRaceStatus(season, round, state.maxLap);
   const leaderLap = rows[0]?.lap ?? null;
   const groups = alertGroups(state);
   const announcement = state.announcements[state.announcements.length - 1] ?? null;
   const anyRunning = (replays.status?.running.length ?? 0) > 0;
-  const flagged = flaggedPairs(state);
-  const call = flagged[0] ?? null;
-  const context = useCallContext(season, round, call?.attackerId ?? null, state.maxLap);
-  const sinceLap = useSinceLap(state.maxLap, nextRun.generation);
   const mode = modeOf(replays.current, state.sessionEnded, state.connection);
   const ended = mode.tone === "ended";
+  const finished = raceEnded(replays.current, state.sessionEnded, leaderLap, race?.laps ?? null);
+  const flagged = finished ? [] : flaggedPairs(state, stale);
+  const call = flagged[0] ?? null;
+  const closest = call === null && !finished ? closestPair(state, index, stale) : null;
+  const streaming = isActive(replays.current) || mode.tone === "live";
+  // the leader's lap also for a page that holds only the snapshot so far (late join, before the next crossing)
+  const lapNow = leaderLapOf(state);
+  const layout = callLayout(call !== null, streaming, lapNow, finished);
+  // the engineer view (trend, tyres) of the pair the call shows: the call, else the closest pair; the race's pit
+  // loss from any response. Keyed on the leader's lap, so a late joiner with only the snapshot fetches at once.
+  const { context, pitLoss } = useCallContext(season, round, (call ?? closest)?.attackerId ?? null, lapNow);
+  const sinceLap = useSinceLap(state.maxLap, nextRun.generation);
+  const towerRowsReserved = Math.max(20, entrants?.length ?? 0, rows.length);
 
   const simulate = (attackerId: string) => {
     setView("race");
@@ -212,7 +227,7 @@ function LiveRaceView({
       <a className="skip-link" href="#the-call">
         Skip to the undercut call
       </a>
-      <div className="race-head">
+      <div className="race-head race-head-live">
         <nav aria-label="Breadcrumb" className="crumbs">
           <Link href="/">All races</Link>
         </nav>
@@ -241,7 +256,9 @@ function LiveRaceView({
           </div>
         </div>
         <nav aria-label="Race views" className="race-views">
-          <Link href={`/race/${season}/${round}/analysis`}>Race analysis</Link>
+          <Link href={`/race/${season}/${round}/analysis`}>
+            <PhoneLabel full="Race analysis" short="Analysis" />
+          </Link>
           <Link href={`/race/${season}/${round}/drivers`}>Drivers</Link>
         </nav>
       </div>
@@ -251,6 +268,7 @@ function LiveRaceView({
           model={model}
           lap={leaderLap}
           laps={race?.laps ?? null}
+          progress={lapProgress(state, stale)}
           raceStatus={raceStatus}
           connection={state.connection}
           sessionEnded={state.sessionEnded}
@@ -284,16 +302,20 @@ function LiveRaceView({
         ) : null}
         {/* The race view stays mounted (its local state and the alert live region survive a tab switch). */}
         <div role="tabpanel" id="page-panel-race" aria-labelledby="page-tab-race" hidden={view !== "race"}>
-          <div className="dash">
+          <div className="dash" style={{ "--tower-rows": towerRowsReserved } as CSSProperties}>
             <div className="dash-call">
               <TheCall
                 state={state}
                 entrants={index}
                 model={model}
                 context={context}
+                pitLoss={pitLoss}
                 onSimulate={(p: CallPair) => simulate(p.attackerId)}
                 replayIdle={!isActive(replays.current)}
                 onOpenReplay={() => setDrawer(true)}
+                layout={layout}
+                ended={finished}
+                onArchive={onArchive}
               />
               <AlertFeed
                 groups={groups}
@@ -302,21 +324,29 @@ function LiveRaceView({
                 entrants={index}
                 flaggedNow={flagged}
                 sinceLap={sinceLap}
+                maxLap={lapNow}
+                ended={finished}
                 onSimulate={(a) => simulate(a)}
               />
             </div>
             <div className="dash-tower">
-              <TowerPanel rows={rows} lapsDown={(id) => lapsDown(state, id)} entrants={index} />
+              <TowerPanel
+                rows={rows}
+                lapsDown={(id) => lapsBehind(state, id)}
+                entrants={index}
+                callPair={call}
+                staleLap={(id) => (stale.has(id) ? staleSince(state, id) : null)}
+              />
             </div>
             <div className="dash-more">
-              <WhatIfPanel ref={whatif} season={season} round={round} order={state.order} entrants={index} request={request} />
+              <WhatIfPanel ref={whatif} season={season} round={round} order={state.order} entrants={index} request={request} suggested={call?.attackerId ?? null} />
               <GapChart state={state} pair={call} live />
               <PipelinePanel
                 events={state.seen.length}
                 snapshots={state.snapshots}
                 malformed={state.malformed}
                 duplicates={state.duplicates}
-                unknown={state.unknownDrivers}
+                unlisted={unlistedCars(state)}
               />
               <Legend />
             </div>
@@ -328,7 +358,7 @@ function LiveRaceView({
 }
 
 /** The pipeline as a supporting layer (critique F06): the client's own counters and a short "How it works". */
-function PipelinePanel(props: { events: number; snapshots: number; malformed: number; duplicates: number; unknown: number }) {
+function PipelinePanel(props: { events: number; snapshots: number; malformed: number; duplicates: number; unlisted: number }) {
   return (
     <section className="panel pipeline-panel" aria-labelledby="pipeline-h">
       <h2 id="pipeline-h">Pipeline</h2>
@@ -350,8 +380,10 @@ function PipelinePanel(props: { events: number; snapshots: number; malformed: nu
           <dd className="num">{props.duplicates}</dd>
         </div>
         <div>
-          <dt>Unknown drivers</dt>
-          <dd className="num">{props.unknown}</dd>
+          <dt>
+            Cars not yet in a snapshot <InfoTip id="unlisted" />
+          </dt>
+          <dd className="num">{props.unlisted}</dd>
         </div>
       </dl>
       <details className="pipeline-how">

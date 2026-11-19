@@ -6,6 +6,7 @@
 import type { Health, Replay } from "./api";
 import { type EntrantIndex, teammates } from "./entrants";
 import { type AlertGroup, alertKey, type Connection, type DriverRow, type RaceState } from "./reducer";
+import { leaderLap, staleIds } from "./stale";
 
 /** The rule's gap threshold G (the deployed primary model, G = 3.5 s; the health check names the live one). */
 export const RULE_GAP_S = 3.5;
@@ -80,15 +81,16 @@ function pairAt(state: RaceState, i: number): CallPair | null {
 
 /** The pairs flagged now: every car whose driver hash carries ``undercut_flag``, against the car directly
  * ahead in the order. This comes from the snapshot and the lap frames, so it is right after a late join or
- * a reconnect too (the alert history is not in the snapshot; critique F09). Highest probability first,
- * then the newest alert, then the higher position. */
-export function flaggedPairs(state: RaceState): CallPair[] {
+ * a reconnect too (the alert history is not in the snapshot; critique F09). A pair with a stale car (no
+ * timing for 2 or more leader laps: ``stale.ts``) is left out: its flag is the last decision's, kept in the
+ * hash after the car stopped. Highest probability first, then the newest alert, then the higher position. */
+export function flaggedPairs(state: RaceState, stale: ReadonlySet<string> = staleIds(state)): CallPair[] {
   const out: CallPair[] = [];
   for (let i = 1; i < state.order.length; i += 1) {
     const id = state.order[i];
     if (id !== undefined && state.drivers[id]?.undercutFlag) {
       const p = pairAt(state, i);
-      if (p !== null) out.push(p);
+      if (p !== null && !stale.has(p.attackerId) && !stale.has(p.defenderId)) out.push(p);
     }
   }
   return out
@@ -100,12 +102,26 @@ export function flaggedPairs(state: RaceState): CallPair[] {
 /** The call: the best flagged pair, or null. */
 export const theCall = (state: RaceState): CallPair | null => flaggedPairs(state)[0] ?? null;
 
-/** The closest pair that is not teammates and not in the pit lane (shown, muted, when nothing is flagged). */
-export function closestPair(state: RaceState, entrants: EntrantIndex): CallPair | null {
+/** Cars whose hash still carries ``undercut_flag`` but that cannot be a call: they or the car ahead are
+ * stale ("2 cars flagged, none qualifies"). */
+export function staleFlaggedCount(state: RaceState, stale: ReadonlySet<string> = staleIds(state)): number {
+  let n = 0;
+  for (let i = 1; i < state.order.length; i += 1) {
+    const id = state.order[i];
+    const ahead = state.order[i - 1];
+    if (id !== undefined && ahead !== undefined && state.drivers[id]?.undercutFlag && (stale.has(id) || stale.has(ahead))) n += 1;
+  }
+  return n;
+}
+
+/** The closest pair that is not teammates, not in the pit lane and has no stale car (shown, muted, when
+ * nothing is flagged). */
+export function closestPair(state: RaceState, entrants: EntrantIndex, stale: ReadonlySet<string> = staleIds(state)): CallPair | null {
   let best: CallPair | null = null;
   for (let i = 1; i < state.order.length; i += 1) {
     const p = pairAt(state, i);
     if (p === null || p.gapS === null) continue;
+    if (stale.has(p.attackerId) || stale.has(p.defenderId)) continue;
     const a = state.drivers[p.attackerId];
     const d = state.drivers[p.defenderId];
     if (a?.inPit || d?.inPit) continue;
@@ -115,10 +131,19 @@ export function closestPair(state: RaceState, entrants: EntrantIndex): CallPair 
   return best;
 }
 
+/** The main reason the closest pair is not a call, in words. */
+export function closestReason(pair: Pick<CallPair, "gapS">, g: number = RULE_GAP_S): string {
+  if (pair.gapS === null) return "gap unknown";
+  const gap = `${pair.gapS.toFixed(1)} s`;
+  if (pair.gapS > g) return `gap ${gap}, outside the ${g} s rule window`;
+  return `gap ${gap} now, but not flagged at the last decision (a pit lap, a neutralised lap, or the gap was above ${g} s then)`;
+}
+
 /** Why there is no call right now, in words. */
 export function noCallReason(state: RaceState, entrants: EntrantIndex, g: number = RULE_GAP_S): string {
   if (state.order.length < 2) return "Waiting for the first lap of the race stream.";
-  const lap = state.maxLap > 0 ? ` at lap ${state.maxLap}` : "";
+  const now = leaderLap(state);
+  const lap = now > 0 ? ` at lap ${now}` : "";
   const close = closestPair(state, entrants);
   if (close === null || close.gapS === null) return `No car is an undercut candidate${lap}.`;
   if (close.gapS > g) return `No car is within ${g} s of a non-teammate ahead${lap}.`;
@@ -126,29 +151,38 @@ export function noCallReason(state: RaceState, entrants: EntrantIndex, g: number
 }
 
 // ------------------------------------------------------------------ gauge
+/** The gauge's axis never ends before this many seconds, so a small gap is not drawn at the far right. */
+export const GAUGE_MIN_S = 5;
+
 export interface Gauge {
-  /** The scale's end in seconds: the pit loss, or the gap and G when they are larger. */
+  /** The axis end in seconds: ``max(5 s, gap × 1.5)``, so the gap sits at two thirds of the axis or less. */
   maxS: number;
   /** 0–100 along the track */
   gapPct: number;
-  gPct: number;
-  pitLossPct: number | null;
-  /** The gap is beyond the scale's end (drawn at the end with a "beyond" mark). */
-  gapBeyond: boolean;
+  /** The rule window's end (the rule's gap threshold, 3.5 s for the deployed model). */
+  windowPct: number;
+  /** Where the gap will be next lap if the trend holds (gap + trend, never below 0), or null without a trend. */
+  nextS: number | null;
+  nextPct: number | null;
+  /** The next-lap gap is beyond the axis end (the arrow stops at the end, marked). */
+  nextBeyond: boolean;
 }
 
-/** Geometry of the gap-against-pit-loss scale: 0 s on the left, the race's pit loss on the right. The rule
- * window (0 to G) is shaded and the current gap is the marker. Without a pit loss the scale ends at twice G. */
-export function gaugeGeometry(gapS: number, pitLossS: number | null, g: number = RULE_GAP_S): Gauge {
-  const end = pitLossS !== null && pitLossS > g ? pitLossS : g * 2;
-  const maxS = end;
+/** Geometry of the gap gauge: 0 s on the left, ``max(5 s, gap × 1.5)`` on the right, the rule window (0 to
+ * the rule's gap threshold) shaded, the gap now as the marker and the trend as an arrow to next lap's gap.
+ * The pit loss is not on this axis (it is a different quantity; the call states it in text). */
+export function gaugeGeometry(gapS: number, trendSPerLap: number | null = null, g: number = RULE_GAP_S): Gauge {
+  const gap = Math.max(0, gapS);
+  const maxS = Math.max(GAUGE_MIN_S, gap * 1.5, g);
   const pct = (s: number) => Math.max(0, Math.min(100, (s / maxS) * 100));
+  const nextS = trendSPerLap === null || !Number.isFinite(trendSPerLap) ? null : Math.max(0, gap + trendSPerLap);
   return {
     maxS,
-    gapPct: pct(Math.max(0, gapS)),
-    gPct: pct(g),
-    pitLossPct: pitLossS === null ? null : pct(pitLossS),
-    gapBeyond: gapS > maxS,
+    gapPct: pct(gap),
+    windowPct: pct(g),
+    nextS,
+    nextPct: nextS === null ? null : pct(nextS),
+    nextBeyond: nextS !== null && nextS > maxS,
   };
 }
 
@@ -180,6 +214,40 @@ export const TRIGGER_TEXT: Record<AlertGroup["trigger"], string> = {
   probability_crossed: "crossed 50%",
   pit_in: "attacker pitted",
 };
+
+/** An alert from the leader's lap or the one before (it arrived within the last lap): the only alerts the feed
+ * marks in the signal colour. After the finish (``ended``) nothing is live, so no alert is new. */
+export const alertIsNew = (g: Pick<AlertGroup, "decisionLap">, maxLap: number, ended = false): boolean =>
+  !ended && maxLap > 0 && g.decisionLap >= maxLap - 1;
+
+/** The accessible text of an alert pair's counter ("4×"). */
+export const alertCountText = (count: number): string => `${count} ${count === 1 ? "alert" : "alerts"} for this pair`;
+
+// ------------------------------------------------------------------ the call's states
+/** The gap the rule saw when it flagged the pair: the decision lap and gap of this page's alert for the pair.
+ * Null when that alert arrived before the page opened (the snapshot carries no alert history). */
+export function decisionGap(call: Pick<CallPair, "alert">): { lap: number; gapS: number } | null {
+  return call.alert === null ? null : { lap: call.alert.decisionLap, gapS: call.alert.gapS };
+}
+
+/** The race is over: the replay finished, ``session_end`` arrived, or the leader has completed the race's
+ * last lap (nobody pits after the chequered flag). A replay stopped mid-race is not "ended". */
+export function raceEnded(current: Pick<Replay, "state"> | null, sessionEnded: boolean, leaderLap: number | null, laps: number | null): boolean {
+  if (sessionEnded || current?.state === "finished") return true;
+  return leaderLap !== null && laps !== null && laps > 0 && leaderLap >= laps;
+}
+
+export type CallLayout = "full" | "compact";
+
+/** The call keeps its full reserved height while a replay streams, so a call appearing or disappearing never
+ * moves the alert feed: with no call it fills that height with the closest pair. It shrinks to one line only
+ * when nothing streams (no active replay, or no lap yet) and there is no call, and always once the race has
+ * ended (the call stops at the chequered flag). */
+export function callLayout(hasCall: boolean, streaming: boolean, maxLap: number, ended: boolean): CallLayout {
+  if (ended) return "compact";
+  if (hasCall) return "full";
+  return !streaming || maxLap < 1 ? "compact" : "full";
+}
 
 // ------------------------------------------------------------------ the previous-lap marker (F38)
 /** The lap a car's gap was measured at when that lap is behind the leader's and the car is not simply

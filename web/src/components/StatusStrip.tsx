@@ -5,6 +5,9 @@ import { type ReactNode, useEffect, useId, useRef } from "react";
 import { type Mode, type ModelIdentity, modelDetail } from "@/lib/call";
 import { type RaceStatus, SOURCE_TEXT, STATUS_LABEL, STATUS_WORDS } from "@/lib/raceStatus";
 import type { Connection } from "@/lib/reducer";
+import type { LapProgress } from "@/lib/stale";
+
+import { PhoneLabel } from "./PhoneLabel";
 
 const CONN_TEXT: Record<Connection, string> = {
   connecting: "Connecting",
@@ -12,17 +15,26 @@ const CONN_TEXT: Record<Connection, string> = {
   reconnecting: "Reconnecting",
   closed: "Stream closed",
 };
+/** The connection's short form on a phone (``PhoneLabel``). */
+const CONN_SHORT: Record<Connection, string> = {
+  connecting: "Connecting",
+  connected: "Connected",
+  reconnecting: "Reconnecting",
+  closed: "Closed",
+};
 
 /** The race page's persistent status band (critique F06, F10, F23, F28): what is playing (REPLAY 10×, PAUSED,
  * STOPPED, FINISHED, or LIVE), the SMOKE TEST stamp when the sample model scores, the lap, the track status,
  * the scoring model's id and the stream connection, each in its own cell (never a dot-joined string), plus the
- * replay drawer. One band at any width; the cells wrap inside it on a phone. The mode cell is a polite status
+ * replay drawer. One band at any width; on a phone the cells wrap onto two lines (the race state first) and some labels take a
+ * short form (``PhoneLabel``), so nothing scrolls sideways or is cut. The mode cell is a polite status
  * region, so a pause, stop or finish is announced once. */
 export function StatusStrip({
   mode,
   model,
   lap,
   laps,
+  progress = null,
   raceStatus,
   connection,
   sessionEnded,
@@ -33,6 +45,8 @@ export function StatusStrip({
   model: ModelIdentity | null;
   lap: number | null;
   laps: number | null;
+  /** how many running cars have crossed the line on the leader's lap */
+  progress?: LapProgress | null;
   raceStatus: RaceStatus | null;
   connection: Connection;
   sessionEnded: boolean;
@@ -42,48 +56,63 @@ export function StatusStrip({
   children: ReactNode;
 }) {
   const kind = raceStatus?.status ?? "unknown";
-  const conn = connection === "closed" && sessionEnded ? "Session ended" : CONN_TEXT[connection];
+  const ended = connection === "closed" && sessionEnded;
+  const conn = ended ? "Session ended" : CONN_TEXT[connection];
+  const connShort = ended ? "Ended" : CONN_SHORT[connection];
   return (
     <section className="status-strip" aria-label="Race status">
-      <p className={`ss-mode tone-${mode.tone}`} role="status" aria-live="polite" title={mode.description}>
-        <span className="ss-mode-label">{mode.label}</span>
-        <span className="visually-hidden">{`: ${mode.description}`}</span>
-      </p>
-      {model?.smoke ? (
-        <p className="stamp stamp-smoke" title="The sample deployment model, trained on the two sample races: a smoke test of the pipeline, not a result.">
-          SMOKE TEST
-          <span className="visually-hidden">: the sample model is scoring; its probabilities are not results.</span>
+      {/* one group: laid out as cells of the strip on a wide screen, one scrollable line on a phone */}
+      <div className="ss-cells">
+        <p className={`ss-mode tone-${mode.tone}`} role="status" aria-live="polite" title={mode.description}>
+          <span className="ss-mode-label">{mode.label}</span>
+          <span className="visually-hidden">{`: ${mode.description}`}</span>
         </p>
-      ) : null}
-      <p className="ss-cell ss-lap">
-        <span className="ss-k">Lap</span>{" "}
-        <span className="num ss-v" aria-label={`Lap ${lap ?? 0} of ${laps ?? "unknown"}`}>
-          <span className="lc-now">{lap ?? "—"}</span>
-          <span className="ss-of">/{laps ?? "—"}</span>
-        </span>
-      </p>
-      <p className={`ss-cell ss-track race-status race-status-${kind}`} title={raceStatus === null ? undefined : SOURCE_TEXT[raceStatus.source]}>
-        <span className="ss-k">Track</span>{" "}
-        <span className="ss-v race-status-code">
-          {STATUS_LABEL[kind]}
-          {raceStatus?.source === "estimated" ? <span className="race-status-est"> est.</span> : null}
-        </span>
-        <span className="visually-hidden">{`: ${STATUS_WORDS[kind]}`}</span>
-      </p>
-      <p className="ss-cell ss-model" title={model === null ? undefined : modelDetail(model)}>
-        <span className="ss-k">Model</span>{" "}
-        <span className="ss-v num">{model === null ? "unavailable" : model.version}</span>
-        {model !== null && modelDetail(model) ? <span className="ss-detail">{modelDetail(model)}</span> : null}
-      </p>
-      <p className={`ss-cell ss-conn conn conn-${connection}`}>
-        <span className={`ss-dot dot-${connection}`} aria-hidden="true" />
-        {conn}
-      </p>
-      {onArchive !== null ? (
-        <button type="button" className="btn btn-quiet btn-small ss-archive" onClick={onArchive}>
-          Open the post-race archive
-        </button>
-      ) : null}
+        {model?.smoke ? (
+          <p className="stamp stamp-smoke" title="The sample deployment model, trained on the two sample races: a smoke test of the pipeline, not a result.">
+            SMOKE TEST
+            <span className="visually-hidden">: the sample model is scoring; its probabilities are not results.</span>
+          </p>
+        ) : null}
+        <p className="ss-cell ss-lap">
+          <span className="ss-k">Lap</span>{" "}
+          <span className="num ss-v" aria-label={`Lap ${lap ?? 0} of ${laps ?? "unknown"}`}>
+            <span className="lc-now">{lap ?? "—"}</span>
+            <span className="ss-of">/{laps ?? "—"}</span>
+          </span>
+        </p>
+        <p className="ss-cell ss-progress" title="Running cars that have crossed the line on the leader's lap (cars with no timing for 2 or more laps are not counted)">
+          {progress === null ? null : (
+            <>
+              <span className="num">{progress.crossed}</span>
+              <span className="ss-k">of</span>
+              <span className="num">{progress.running}</span>
+              <span className="ss-k">crossed</span>
+            </>
+          )}
+        </p>
+        <p className={`ss-cell ss-track race-status race-status-${kind}`} title={raceStatus === null ? undefined : SOURCE_TEXT[raceStatus.source]}>
+          <span className="ss-k">Track</span>{" "}
+          <span className="ss-v race-status-code">
+            {STATUS_LABEL[kind]}
+            {raceStatus?.source === "estimated" ? <span className="race-status-est"> est.</span> : null}
+          </span>
+          <span className="visually-hidden">{`: ${STATUS_WORDS[kind]}`}</span>
+        </p>
+        <p className="ss-cell ss-model" title={model === null ? undefined : modelDetail(model)}>
+          <span className="ss-k">Model</span>{" "}
+          <span className="ss-v num">{model === null ? "unavailable" : model.version}</span>
+          {model !== null && modelDetail(model) ? <span className="ss-detail">{modelDetail(model)}</span> : null}
+        </p>
+        <p className={`ss-cell ss-conn conn conn-${connection}`}>
+          <span className={`ss-dot dot-${connection}`} aria-hidden="true" />
+          <PhoneLabel full={conn} short={connShort} />
+        </p>
+        {onArchive !== null ? (
+          <button type="button" className="btn btn-quiet btn-small ss-archive" onClick={onArchive}>
+            Open the post-race archive
+          </button>
+        ) : null}
+      </div>
       <div className="ss-end">{children}</div>
     </section>
   );
@@ -139,7 +168,7 @@ export function ReplayDrawer({
         aria-controls={`${id}-panel`}
         onClick={() => onOpenChange(!open)}
       >
-        Replay controls
+        <PhoneLabel full="Replay controls" short="Replay" />
         {summary ? <span className="replay-drawer-summary">{summary}</span> : null}
       </button>
       <div id={`${id}-panel`} className="replay-drawer-panel" hidden={!open}>

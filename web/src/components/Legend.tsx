@@ -1,7 +1,7 @@
 import { GLOSSARY, GROUP_TITLE, type GlossaryGroup } from "@/lib/legend";
 
 /** The live race page's groups (the analysis tab passes its own). */
-export const LIVE_GROUPS: readonly GlossaryGroup[] = ["tower", "alerts", "whatif"];
+export const LIVE_GROUPS: readonly GlossaryGroup[] = ["tower", "alerts", "whatif", "pipeline"];
 
 /** "How to read this": every marker of the dashboard in one collapsible list (native
  * ``<details>``, keyboard-operable without script). The texts are the tooltips' (``lib/legend``). */

@@ -2187,6 +2187,113 @@
     - **Detector:** the five `side-tab` hits are recorded in the inventory.
     - **Tests:** Vitest 454; `gapchart` and `seriesColour` tests and the four-line ΔE test were added; the 8
       contrast cases for `--best` were removed. The Makefile tests pass.
+- UI redesign: bug fixes and a hierarchy polish round on the approved layout (2026-11-19, branch `redesign/ui`;
+  not committed). Display only: no change to the reducer, the API, the stream job, Redis, Python or `results/`.
+  - **Bugs:**
+    - **Retired cars.** The client receives no retirement signal (none in the driver, tyre or timing hashes,
+      the events, the entrants or the engineer view; race control is full-race analysis only). New
+      `web/src/lib/stale.ts`: a car is stale when the leader has completed 2 or more laps since its last
+      crossing, beyond the laps it is down (`lapsDown` from the crossings received, else the gap to the leader
+      in leader lap times, for a late join). Stale cars are excluded from the call and the pairs flagged now,
+      show "no timing since L19" across Int and Gap, are dimmed (faint text, flag faint), sorted to the bottom
+      and never removed. A lapped car that keeps crossing stays eligible.
+    - **After the finish** (replay finished, `session_end`, or the leader on the last lap) the call reads
+      "Race ended at lap N", with no pit instruction, no Simulate and "Open the post-race archive".
+    - **Labels:** the gauge reads "gap now"; the rule line reads "gap at decision (lap N)" from this page's alert
+      for the pair, or "not received" after a late join.
+    - **Clipping:** no tower cell, alert line or call block is cut off at 1440 px in either theme (column widths
+      rebalanced, Gap 6.25rem for three-digit gaps; the alert meta wraps; the call 23.5rem tall).
+  - **Hierarchy:**
+    - the amber band is on the call's attacker and defender rows only (solid and dashed left rule, the role as
+      a word); other flagged rows have no band, the % semibold from 50%; alert types are neutral outlines, amber
+      only for alerts from the leader's lap or the one before, with the word "new";
+    - the boxed L-tag is now a small muted lap number in Gap; lapped cars show "+1 lap"; the strip shows
+      "N of M crossed";
+    - the gauge runs 0 to max(5 s, gap × 1.5), shades and labels "rule window 3.5 s", draws the trend as an
+      arrow to next lap's gap, and states the pit loss in text (no "G");
+    - PB/OB start on lap 2; PB is quieter (no outline);
+    - the gap chart's Highlight follows the call until the viewer picks; labels for the highlighted cars and
+      the top 5; the rest thin grey; the lap-1 label clear of the y labels;
+    - the what-if is preselected from the call (never run on its own), with "How to read this" and no empty
+      table;
+    - space: the tower is sized to the field; with no call while a replay streams the call keeps its height
+      and shows the closest pair (why, a muted gauge, "N cars flagged, none qualifies", a neutral Simulate);
+      it is one line only while idle, before lap 1 or after the finish (user decision 2026-11-19, so the feed
+      never moves while streaming); the feed ends on a whole row with "N more below"; on a phone the head and
+      the strip are one line each and the call starts at 168 px.
+  - **Retired-car check (read-only, 2024 R5):** last laps BOT 19, TSU 26, RIC 33. After its last lap no car had
+    an `undercut_alert` or a decision (0 and 0 each; race totals: alerts 12 / 8 / 9, decisions 28 / 19 / 12).
+    BOT's driver hash kept `undercut_flag` for laps 20–56, and from lap 27 BOT sat directly behind TSU: before
+    this change the call showed BOT → TSU for 30 laps. Sources: the archive bundle and
+    `data/demo/2024_5_20261119T054513.908Z/decisions.jsonl`.
+  - **Tests:** Vitest 454 -> 492 (new `stale.test.ts` and `polish.test.ts`; new cases in `call`, `tower`,
+    `gapchart` and `theme`; the L-tag, gauge and "+1 L" assertions updated for the new markup). Playwright
+    `race-layout.spec.ts`: at most 2 banded rows and only the call's pair; no tower cell, alert line, call block
+    or alert row cut off; the first-viewport and layout-shift checks in both themes; the call within 180 px on
+    a phone. Contrast: 184 of 184 pairs pass AA (3 new pairs per theme for the call's band).
+  - **Evidence:** lint and typecheck clean; Vitest 492 passed; `node web/scripts/contrast-report.mjs --check`
+    passes. Playwright against the rebuilt web container (`make web-up`, then
+    `cd web && E2E_NO_SERVER=1 npx playwright test`): full lake, race-layout 4 of 4 and replay-controls passed
+    (smoke.spec needs the sample lake); sample lake, 8 passed, 1 skipped (latency, by design).
+  - **Screenshots** (`docs/design/after/`, 10× replays of 2024 R5, each under 400 KB): `d-dark-early` (lap 3,
+    no call: the closest pair), `d-dark-mid`, `d-light-mid`, `m-dark-mid` (lap 38: the call's band on two rows,
+    RIC/TSU/BOT stale at the bottom), `d-dark-latejoin`, `m-dark-latejoin` (page opened at lap 45),
+    `d-dark-finished` ("Race ended at lap 56"), `d-dark-sample-smoke` (sample lake and model: SYNTHETIC DEMO DATA
+    and SMOKE TEST).
+  - **Services:** `make web-up` rebuilt only the web container (replay guard, no FORCE; replays stopped through
+    the API first). The api ran `make api-up REPLAY=1 MODEL_DIR=models/undercut/sample_deploy_real_G3.5_k2` for
+    the smoke shot and the sample suite, then returned to `make api-up FULL=1 REPLAY=1` (health: hdfs full,
+    `deploy_real_G3.5_k2`; replay enabled).
+- UI redesign: final race-view fixes from the screenshot review (2026-11-19, branch `redesign/ui`; not committed).
+  Display only: no change to the reducer, the API, the stream job, Redis, Python or `results/`.
+  - **Phone header (390 px).** The race head and the status strip wrap instead of scrolling sideways, so
+    nothing is cut ("GREE") and every control is on screen: the Live/Post-race tabs, the Race/Engineer tabs and
+    the page links.
+    - Short labels on a phone only (`PhoneLabel`; the full text stays the accessible name): "Analysis",
+      "Replay", "Connected". The "Model" key word is visually hidden.
+    - The SYNTHETIC DEMO DATA notice wraps rather than being cut, and the call's heading no longer breaks.
+    - The call starts at 188 px on the full lake. The sample deployment's stamps get a 240 px budget (user
+      decision).
+  - **Pit loss after a late join.** Cause: the call took the pit loss from the engineer response
+    (`useCallContext`), which was fetched only once `state.maxLap >= 1`. A snapshot never sets `maxLap`, so a
+    page that held only the snapshot fetched nothing until the next crossing (m-dark-latejoin was taken in that
+    window), and the value was also dropped whenever the call's attacker changed. It was not a mobile path.
+    Fix: the fetch keys on `leaderLap(state)`, and the race's pit loss (one value per race, `pit_loss(season,
+    round)` in the API) is kept from any response.
+  - **Unknown drivers.** Cause: the reducer's `unknownDrivers` counts, once per car, an event that arrived before
+    any snapshot listed that car. It has nothing to do with the entrant list. A replay start clears the race
+    keys, so cars whose lap-1 frame beat the snapshot listing them were counted (10), and a late joiner's first
+    snapshot lists all 20 (0). The counter only grows, though every car was listed by the next snapshot.
+    Fix (display only): the panel shows "Cars not yet in a snapshot", the cars still unlisted (`unlistedCars`,
+    `known === false`), with a tooltip (glossary `unlisted`, new legend group "Pipeline"). The reducer counter is
+    unchanged.
+  - **Alert feed.** Sampled pixels showed only the lap-55 badge amber in the finished shot (laps 49–53 were
+    already neutral). After the finish no alert is new (user decision; live keeps "leader's lap or the one
+    before"). The "4×" counter has a title and the accessible text "4 alerts for this pair".
+  - **Gap chart.** Before the first lap frame the live chart is one line, "First lap arrives at the next
+    crossing.", not an empty 0–1 s axis.
+  - **What-if.** The status line reserves one line (it was 2.6rem), and the empty error region takes no space,
+    so the panel height follows its content.
+  - **Tests:**
+    - Vitest 492 -> 512: new `final-fixes.test.ts` and `pipeline.test.ts`; `gapchart.test.ts` updated for
+      the new empty state.
+    - Playwright `race-layout.spec.ts`:
+      - at 390×844: every header and strip control is fully in the viewport, and no box in the notice, head
+        or strip is cut;
+      - the call starts within 200 px (240 px with the sample stamps);
+      - the call's pit loss equals the engineer API's at both widths;
+      - the what-if has no gap under its status line.
+  - **Evidence:** lint and typecheck clean; Vitest 512 passed; `node web/scripts/contrast-report.mjs --check`
+    reports all pairs meet AA.
+    - Playwright against the rebuilt web container (`make web-up`): sample lake 8 passed, 1 skipped (latency,
+      by design); full lake race-layout 4 of 4.
+  - **Screenshots** (`docs/design/after/`, a 10× replay of 2024 R5, each under 230 KB): `d-dark-early` (lap 3),
+    `m-dark-mid` (lap 38), `d-dark-latejoin` and `m-dark-latejoin` (both opened at lap 45: both show "pit
+    loss 23.1 s from all earlier races"), `d-dark-finished` (no amber in the feed).
+  - **Services:**
+    - only `make web-up` and `make api-up` were used (replays started and stopped through the API);
+    - the api ran in sample mode for the e2e suite and is back on `make api-up FULL=1 REPLAY=1` (health:
+      hdfs full, `deploy_real_G3.5_k2`; replay enabled; no replay running).
 ## Next
 - UI redesign: approve Step 2, then the race picker (F36), analysis, drivers, archive and engineer layouts
   (F20, F21), the session-end summary (F23).
@@ -2199,6 +2306,21 @@
 - S18: report, docs and demo rehearsal (#44): `docs/report/`, `docs/demo_script.md`.
 - Push and watch the first CI run of the `e2e` job on GitHub (runner build time and disk are unmeasured).
 ## Known issues
+- UI final fixes (2026-11-19):
+  - On a phone, after a stop or the finish, the strip's "Open the post-race archive" button takes a third strip
+    line, so the call starts at 220 px (188 px while a replay streams). The e2e check runs during a replay.
+  - In sample mode, the SYNTHETIC DEMO DATA notice wraps to a second line on a phone once health loads: a
+    one-time shift at page load, before anything streams.
+  - The reducer's `unknownDrivers` counter is unchanged and still cumulative; only the panel shows the live
+    "not yet in a snapshot" count instead.
+- UI polish round (2026-11-19):
+  - "Stale" is inferred (2 leader laps without a crossing, beyond laps down), not a retirement signal. A car
+    that pits for a long repair is marked stale until it crosses again. After a late join under a safety car
+    the gap-to-leader estimate of laps down uses the leader's last (slow) lap time and can under-count.
+  - The stale car's last `undercut_flag` stays in Redis until `session_end` (the stream does not clear it);
+    the view hides it. A server-side clear would change the stream job and needs approval.
+  - `e2e/smoke.spec.ts` leaves its 60× replay running when it ends; a later `make web-up` is then refused by the
+    replay guard until that replay is stopped (seen in this round; the spec was not changed).
 - UI redesign Step 2:
   - SMOKE TEST is inferred from the `sample_` prefix of `model_version` (health does not expose the model's
     `smoke_test` stamp).

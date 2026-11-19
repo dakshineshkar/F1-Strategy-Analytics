@@ -178,7 +178,7 @@ describe("timing tower", () => {
     expect(body).toContain('<span class="visually-hidden">not a candidate</span>');
     expect(body).toMatch(/class="tyre-age tyre-age-real"[^>]*aria-describedby="tip-age"/);
     expect(body).toMatch(/class="tyre-age tyre-age-estimated"[^>]*aria-describedby="tip-age"/);
-    expect(body).toContain('aria-describedby="tip-lapsDown">+1 L');
+    expect(body).toContain('<span aria-describedby="tip-lapsDown">+1 lap</span>');
     expect(body).toContain('aria-describedby="tip-lapsDown">IN PIT');
   });
 

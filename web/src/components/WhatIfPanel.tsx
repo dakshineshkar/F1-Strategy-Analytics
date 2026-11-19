@@ -22,7 +22,6 @@ import {
   whatifMessage,
 } from "@/lib/whatif";
 
-const STRATEGY_ORDER = ["pit_now", "pit_next_lap", "stay_out"] as const;
 
 /** One scale for every range bar of a result: ± the widest end, so rows compare at a glance. */
 function rangeScale(rows: readonly Strategy[]): number {
@@ -75,24 +74,6 @@ function StrategyRow({ s, scale }: { s: Strategy; scale: number }) {
   );
 }
 
-function Skeleton() {
-  return (
-    <tbody className="wi-skeleton">
-      {STRATEGY_ORDER.map((k) => (
-        <tr key={k}>
-          <th scope="row">
-            <span className="wi-name">{STRATEGY_LABEL[k]}</span>
-            <span className="wi-timeline">pit laps appear after a run</span>
-          </th>
-          <td className="wi-prob num">—</td>
-          <td className="wi-num num">—</td>
-          <td className="wi-num num">—</td>
-        </tr>
-      ))}
-    </tbody>
-  );
-}
-
 /** A request from the call or an alert: fill the pair and run (``nonce`` makes a repeat click run again). */
 export interface WhatIfRequestFromCall {
   attacker: string;
@@ -104,16 +85,23 @@ export interface WhatIfRequestFromCall {
  * the attacker comes out ahead, the expected gap and its 80% range), with the calibration caveat next to
  * the numbers; never odds. There is no default pair: it starts from the call, an alert, or the attacker
  * picked here. The defender is derived (the API simulates only the car directly ahead) and a teammate pair
- * is named before the run. Before a run the three rows are drawn empty, in the size they will take. */
+ * is named before the run. Until the viewer picks an attacker, the selection follows the call's attacker
+ * (``suggested``), but nothing runs until Run is pressed (or Simulate on the call or an alert). Before a run
+ * there is no table, only a one-line state; the explanation sits in a "How to read this" disclosure. */
 export const WhatIfPanel = forwardRef<HTMLElement, {
   season: number;
   round: number;
   order: string[];
   entrants?: EntrantIndex;
   request?: WhatIfRequestFromCall | null;
-}>(function WhatIfPanel({ season, round, order, entrants = {}, request = null }, ref) {
+  /** the call's attacker: preselected until the viewer picks (never run on its own) */
+  suggested?: string | null;
+}>(function WhatIfPanel({ season, round, order, entrants = {}, request = null, suggested = null }, ref) {
   const choices = attackerChoices(order);
-  const [attacker, setAttacker] = useState<string>("");
+  /** null: follow ``suggested``; "" or an id: the viewer's choice */
+  const [chosen, setAttacker] = useState<string | null>(null);
+  const following = chosen === null && suggested !== null && choices.includes(suggested);
+  const attacker = chosen ?? (following ? (suggested ?? "") : "");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<WhatIf | null>(null);
@@ -163,7 +151,9 @@ export const WhatIfPanel = forwardRef<HTMLElement, {
       ? `${code(result.attacker)} on ${code(result.defender)} from lap ${result.inputs.current_lap ?? "?"}: ${result.n} simulated runs, seed ${result.seed}, ${Math.round(result.runtime_ms)} ms`
       : choices.length === 0
         ? "Waiting for the race order."
-        : "Choose an attacker, or press Simulate on the call or an alert.";
+        : following && defender !== null
+          ? `No run yet. ${code(attacker)} on ${code(defender)} is preselected from the call: press Run what-if.`
+          : "No run yet. Choose an attacker, or press Simulate on the call or an alert.";
   const all = result ? [...result.strategies, ...result.sensitivity] : [];
   const scale = rangeScale(all);
   const modelNote =
@@ -188,7 +178,7 @@ export const WhatIfPanel = forwardRef<HTMLElement, {
       >
         <label className="wi-field">
           <span>Attacker</span>
-          <select value={attacker} onChange={(e) => setAttacker(e.target.value)} disabled={choices.length === 0}>
+          <select value={attacker} onChange={(e) => setAttacker(e.target.value)} disabled={choices.length === 0} aria-describedby="whatif-status">
             <option value="">Choose a car</option>
             {choices.map((id) => (
               <option key={id} value={id}>
@@ -217,44 +207,47 @@ export const WhatIfPanel = forwardRef<HTMLElement, {
       <p className="replay-error" role="alert">
         {error ?? ""}
       </p>
-      <p id="whatif-note" className="panel-note">
-        {glossary("whatif").text}
+      <p className="panel-note wi-summary">
+        A modelled comparison of three strategies from the same race state: not odds, and less well calibrated than the
+        model.
       </p>
-      <table className="whatif-table">
-        <caption className="visually-hidden">
-          Modelled comparison of three pit strategies from the same race state: share of simulated runs with the
-          attacker ahead once both cars have stopped, expected gap and 80% range
-        </caption>
-        <thead>
-          <tr>
-            <th scope="col">Strategy</th>
-            <th scope="col">Share of sim runs ahead</th>
-            <th scope="col">Expected gap</th>
-            <th scope="col">80% range</th>
-          </tr>
-        </thead>
-        {result ? (
-          <>
-            <tbody>
-              {result.strategies.map((s) => (
-                <StrategyRow key={s.strategy} s={s} scale={scale} />
-              ))}
-            </tbody>
-            <tbody className="wi-sensitivity">
-              <tr>
-                <th scope="rowgroup" colSpan={4}>
-                  Sensitivity: the defender covers 2 laps later
-                </th>
-              </tr>
-              {result.sensitivity.map((s) => (
-                <StrategyRow key={`s-${s.strategy}`} s={s} scale={scale} />
-              ))}
-            </tbody>
-          </>
-        ) : (
-          <Skeleton />
-        )}
-      </table>
+      <details className="wi-how">
+        <summary>How to read this</summary>
+        <p id="whatif-note" className="panel-note">
+          {glossary("whatif").text}
+        </p>
+      </details>
+      {result ? (
+        <table className="whatif-table">
+          <caption className="visually-hidden">
+            Modelled comparison of three pit strategies from the same race state: share of simulated runs with the
+            attacker ahead once both cars have stopped, expected gap and 80% range
+          </caption>
+          <thead>
+            <tr>
+              <th scope="col">Strategy</th>
+              <th scope="col">Share of sim runs ahead</th>
+              <th scope="col">Expected gap</th>
+              <th scope="col">80% range</th>
+            </tr>
+          </thead>
+          <tbody>
+            {result.strategies.map((s) => (
+              <StrategyRow key={s.strategy} s={s} scale={scale} />
+            ))}
+          </tbody>
+          <tbody className="wi-sensitivity">
+            <tr>
+              <th scope="rowgroup" colSpan={4}>
+                Sensitivity: the defender covers 2 laps later
+              </th>
+            </tr>
+            {result.sensitivity.map((s) => (
+              <StrategyRow key={`s-${s.strategy}`} s={s} scale={scale} />
+            ))}
+          </tbody>
+        </table>
+      ) : null}
       {result ? (
         <>
           <p className="whatif-model">

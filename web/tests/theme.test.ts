@@ -34,9 +34,10 @@ function pairs(t: Theme): [string, string, string, number][] {
     for (const fg of UI_ROLES) out.push([t[fg], t[bg], `${fg} (mark) on ${bg}`, AA_UI]);
   }
   // a flagged tower row: its text, numbers and flag mark sit on the signal wash
-  for (const fg of ["text", "muted", "signalInk"] as const) out.push([t[fg], t.signalWash, `${fg} on signalWash`, AA_TEXT]);
+  for (const fg of ["text", "muted", "faint", "signalInk"] as const) out.push([t[fg], t.signalWash, `${fg} on signalWash`, AA_TEXT]);
   out.push([t.signalMark, t.signalWash, "signalMark on signalWash", AA_UI]);
   out.push([t.focus, t.signalWash, "focus on signalWash", AA_UI]);
+  for (const fg of ["gain", "loss"] as const) out.push([t[fg], t.signalWash, `${fg} (mark) on signalWash`, AA_UI]);
   // the call's probability chip and alert type chips: ink on the signal fill
   out.push([t.signalOn, t.signal, "signalOn on signal", AA_TEXT]);
   // the banner (legacy names) and the placeholder (F34) use faint on surface2 (inputs)

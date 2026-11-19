@@ -138,12 +138,18 @@ export function TowerPanel({
   entrants,
   captionNote,
   extrasNote = null,
+  callPair = null,
+  staleLap,
 }: {
   rows: DriverRow[];
   lapsDown: (driverId: string) => number;
   entrants: EntrantIndex;
   captionNote?: string;
   extrasNote?: string | null;
+  /** live only: the call's pair (the only banded rows) */
+  callPair?: { attackerId: string; defenderId: string } | null;
+  /** live only: a stale car's last lap (``stale.ts``) */
+  staleLap?: (driverId: string) => number | null;
 }) {
   const prefs = useTowerPrefs();
   return (
@@ -157,6 +163,8 @@ export function TowerPanel({
         pinned={prefs.pinned}
         onPin={prefs.pinToggle}
         extrasNote={extrasNote}
+        callPair={callPair}
+        {...(staleLap !== undefined ? { staleLap } : {})}
         {...(captionNote !== undefined ? { captionNote } : {})}
       />
     </>

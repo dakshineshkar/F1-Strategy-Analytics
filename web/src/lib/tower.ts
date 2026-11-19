@@ -42,18 +42,25 @@ export function bestSoFar(rows: readonly DriverRow[]): BestSoFar {
 
 export type Mark = "OB" | "PB" | null;
 
+/** PB / OB tags start on this lap: on lap 1 every car's first sector time is trivially its own best and one of
+ * them is the overall best, so twenty tags would say nothing. */
+export const MARKS_FROM_LAP = 2;
+
+/** The lap the car's timing values belong to (the timing hash's lap, else the car's latest lap). */
+const marksShown = (row: Pick<DriverRow, "timingLap" | "lap">): boolean => (row.timingLap ?? row.lap ?? 0) >= MARKS_FROM_LAP;
+
 /** "OB" when the car's last-lap value equals the race's best so far, "PB" when it equals its own
- * best so far (it set or equalled it on that lap), else null. OB beats PB. */
+ * best so far (it set or equalled it on that lap), else null. OB beats PB. None before lap 2. */
 export function sectorMark(row: DriverRow, i: SectorIndex, best: BestSoFar): Mark {
   const v = row.timing.sectors[i];
-  if (v === null) return null;
+  if (v === null || !marksShown(row)) return null;
   if (best.sectors[i] !== null && v === best.sectors[i]?.value) return "OB";
   return v === row.timing.pbSectors[i] ? "PB" : null;
 }
 
 export function trapMark(row: DriverRow, best: BestSoFar): Mark {
   const v = row.timing.speedTrapKph;
-  if (v === null) return null;
+  if (v === null || !marksShown(row)) return null;
   if (best.speedTrap !== null && v === best.speedTrap.value) return "OB";
   return v === row.timing.pbSpeedTrapKph ? "PB" : null;
 }

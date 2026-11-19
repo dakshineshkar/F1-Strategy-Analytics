@@ -2,8 +2,8 @@
 
 import { useHealth } from "@/lib/useHealth";
 
-/** A fixed-height strip under the top bar (always rendered, so it never shifts the page). In sample
- * mode it carries the SYNTHETIC DEMO DATA warning. */
+/** A strip under the top bar, always rendered (one line on a wide screen). In sample mode it carries the
+ * SYNTHETIC DEMO DATA warning, which wraps onto a second line on a phone instead of being cut. */
 export function DataBanner() {
   const health = useHealth();
   const mode = health?.lake.mode ?? null;
