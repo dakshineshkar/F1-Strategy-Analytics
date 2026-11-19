@@ -2458,14 +2458,88 @@
     - the sample fallback is prebuilt (`make demo-pipeline`, 153 s), so during the demo it is only `make up`
       plus `make demo-replay DEMO_SPEED=10` (28 s, measured on the dev host).
   - Tests: `test_repo_docs.py` expects "TO BE COMPLETED BEFORE SUBMISSION" and allows `docs/report/figures/`.
+- UI redesign Step 4A (2026-11-19, on `main`; not committed): the engineer tab, the post-race archive and the race
+  picker moved onto the DESIGN.md system, plus the analysis race-control F35 row (user decision). Display only:
+  `LiveRaceView`, the reducer, the API, the stream job, Python, Redis and `results/` are unchanged, and so are the
+  shared components (`TowerPanel`, `GapChart`, `AlertFeed`, `StatusStrip`). The archive only passes them props
+  they already take.
+  - **Engineer** (`EngineerPanel.tsx`, `lib/engineer.ts`):
+    - **Cards:** the three cars are columns of one panel split by hairlines (no panel in a panel). The focus
+      column has a 2px text-ink top rule and no amber.
+    - **Status line:** separate cells (lap, track, race control).
+    - **F21:** each pair's sparkline sits right beside its sentence. It is a 2px neutral line with the latest lap as
+      its only dot and a direct end label; with no laps it says why.
+    - **F20:** the rejoin bar is a seconds axis behind the focus:
+      - car codes sit in lanes that never overlap (`rejoinLanes`, reusing the archive's `markerRows`);
+      - 0 s and the scale are written out;
+      - the rejoin slot is an authored SVG triangle with the word "rejoin" in its own row, replacing the `▼`
+        glyph and the amber;
+      - "Pit loss: no estimate" replaces "—".
+    - **F35:** strategy calls carry a Watch / Info chip (word and outline), not a side bar.
+    - **F19:** with nothing locked and no call, the focus defaults to P2 (`pickFocus`).
+  - **Archive** (`PostRaceView.tsx`, new `ArchiveStrip.tsx`, `ArchiveControls.tsx`, the archive branch of
+    `RaceDashboard`):
+    - **F08:** the head follows the live order (crumbs, h1, mode tabs, Race analysis / Drivers). It is rendered
+      once above the loading and loaded states, so a keyboard switch keeps focus on the tab.
+    - **F31:** a skip link to the lap controls.
+    - **Status strip:** POST-RACE, lap, a track code chip carrying the border style (as in the live strip), model
+      and scorer. On its own line, as visible text, the latest key race-control message with its lap and the status
+      source (user decision: the banner's information is kept).
+    - **Banner removed:** `RaceStatusBanner` and its side-border CSS are deleted. These were the two "intentional"
+      side-tab hits. Nothing is suppressed.
+    - **F07:** the Tyres panel is removed (`TyrePanel` deleted, user decision).
+    - **F13 / F22:** the alert rows show both cars' tyres. Amber appears only on alerts from the scrubbed lap or
+      the one before, as on the live page at that lap, and never after the finish.
+    - **Controls:** a neutral slider and alert markers; 24 px markers (WCAG 2.5.8) inset so they stay inside
+      their lane.
+    - **F35:** race-control key rows use weight and a "Key" chip.
+    - **F33:** all sizes are tokens.
+  - **Picker** (`RacePicker.tsx`, `lib/races.ts`):
+    - **F36:** a "Start here" card above the search (`startHere`): the race replaying now, else the `make demo` race
+      (2024 R5), else the newest race, with links to the race and, when one exists, its post-race archive. It is
+      neutral (no amber) and its height is reserved while the lists load.
+    - **Cards:** token type.
+    - **F34:** re-checked (the placeholder is `--faint`, 5.33:1 and up).
+  - **Analysis:** `.rc-list li.is-key` lost its side bar (weight and a "Key" chip).
+  - **Live parity:** two rules the live strip had inherited from deleted blocks are kept on purpose, with comments:
+    the track cell's flex values, and the 12.8 px `.mode-note`. The live phone-head rules are untouched; the
+    archive head has its own copies.
+  - **Tests:**
+    - Vitest 532 passed:
+      - `engineer.test.ts`: rejoin slot markup, Watch chip, `rejoinLanes`, `zeroPct`, the `pickFocus` fallback,
+        the empty sparkline;
+      - `status.test.ts`: the banner render tests moved to `ArchiveStrip`;
+      - `tyre.test.ts` and `legend.test.ts`: TyrePanel cases dropped;
+      - new `picker.test.ts`;
+      - `archive.test.ts` unchanged and green.
+    - Lint and typecheck are clean, and `contrast-report --check` says all pairs meet AA.
+    - `smoke.spec.ts` (selector-only changes):
+      - the picker link is scoped to `#race-list`;
+      - the archive mode check is `.status-strip .ss-mode` "POST-RACE";
+      - the lap 1 / 21 race-status checks moved to the strip (`.ss-lap`, the track chip, `.ss-rc` with the source).
+    - New `e2e/screens-layout.spec.ts` (picker, archive at lap 30, engineer; 1440 dark and light, and 390):
+      - no page overflow and nothing cut;
+      - the key controls are in the first viewport;
+      - no amber on the archive controls;
+      - every marker is inside its panel;
+      - rejoin labels do not overlap;
+      - the sparkline is beside its sentence.
+    - Sample lake (`make api-up REPLAY=1`, `make web-up`, `E2E_NO_SERVER=1 npx playwright test`): 17 passed,
+      1 skipped (latency, by design).
+    - Full lake: `race-layout.spec` 4 of 4 and `screens-layout.spec` 8 of 8.
+  - **impeccable detect** (`web/src/app web/src/components`): 0 findings and no suppressions. HEAD's stylesheet had
+    5 side-tab hits.
+  - **Screenshots** (each under 130 KB):
+    - `docs/design/before/`: `d-dark-archive.png`, `d-light-archive.png`, `m-dark-picker.png` (new; the engineer
+      and picker dark ones were already there);
+    - `docs/design/after/`: `d-dark-engineer.png`, `d-dark-archive.png`, `d-light-archive.png`,
+      `d-dark-picker.png`, `m-dark-picker.png`.
 ## Next
 - S18B: the demo rehearsal with `docs/demo_script.md` (full lake, then the sample-mode fallback); fill in section 16
   (team contributions) of the report and run `make report-pdf` again.
-- Then the remaining UI redesign:
-  - the Engineer, Archive, race picker, Analysis, Telemetry and Drivers pages;
-  - the three F35 side bars, fixed when their pages are rebuilt, and a re-check of the archive race-status
-    banner (inventory, "Detector findings carried to later steps");
-  - F36 (race picker), F20 and F21 (analysis, drivers, archive and engineer layouts), F23 (session-end summary).
+- Then the remaining UI redesign (Step 4B): the Analysis, Telemetry and Drivers pages on the design system (they
+  still read the legacy aliases), and F23 (a session-end summary). The engineer, archive and picker are done (4A),
+  and every F35 bar is gone.
   - F24 API stays declined (revisit only if time allows).
 ## Known issues
 - Report §16 team contributions still to be filled in (blocker for submission).
@@ -2479,8 +2553,15 @@
     Markdown, not that the PDF is current.
   - **Parity wording.** The parity result is "maximum input difference 0.0, maximum probability difference
     3.3e-16" (`docs/architecture.md`), not byte-identical. The report uses the docs' wording.
-  - **Screenshots.** The engineer, what-if and analysis views exist only as pre-redesign screenshots
-    (`docs/design/before/`, 2026-11-18).
+  - **Screenshots.** The what-if and analysis views exist only as pre-redesign screenshots
+    (`docs/design/before/`, 2026-11-18). The engineer, archive and picker have after shots (Step 4A).
+- UI redesign Step 4A (2026-11-19):
+  - **Picker "Start here":** the card reads `/api/replays` once, when the page loads. A replay started later shows
+    after a reload; it is not polled, to keep load off the API.
+  - **Archive amber:** the archive's "new" alerts follow the scrubbed lap (alerts from that lap or the one before,
+    as on the live page then). On 2024 R5 at lap 30 the newest alerts are from lap 20, so that view has no amber.
+  - **Engineer history:** the engineer sparkline shows only the laps the engineer API returns for the pair. A
+    longer pair history from before the page opened would need a causal laps endpoint (like F24); it is not built.
 - Pinned versions reviewed on 2026-11-19 (no pin changed, freeze): Python 3.12 (security-only until 2028) and
   Java 17 LTS are kept on purpose for stability; newer minor releases exist for PySpark, Kafka, Hadoop and
   FastAPI.
@@ -2521,11 +2602,9 @@
   - Line colours are cut to four, validated on all pairs. A lap-times chart with more than four drivers draws
     the rest in neutral, with a dash and an end label.
   - The archive gap chart is neutral (Highlight draws one car in text colour).
-  - The pages not yet redesigned use the legacy token aliases and still have their own accent bars (F35).
-    `impeccable detect` reports them as five `side-tab` hits in `web/src/app/globals.css`, none suppressed:
-    - three are real (F35): analysis race-control rows, engineer calls, archive alert rows;
-    - two are intentional: the archive race-status banner, whose border style shows the track status.
-    The list is in docs/design/inventory.md, "Detector findings carried to later steps".
+  - The pages not yet redesigned (analysis, telemetry, drivers) still read the legacy token aliases. The five
+    `side-tab` hits are resolved by Step 4A (2026-11-19): `impeccable detect` finds nothing and suppresses nothing.
+    See docs/design/inventory.md, "Detector findings carried to later steps".
 - Feature 7:
   - A pause or a speed change applies before the producer's next event. Events already sent still reach the
     dashboard for up to about 1 s (Kafka and the 500 ms trigger), and longer while the stream job catches up

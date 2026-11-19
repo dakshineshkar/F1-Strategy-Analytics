@@ -38,7 +38,8 @@ test("sample race: a 60× replay fills the tower and updates laps", async ({ pag
   // Keyboard only: search, move into the list with the arrow keys, open with Enter.
   await page.getByLabel("Search races").fill("chinese");
   await expect(page.locator("#race-count")).toContainText("1 of 2 races");
-  const link = page.getByRole("link", { name: /Chinese Grand Prix/ });
+  // the race list's own link (the Start here card above the search links the demo race too)
+  const link = page.locator("#race-list").getByRole("link", { name: /Chinese Grand Prix/ });
   await link.focus();
   await page.keyboard.press("Home");
   await expect(link).toBeFocused();
@@ -389,14 +390,19 @@ test("post-race archive: open the mode by keyboard and scrub the race", async ({
   const archive = page.getByRole("tab", { name: "Post-race (archive)" });
   await expect(archive).toBeFocused();
   await expect(archive).toHaveAttribute("aria-selected", "true");
-  await expect(page.locator(".conn")).toContainText("Post-race (archive)");
+  // the archive's status strip (step 4A): the mode chip replaces the old "Post-race (archive)" pill
+  const arcStrip = page.getByRole("region", { name: "Race status" });
+  await expect(arcStrip.locator(".ss-mode")).toContainText("POST-RACE");
   await expect(page).toHaveURL(/\/race\/2024\/5\?mode=archive&lap=1$/);
   await expect(page.locator("table.tower tbody tr")).toHaveCount(20, { timeout: 15_000 });
   await expect(page.getByText(/SYNTHETIC tyre data/)).toBeVisible();
-  // Feature 5 (schema v2 bundle): the banner per lap from the bundle, and the pit counts.
-  const arcBanner = page.getByRole("region", { name: "Race status" });
-  await expect(arcBanner).toContainText(/Lap 1\b/);
-  await expect(arcBanner).not.toContainText("schema v1");
+  // Feature 5 (schema v2 bundle): the race status per lap from the bundle, now in the archive's status strip (the
+  // banner is gone): the lap, the track code chip, and the source as visible text; and the pit counts.
+  await expect(arcStrip.locator(".ss-lap")).toHaveText(/^Lap\s*1\/56$/);
+  await expect(arcStrip.locator(".ss-track .race-status-code")).toHaveText(/^(GREEN|SC \/ VSC|UNKNOWN)/);
+  // lap 1: the source is visible text (at lap 1 the sample has too few laps to estimate yet)
+  await expect(arcStrip.locator(".ss-rc")).toContainText(/Track status (from the track-status feed|estimated from lap times|not enough laps yet)/);
+  await expect(arcStrip).not.toContainText("schema v1");
   await expect(page.locator('table.tower td[data-col="pits"]').first()).toHaveText(/^\d+$/);
 
   // The slider: arrow keys step one lap, and its value is read as text.
@@ -418,7 +424,9 @@ test("post-race archive: open the mode by keyboard and scrub the race", async ({
   await neutral.click();
   await expect(slider).toHaveAttribute("aria-valuetext", "Lap 21 of 56");
   await expect(page).toHaveURL(/lap=21$/);
-  await expect(arcBanner).toContainText(/Lap 21\b/);
+  await expect(arcStrip.locator(".ss-lap")).toHaveText(/^Lap\s*21\/56$/);
+  await expect(arcStrip.locator(".ss-track .race-status-code")).toHaveText("SC / VSC est.");
+  await expect(arcStrip.locator(".ss-rc")).toContainText("Track status estimated from lap times");
   await expect(page.getByRole("toolbar", { name: "Race events: jump to a lap" })).toBeVisible();
   await page.keyboard.press("End");
   await expect(page.locator(".ac-marker").last()).toBeFocused();

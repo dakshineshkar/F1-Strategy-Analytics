@@ -3,6 +3,7 @@
  * fetch with its error texts, and the pure helpers behind the panel (unit-tested). */
 
 import { ApiError, racePath, request } from "./api";
+import { markerRows } from "./archive";
 import { isBool, isDriverId, isFiniteNumber, isInt, isObj, isStr } from "./guard";
 
 export const KNOWN_COMPOUNDS = ["SOFT", "MEDIUM", "HARD", "INTERMEDIATE", "WET"] as const;
@@ -345,6 +346,24 @@ export function rejoinBar(r: EngineerRejoin): { marks: RejoinMark[]; slot: numbe
   return { marks, slot: r.pit_loss_s === null ? null : at(r.pit_loss_s), window: [lo, hi] };
 }
 
+/** The rejoin bar's label lanes (critique F20): the marks in axis order, each with the lowest lane where its
+ * code label (``labelPx`` wide) clears the labels already placed on a track ``widthPx`` wide, so two codes
+ * never overlap (the same greedy rule as the archive's marker lanes). */
+export function rejoinLanes(marks: readonly RejoinMark[], widthPx: number, labelPx = 30): { mark: RejoinMark; lane: number }[] {
+  const sorted = [...marks].sort((a, b) => a.pct - b.pct || a.driverId.localeCompare(b.driverId));
+  const rows = markerRows(
+    sorted.map((m) => m.pct),
+    0,
+    100,
+    widthPx,
+    labelPx,
+  );
+  return sorted.map((mark, i) => ({ mark, lane: rows[i] ?? 0 }));
+}
+
+/** Where 0 s (the focus now) sits on the rejoin bar's window, in percent. */
+export const zeroPct = ([lo, hi]: readonly [number, number]): number => (hi > lo ? Math.round(((0 - lo) / (hi - lo)) * 1000) / 10 : 0);
+
 /** Calls whose id was not in the previous lap's list (announced once in the live region). */
 export function newCalls(prev: readonly EngineerCall[] | null, next: readonly EngineerCall[]): EngineerCall[] {
   if (prev === null) return [];
@@ -384,6 +403,7 @@ export function saveFocus(driverId: string | null, store: StorageLike | null = s
   }
 }
 
-/** The focus to show: the lock if that car is in the race, else P1. */
+/** The focus to show: the lock (or the call's attacker) if that car is in the race, else P2, so the car ahead
+ * is never empty by default (critique F19); P1 when it runs alone. */
 export const pickFocus = (locked: string | null, order: readonly string[]): string | null =>
-  locked !== null && order.includes(locked) ? locked : (order[0] ?? null);
+  locked !== null && order.includes(locked) ? locked : (order[1] ?? order[0] ?? null);

@@ -120,14 +120,8 @@ export function RaceDashboard({
   if (mode === "live") {
     return <LiveRaceView season={season} round={round} modeTabs={modeTabs} onArchive={unavailable ? null : () => setMode("archive")} />;
   }
-  return (
-    <>
-      {modeTabs}
-      <div role="tabpanel" id="mode-panel-archive" aria-labelledby="mode-tab-archive">
-        <PostRaceView season={season} round={round} initialLap={lap} onLap={onLap} />
-      </div>
-    </>
-  );
+  // the archive places the mode tabs in its own head (the live head's order) and renders its tabpanel
+  return <PostRaceView season={season} round={round} initialLap={lap} onLap={onLap} modeTabs={modeTabs} />;
 }
 
 /** The leader lap when this page first had one (per replay run): the alert feed's "since you opened this

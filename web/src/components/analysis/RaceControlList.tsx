@@ -45,6 +45,7 @@ export function RaceControlList({ rows, names, onLap }: { rows: readonly RaceCon
                 <span className="rc-msg">
                   {r.message ?? ""}
                   {r.driver_id ? <span className="visually-hidden"> ({names.name(r.driver_id)})</span> : null}
+                  {r.is_key ? <span className="tag rc-key-tag">Key</span> : null}
                 </span>
               </li>
             ))}

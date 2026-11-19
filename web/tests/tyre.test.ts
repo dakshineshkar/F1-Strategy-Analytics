@@ -3,7 +3,6 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
 import { TimingTower } from "@/components/TimingTower";
-import { TyrePanel } from "@/components/TyrePanel";
 import { toSnapshot } from "@/lib/api";
 import { parseEvent } from "@/lib/events";
 import { initialState, raceReducer as reduce, type DriverRow } from "@/lib/reducer";
@@ -158,11 +157,4 @@ describe("rendering: real vs estimated age is text, not colour", () => {
     expect(html).toContain('<span class="visually-hidden">tyre age unknown</span>');
   });
 
-  it("the tyre panel shows the same value with its unit and sizes the bar from it", () => {
-    const html = renderToStaticMarkup(createElement(TyrePanel, { rows: ROWS }));
-    expect(cells(html, "")).toEqual(["real", "real", "estimated", "unknown"]);
-    expect(html).toContain('<span aria-hidden="true">16 laps<span class="tag tag-used">used</span></span>');
-    expect(html).toContain('<span aria-hidden="true">13 laps<abbr class="age-est"');
-    expect(html).toContain("width:40%"); // 16 / 40 laps, the real value
-  });
 });

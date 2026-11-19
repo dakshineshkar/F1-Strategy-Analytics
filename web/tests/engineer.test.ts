@@ -13,12 +13,14 @@ import {
   pickFocus,
   probText,
   rejoinBar,
+  rejoinLanes,
   saveFocus,
   sparkline,
   stintText,
   toEngineer,
   trendText,
   tyreText,
+  zeroPct,
   type Engineer,
   type EngineerCar,
 } from "@/lib/engineer";
@@ -184,6 +186,23 @@ describe("engineer helpers", () => {
     expect(bar.slot).toBe(72.6);
     expect(bar.marks.find((m) => m.driverId === "foxtrot")?.projected).toBe(true);
     expect(rejoinBar({ ...ENG.rejoin, pit_loss_s: null }).slot).toBeNull();
+    expect(zeroPct(bar.window)).toBe(13.7); // 5 of 36.5 s
+    expect(zeroPct([0, 0])).toBe(0);
+  });
+
+  it("rejoin labels take the lowest lane where they clear the ones placed (F20: codes never overlap)", () => {
+    const m = (driverId: string, pct: number) => ({ driverId, pct, projected: false });
+    // 300 px track, 30 px labels: b (3 px from a) needs lane 1; c (33 px from a) clears it with the 2 px gap
+    const placed = rejoinLanes([m("c", 21), m("a", 10), m("b", 11), m("d", 50)], 300, 30);
+    expect(placed.map((p) => [p.mark.driverId, p.lane])).toEqual([
+      ["a", 0],
+      ["b", 1],
+      ["c", 0],
+      ["d", 0],
+    ]);
+    // a wide track keeps every label in lane 0
+    expect(rejoinLanes([m("a", 10), m("b", 30)], 1000, 30).every((p) => p.lane === 0)).toBe(true);
+    expect(rejoinLanes([], 300)).toEqual([]);
   });
 
   it("new calls are only those not in the previous lap's list", () => {
@@ -214,7 +233,10 @@ describe("engineer helpers", () => {
     expect(() => saveFocus("alpha", broken)).not.toThrow();
     expect(loadFocus(null)).toBeNull();
     expect(pickFocus("charlie", ["alpha", "charlie"])).toBe("charlie");
-    expect(pickFocus("zulu", ["alpha", "charlie"])).toBe("alpha");
+    // nothing locked (or the lock left the race): P2, so the car ahead is never empty (F19); P1 when alone
+    expect(pickFocus("zulu", ["alpha", "charlie"])).toBe("charlie");
+    expect(pickFocus(null, ["alpha", "charlie", "echo"])).toBe("charlie");
+    expect(pickFocus(null, ["alpha"])).toBe("alpha");
     expect(pickFocus(null, [])).toBeNull();
   });
 
@@ -258,6 +280,13 @@ describe("engineer view markup", () => {
     const m = html(createElement(GapSparkline, { pair: ENG.pair_behind!, label: "Gap CHA to BRA" }));
     expect(m).toContain("<title>Gap CHA to BRA by lap: 2.8, 2.4, 2.0, 1.6, 1.2 s</title>");
     expect(m).toContain("Gap CHA to BRA, laps 16–20: 2.8, 2.4, 2.0, 1.6, 1.2 s");
+    // the latest lap is the only dot, with its value as a direct label
+    expect((m.match(/<circle /g) ?? []).length).toBe(1);
+    expect(m).toContain('<span class="eng-spark-end num" aria-hidden="true">1.2 s</span>');
+    // no laps yet: it says why, never a caption of dashes (F12)
+    const none = html(createElement(GapSparkline, { pair: { ...ENG.pair_behind!, gaps: [] }, label: "Gap CHA to BRA" }));
+    expect(none).toContain("Gap CHA to BRA: no lap of this pair completed yet.");
+    expect(none).not.toContain("<svg");
   });
 
   it("the rejoin bar: a sentence, the pit loss with its source, the slot as a shape and text", () => {
@@ -265,8 +294,16 @@ describe("engineer view markup", () => {
     expect(m).toContain("Pit now: rejoins P5 behind ECH (0.8 s), ahead of FOX (2.4 s), in traffic.");
     expect(m).toContain("Pit loss 21.5 s: circuit prior from earlier races.");
     expect(m).toContain("1 cars a lap or more down are not placed.");
-    expect(m).toContain("▼ rejoin");
+    // the slot is an authored triangle (no ▼ glyph) plus its word, in its own row under the axis
+    expect(m).not.toContain("▼");
+    expect(m).toMatch(/<span class="rejoin-slot" style="left:72\.6%"><svg class="rejoin-slot-mark"[^>]*><path[^>]*><\/path><\/svg>rejoin<\/span>/);
     expect(m).toContain('class="rejoin-mark is-projected"');
+    expect(m).toContain('class="rejoin-tick is-projected"');
+    expect(m).toContain(">−5 s<");
+    expect(m).toContain(">+31.5 s behind<");
+    expect(html(createElement(RejoinBar, { rejoin: { ...ENG.rejoin, pit_loss_s: null }, names }))).toContain(
+      "Pit loss: no estimate (no pit-loss prior).",
+    );
     const bad = html(createElement(RejoinBar, { rejoin: { ...ENG.rejoin, reliable: false, reasons: ["SC"] }, names }));
     expect(bad).toContain("Unreliable: SC.");
   });
@@ -274,7 +311,11 @@ describe("engineer view markup", () => {
   it("calls: labelled as display rules, and aria-live only on the new calls", () => {
     const m = html(createElement(CallsList, { calls: ENG.calls, fresh: [ENG.calls[0]!], disclaimer: ENG.disclaimer }));
     expect(m).toContain("not model output.");
-    expect(m).toContain('<span class="tag">WATCH</span> Under threat from behind: CHA 64%');
+    // the kind is a chip (word and outline), never a side bar (F35)
+    expect(m).toContain(
+      '<span class="eng-kind kind-watch">Watch</span><span class="visually-hidden">: </span><span class="eng-call-text">Under threat from behind: CHA 64%',
+    );
+    expect(m).not.toContain("is-warn\" style");
     expect((m.match(/aria-live/g) ?? []).length).toBe(1);
     expect(m).toMatch(/aria-live="polite" aria-atomic="true">Under threat from behind: CHA 64%<\/div>/);
     expect(html(createElement(CallsList, { calls: [], fresh: [], disclaimer: "" }))).toContain("No call at this lap.");

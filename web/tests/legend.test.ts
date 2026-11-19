@@ -6,7 +6,6 @@ import { AlertFeed } from "@/components/AlertFeed";
 import { InfoTip } from "@/components/InfoTip";
 import { Legend } from "@/components/Legend";
 import { TimingTower } from "@/components/TimingTower";
-import { TyrePanel } from "@/components/TyrePanel";
 import { WhatIfPanel } from "@/components/WhatIfPanel";
 import { dismissesTip, GLOSSARY, glossary, THRESHOLD_PCT, tipId } from "@/lib/legend";
 import type { AlertGroup, DriverRow } from "@/lib/reducer";
@@ -208,10 +207,9 @@ describe("alerts and what-if", () => {
     expect(m).toContain(`<p id="whatif-note" class="panel-note">${esc(glossary("whatif").text)}</p>`);
   });
 
-  it("the whole dashboard's tooltip ids are unique (tower, tyre panel, alerts, what-if)", () => {
+  it("the whole dashboard's tooltip ids are unique (tower, alerts, what-if)", () => {
     const all = [
       html(createElement(TimingTower, { rows: ROWS, lapsDown: () => 0 })),
-      html(createElement(TyrePanel, { rows: ROWS })),
       html(createElement(AlertFeed, { groups: GROUPS, announcement: null })),
       html(createElement(WhatIfPanel, { season: 2024, round: 5, order: [] })),
       html(createElement(Legend)),
@@ -220,11 +218,8 @@ describe("alerts and what-if", () => {
     expect(new Set(list).size).toBe(list.length);
     const own = new Set(ids(all));
     for (const ref of describedBy(all)) expect(own.has(ref), ref).toBe(true);
-    // the tyre panel carries its own Age tip and its rows point to it
-    expect(all).toMatch(/class="tyre-age tyre-age-real"[^>]*aria-describedby="tip-age-panel"/);
     // no two tooltip buttons share an accessible name
     const names = tipButtons(all).map((b) => b.label);
     expect(new Set(names).size).toBe(names.length);
-    expect(names).toContain("About tyre age");
   });
 });

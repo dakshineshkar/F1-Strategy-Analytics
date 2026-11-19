@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useRef, useState, useSyncExternalStore } from "react";
+import { type CSSProperties, useEffect, useId, useRef, useState, useSyncExternalStore } from "react";
 
 import { CompoundTag } from "@/components/analysis/common";
 import { InfoTip } from "@/components/InfoTip";
@@ -15,6 +15,7 @@ import {
   pickFocus,
   probText,
   rejoinBar,
+  rejoinLanes,
   saveFocus,
   signed,
   sparkline,
@@ -26,12 +27,16 @@ import {
   type EngineerCar,
   type EngineerPair,
   type EngineerRejoin,
+  zeroPct,
 } from "@/lib/engineer";
 import { fullName, teammates, type EntrantIndex } from "@/lib/entrants";
 import { driverName, lapTime } from "@/lib/format";
+import { useWidth } from "@/lib/useWidth";
 
 const SPARK_W = 120;
 const SPARK_H = 32;
+/** Label lanes the rejoin bar always reserves (more only when a lap needs them). */
+const REJOIN_LANES = 3;
 
 interface Names {
   code: (id: string) => string;
@@ -48,21 +53,36 @@ function namesFor(entrants: EntrantIndex): Names {
   };
 }
 
-/** The gap of a pair over its last laps, as a small line (values also as text). */
+/** The gap of a pair over its last laps, as a small line beside the sentence it supports (critique F21): one
+ * neutral 2 px line, the latest lap as the only dot, its value as a direct label, and every value as text. */
 export function GapSparkline({ pair, label }: { pair: EngineerPair; label: string }) {
-  const pts = sparkline(pair.gaps, SPARK_W, SPARK_H);
+  const pts = sparkline(pair.gaps, SPARK_W, SPARK_H, 4);
   const values = pair.gaps.map((g) => `${g.gap_s.toFixed(1)}`).join(", ");
+  const last = pts[pts.length - 1] ?? null;
+  if (last === null) {
+    // say why there is no line (F12), never a caption of dashes
+    return (
+      <figure className="eng-spark">
+        <figcaption>{label}: no lap of this pair completed yet.</figcaption>
+      </figure>
+    );
+  }
   return (
     <figure className="eng-spark">
-      <svg viewBox={`0 0 ${SPARK_W} ${SPARK_H}`} role="img" aria-label={`${label}: ${values || "no laps"} s`} className="eng-spark-svg">
-        <title>{`${label} by lap: ${values || "no laps"} s`}</title>
-        {pts.length > 1 ? <polyline points={pts.map((p) => `${p.x},${p.y}`).join(" ")} fill="none" stroke="currentColor" strokeWidth={1.5} /> : null}
-        {pts.map((p) => (
-          <circle key={p.lap} cx={p.x} cy={p.y} r={1.75} fill="currentColor" />
-        ))}
-      </svg>
-      <figcaption className="muted">
-        {label}, laps {pair.gaps[0]?.lap ?? "—"}–{pair.gaps[pair.gaps.length - 1]?.lap ?? "—"}: {values || "—"} s
+      <div className="eng-spark-plot">
+        <svg viewBox={`0 0 ${SPARK_W} ${SPARK_H}`} role="img" aria-label={`${label}: ${values} s`} className="eng-spark-svg">
+          <title>{`${label} by lap: ${values} s`}</title>
+          {pts.length > 1 ? (
+            <polyline points={pts.map((p) => `${p.x},${p.y}`).join(" ")} fill="none" stroke="currentColor" strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
+          ) : null}
+          <circle cx={last.x} cy={last.y} r={3} fill="currentColor" stroke="var(--surface)" strokeWidth={1.5} />
+        </svg>
+        <span className="eng-spark-end num" aria-hidden="true">
+          {last.gap_s.toFixed(1)} s
+        </span>
+      </div>
+      <figcaption>
+        {label}, laps {pair.gaps[0]?.lap}–{last.lap}: {values} s
       </figcaption>
     </figure>
   );
@@ -138,10 +158,16 @@ export function EngineerCard({
   );
 }
 
-/** "Pit now" against the field: the cars as ticks on a time axis, the rejoin slot as a ▼ shape,
- * and the same in a sentence. */
+/** "Pit now" against the field (critique F20): a seconds axis (behind the focus now) with every car as a tick, the
+ * code labels in lanes so they never overlap, 0 s (the focus now) and the rejoin slot as an authored triangle in
+ * its own row under the axis, and the same in a sentence (the bar itself is hidden from screen readers). */
 export function RejoinBar({ rejoin, names }: { rejoin: EngineerRejoin; names: Names }) {
   const bar = rejoinBar(rejoin);
+  const { ref: trackRef, width: trackWidth } = useWidth<HTMLDivElement>(640, 120);
+  const placed = rejoinLanes(bar.marks, trackWidth);
+  const lanes = Math.max(REJOIN_LANES, ...placed.map((p) => p.lane + 1));
+  const zero = zeroPct(bar.window);
+  const [lo, hi] = bar.window;
   const sentence =
     rejoin.position === null
       ? "No rejoin estimate (no pit-loss prior)."
@@ -151,24 +177,49 @@ export function RejoinBar({ rejoin, names }: { rejoin: EngineerRejoin; names: Na
         (rejoin.in_traffic ? ", in traffic." : ".");
   return (
     <div className="eng-rejoin">
-      <p>
+      <p className="eng-rejoin-sentence">
         {sentence}{" "}
         {rejoin.reliable ? null : <strong className="eng-unreliable">Unreliable: {rejoin.reasons.join(", ")}.</strong>}
       </p>
       <p className="panel-note">
-        Pit loss {rejoin.pit_loss_s === null ? "—" : `${rejoin.pit_loss_s.toFixed(1)} s`}: {rejoin.pit_loss_text}.
+        {rejoin.pit_loss_s === null ? "Pit loss: no estimate (no pit-loss prior)." : `Pit loss ${rejoin.pit_loss_s.toFixed(1)} s: ${rejoin.pit_loss_text}.`}
         {rejoin.left_out > 0 ? ` ${rejoin.left_out} cars a lap or more down are not placed.` : ""}
       </p>
-      <div className="rejoin-bar" aria-hidden="true">
-        {bar.marks.map((m) => (
-          <span key={m.driverId} className={`rejoin-mark${m.projected ? " is-projected" : ""}`} style={{ left: `${m.pct}%` }}>
-            {names.code(m.driverId)}
+      <div className="rejoin-chart" aria-hidden="true" style={{ "--rj-lanes": lanes } as CSSProperties}>
+        <div className="rejoin-labels" ref={trackRef}>
+          {placed.map(({ mark, lane }) => (
+            <span
+              key={mark.driverId}
+              className={`rejoin-mark${mark.projected ? " is-projected" : ""}`}
+              style={{ left: `${mark.pct}%`, "--lane": lane } as CSSProperties}
+            >
+              {names.code(mark.driverId)}
+            </span>
+          ))}
+        </div>
+        <div className="rejoin-axis">
+          <span className="rejoin-zero" style={{ left: `${zero}%` }} />
+          {placed.map(({ mark }) => (
+            <span key={mark.driverId} className={`rejoin-tick${mark.projected ? " is-projected" : ""}`} style={{ left: `${mark.pct}%` }} />
+          ))}
+          {bar.slot !== null ? <span className="rejoin-slot-tick" style={{ left: `${bar.slot}%` }} /> : null}
+        </div>
+        <div className="rejoin-scale">
+          <span className="rejoin-scale-lo num">{lo < 0 ? `−${Math.abs(lo)}` : lo} s</span>
+          <span className="rejoin-scale-zero num" style={{ left: `${zero}%` }}>
+            0 s, now
           </span>
-        ))}
+          <span className="rejoin-scale-hi num">+{hi.toFixed(1)} s behind</span>
+        </div>
         {bar.slot !== null ? (
-          <span className="rejoin-slot" style={{ left: `${bar.slot}%` }}>
-            ▼ rejoin
-          </span>
+          <div className="rejoin-slot-row">
+            <span className="rejoin-slot" style={{ left: `${bar.slot}%` }}>
+              <svg className="rejoin-slot-mark" viewBox="0 0 10 8" width="10" height="8">
+                <path d="M5 0 L10 8 L0 8 Z" fill="currentColor" />
+              </svg>
+              rejoin
+            </span>
+          </div>
         ) : null}
       </div>
     </div>
@@ -191,7 +242,8 @@ function PairLine({ pair, names, label }: { pair: EngineerPair; names: Names; la
   );
 }
 
-/** The calls (display rules) and a live region that announces only calls new since the last lap. */
+/** The calls (display rules) and a live region that announces only calls new since the last lap. A call's kind is
+ * a chip that differs by its word and outline (Watch: 2 px solid, Info: 1 px dotted), never a side bar (F35). */
 export function CallsList({ calls, fresh, disclaimer }: { calls: readonly EngineerCall[]; fresh: readonly EngineerCall[]; disclaimer: string }) {
   return (
     <section className="eng-calls" aria-label="Strategy calls">
@@ -204,8 +256,10 @@ export function CallsList({ calls, fresh, disclaimer }: { calls: readonly Engine
       ) : (
         <ul>
           {calls.map((c) => (
-            <li key={c.id} className={c.severity === "warn" ? "is-warn" : undefined}>
-              <span className="tag">{c.severity === "warn" ? "WATCH" : "INFO"}</span> {c.text}
+            <li key={c.id} className={`eng-call${c.severity === "warn" ? " is-warn" : ""}`}>
+              <span className={`eng-kind kind-${c.severity === "warn" ? "watch" : "info"}`}>{c.severity === "warn" ? "Watch" : "Info"}</span>
+              <span className="visually-hidden">: </span>
+              <span className="eng-call-text">{c.text}</span>
             </li>
           ))}
         </ul>
@@ -304,25 +358,38 @@ export function EngineerPanel({
         </p>
       ) : (
         <>
+          {/* separate cells, never a dot-joined string; each wraps as a whole */}
           <p className="eng-status">
-            Lap {shown.lap}
-            {shown.lap !== shown.current_lap ? ` of ${shown.current_lap}` : ""} · {NEUTRAL_TEXT[shown.neutralised.status]}
-            {shown.neutralised.source === "estimated" ? " (estimated from lap times: no race-control data)" : ""}
-            {shown.neutralised.message ? ` · race control, lap ${shown.neutralised.message_lap}: ${shown.neutralised.message}` : ""}
-            {error !== null ? <span className="error"> · {error}</span> : null}
+            <span className="eng-cell">
+              <span className="k">Lap</span>{" "}
+              <span className="num">
+                {shown.lap}
+                {shown.lap !== shown.current_lap ? ` of ${shown.current_lap}` : ""}
+              </span>
+            </span>
+            <span className="eng-cell">
+              <span className="k">Track</span> {NEUTRAL_TEXT[shown.neutralised.status]}
+              {shown.neutralised.source === "estimated" ? <span className="muted"> (estimated from lap times: no race-control data)</span> : null}
+            </span>
+            {shown.neutralised.message ? (
+              <span className="eng-cell">
+                <span className="k">Race control, lap {shown.neutralised.message_lap}</span> {shown.neutralised.message}
+              </span>
+            ) : null}
+            {error !== null ? <span className="eng-cell error">{error}</span> : null}
           </p>
           <div className="eng-cards">
             <EngineerCard role="Ahead" car={shown.ahead} focus={shown.focus} entrants={entrants} isTeammate={shown.ahead !== null && mates.has(shown.ahead.driver_id)} names={names} />
             <EngineerCard role="Focus" car={shown.focus} focus={shown.focus} entrants={entrants} isTeammate={false} names={names} />
             <EngineerCard role="Behind" car={shown.behind} focus={shown.focus} entrants={entrants} isTeammate={shown.behind !== null && mates.has(shown.behind.driver_id)} names={names} />
           </div>
-          <div className="eng-pairs">
+          <section className="eng-pairs" aria-label="Gaps">
             <h3>
               Gaps <InfoTip id="gaptrend" /> <InfoTip id="engprob" />
             </h3>
             {shown.pair_ahead ? <PairLine pair={shown.pair_ahead} names={names} label="To the car ahead" /> : <p className="muted">Leading.</p>}
             {shown.pair_behind ? <PairLine pair={shown.pair_behind} names={names} label="From the car behind" /> : <p className="muted">No car behind.</p>}
-          </div>
+          </section>
           <section className="eng-rejoin-box" aria-label="Pit-rejoin estimate">
             <h3>
               If {names.code(shown.focus_id)} pits now <InfoTip id="rejoin" />

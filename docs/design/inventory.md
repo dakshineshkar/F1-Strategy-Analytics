@@ -111,19 +111,14 @@ The other 34 findings can be fixed in the web client alone. F37 is already fixed
 
 ## Detector findings carried to later steps
 
-`impeccable detect` was run on the redesigned live race view at the end of Step 2 (2026-11-19). It finds nothing
-in the race view. It reports five `side-tab` hits (a thick coloured left border on a row or card) in
-`web/src/app/globals.css`, all in sections kept unchanged from before the redesign. None is suppressed: the
-detector has no per-value ignore for `side-tab`, and a file-wide `"*"` ignore would also hide the three real hits.
-Line numbers are as of 2026-11-19; they move when the file changes, so search for the selector.
+**Resolved in Step 4A (2026-11-19): `impeccable detect --json web/src/app web/src/components` reports 0 findings,
+with no suppression in the code.** The same run on HEAD's stylesheet before the step gave the five `side-tab` hits
+below. Line numbers are from that stylesheet.
 
-| Line | Selector | Screen and element | Verdict | Next step |
+| Line (before) | Selector | Screen and element | Verdict | Resolution (Step 4A) |
 |---|---|---|---|---|
-| 710 | `.rc-list li.is-key` | Race analysis `/analysis`, race-control tab: key message rows | **Real (F35)**: accent left bar | Fix in the analysis redesign. Mark key rows another way (a text or kind chip, weight, or a row tint), not a side bar. |
-| 749 | `.eng-calls li` (plus `.is-warn`) | Engineer tab: strategy-call rows | **Real (F35)**: accent left bar | Fix in the engineer redesign (with F20, F21). |
-| 791 | `.arc-key` | Post-race archive: alert-list key rows | **Real (F35)**: accent left bar | Fix in the archive redesign. |
-| 590 | `.race-status` (`border-left-width: 6px`) | Post-race archive: race-status banner | **Intentional, keep.** The border style carries the track status: solid (green / SC), dashed (VSC), dotted (neutralised), double (red flag). The text code says it too, so colour is never the only cue. The critique already judged it a false positive. | Re-check once the archive page is rebuilt. If it stays, suppress it as narrowly as the tool allows. The detector has no per-selector or per-value ignore for `side-tab`, but it does accept an inline line marker (`/* impeccable-disable-next-line side-tab: border style encodes track status */`). Prefer that over a file-scoped `ignore-value side-tab "*" --file …`, which would also hide real hits. |
-| 603 | `.race-status.race-status-red` (`border-left-width: 9px`) | Post-race archive: race-status banner, red flag | **Intentional, keep** (as line 590: the double border marks a red flag) | As line 590. |
-
-The live race view's own status cell (`.ss-track.race-status`) sets `border: 0`, so the banner's side border
-does not show in the redesigned status strip.
+| 809 | `.rc-list li.is-key` | Race analysis `/analysis`, race-control tab: key message rows | **Real (F35)** | No side bar. A key row has its message in semibold and a neutral "Key" chip (`RaceControlList.tsx`). This screen was added to 4A by user decision. |
+| 848 | `.eng-calls li` (plus `.is-warn`) | Engineer tab: strategy-call rows | **Real (F35)** | No side bar. Rows have hairline dividers and a kind chip: Watch has a 2px solid outline and bold text; Info has a 1px dotted outline and muted text. |
+| 890 | `.arc-key` | Post-race archive: race-control key rows | **Real (F35)** | No side bar. Weight plus a neutral "Key" chip. |
+| 667 | `.race-status` (`border-left-width: 6px`) | Post-race archive: race-status banner | Was "intentional". **Decided on meaning (user decision):** the border style still carries the track status (DESIGN.md rule 7), but on the code chip, not as a side bar. | The banner is removed. The archive's status strip shows the track code in a chip with the same border styles as the live strip. On its own line, as visible text, it shows the latest key race-control message, its lap and the status source. `RaceStatusBanner.tsx` and its CSS are deleted, so no suppression is needed. |
+| 680 | `.race-status.race-status-red` (`border-left-width: 9px`) | Post-race archive: banner, red flag | As line 667 | Removed with the banner. A red flag is the double-bordered chip (as in the live strip). |

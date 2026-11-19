@@ -49,7 +49,6 @@ a:hover { text-decoration-color: var(--text); text-decoration-thickness: 2px; }
 
 h1, h2, h3 { margin: 0; font-family: var(--font-ui); font-weight: 600; }
 h2 { font-size: var(--fs-lg); line-height: 1.2; color: var(--text); }
-.page-title { font-size: var(--fs-xl); margin-bottom: var(--sp-4); }
 
 input, select, button { font: inherit; }
 ::placeholder { color: var(--faint); opacity: 1; }
@@ -141,20 +140,44 @@ main:focus { outline: none; }
 .tag-prevlap { border-style: dotted; color: var(--faint); font-family: var(--font-num); }
 .age-est { margin-left: 2px; font: 500 var(--fs-2xs)/1 var(--font-ui); color: var(--muted); text-decoration: none; }
 
-/* ------------------------------------------------------------------ race picker */
+/* ------------------------------------------------------------------ race picker (redesign step 4A) */
+/* Operate mode, no loud element: "Start here" leads by position and weight (a 2px text-ink rule on top), never by
+ * the signal amber. The race cards are one quiet list; numbers in Plex Mono. */
+.page-title { font: 600 var(--fs-xl)/1.2 var(--font-ui); margin: var(--sp-2) 0 var(--sp-4); }
+.start-here {
+  max-width: 44rem; min-height: 9.5rem; margin-bottom: var(--sp-5); padding: var(--sp-4);
+  border-color: var(--border); box-shadow: inset 0 2px 0 var(--text);
+}
+.start-here h2 { margin-bottom: var(--sp-2); font-size: var(--fs-md); color: var(--muted); }
+.start-race { margin: 0; display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--sp-1) var(--sp-2); font: 600 var(--fs-xl)/1.2 var(--font-ui); }
+.start-race .race-season { font-weight: 500; }
+.start-meta { display: inline-flex; flex-wrap: wrap; align-items: baseline; gap: 0 var(--sp-3); font: 500 var(--fs-sm)/1.2 var(--font-num); color: var(--muted); }
+.start-meta .tag { margin-left: 0; font-family: var(--font-ui); }
+.start-why { margin: var(--sp-1) 0 var(--sp-3); font: 400 var(--fs-sm)/1.45 var(--font-body); color: var(--text); }
+.start-actions { margin: 0; display: flex; flex-wrap: wrap; gap: var(--sp-2) var(--sp-3); }
+.start-actions .btn { text-decoration: none; }
+.start-open { border-width: 2px; border-color: var(--text); }
+.start-how { margin: var(--sp-3) 0 0; }
 .picker-search { display: grid; gap: var(--sp-1); max-width: 32rem; margin-bottom: var(--sp-4); }
-.picker-search label { font-weight: 500; }
+.picker-search label { font: 600 var(--fs-sm)/1.3 var(--font-ui); }
+.picker-search input { width: 100%; }
 .picker-search p { margin: 0; min-height: 1.3rem; font-size: var(--fs-sm); }
-.race-list { display: grid; gap: var(--sp-5); }
-.season ul { list-style: none; margin: var(--sp-2) 0 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(17rem, 1fr)); gap: var(--sp-2); }
+.race-list { display: grid; gap: var(--sp-6); }
+.season h2 { padding-bottom: var(--sp-1); border-bottom: 1px solid var(--rule); }
+.season h2 .muted { font: 500 var(--fs-sm)/1 var(--font-ui); }
+.season ul { list-style: none; margin: var(--sp-3) 0 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(17rem, 1fr)); gap: var(--sp-2); }
 .race-link {
-  display: grid; grid-template-columns: 3rem 1fr auto; align-items: center; gap: var(--sp-2);
+  display: grid; grid-template-columns: 2.75rem minmax(0, 1fr) auto; align-items: center; gap: 2px var(--sp-2);
   min-height: 2.75rem; padding: var(--sp-1) var(--sp-3); background: var(--surface); color: var(--text);
   text-decoration: none; border: 1px solid var(--rule); border-radius: var(--radius-md);
+  font: 600 var(--fs-md)/1.25 var(--font-ui);
 }
-.race-link:hover, .race-link:focus-visible { border-color: var(--text); }
+@media (hover: hover) and (pointer: fine) { .race-link:hover { border-color: var(--text); } }
+.race-link:focus-visible { border-color: var(--text); }
+.race-name { min-width: 0; overflow-wrap: anywhere; }
 .race-link .tag { grid-column: 2 / 4; justify-self: start; margin-left: 0; }
 .race-round, .race-laps { font: 500 var(--fs-sm)/1 var(--font-num); color: var(--muted); }
+.race-laps { white-space: nowrap; }
 
 /* ------------------------------------------------------------------ race page: head and status strip */
 .race-head {
@@ -188,6 +211,13 @@ main:focus { outline: none; }
 .ss-mode.tone-paused { border-style: dashed; }
 .ss-mode.tone-ended { border-style: double; border-width: 3px; }
 .ss-mode.tone-idle { color: var(--muted); border-style: dotted; }
+/* the post-race archive: a stored race, over (the same double border as a finished replay) */
+.ss-mode.tone-archive { border-style: double; border-width: 3px; }
+/* the archive strip's own line: the latest key race-control message, its lap and the status source, as text */
+.arc-strip .ss-rc { flex: 1 1 100%; min-width: 0; margin: 0; padding: 0 var(--sp-1) 2px; display: flex; flex-wrap: wrap; gap: 2px var(--sp-3); font: 400 var(--fs-xs)/1.4 var(--font-ui); }
+.ss-rc-msg { min-width: 0; overflow-wrap: anywhere; }
+.ss-rc-text { font-weight: 600; color: var(--text); }
+.ss-rc-src { color: var(--muted); }
 /* fixed cells: a value of another width (GREEN, SC; lap 9, 10) never moves the cells after it */
 .ss-lap { width: 6.5rem; }
 .ss-track { width: 9.5rem; }
@@ -614,12 +644,6 @@ main:focus { outline: none; }
 .chart-missing-label { fill: var(--muted); font: 500 11px var(--font-ui); }
 .chart-missing-label tspan:first-child { fill: var(--text); }
 
-/* Tyres panel (post-race archive) */
-.tyres { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; min-height: calc(1.6rem * 20); }
-.tyre-row { display: grid; grid-template-columns: 2.6rem 6rem 1fr 7rem; align-items: center; gap: var(--sp-2); height: 1.6rem; }
-.age-bar { height: 0.5rem; background: var(--surface-2); border: 1px solid var(--border); border-radius: 1px; overflow: hidden; }
-.age-fill { display: block; height: 100%; background: var(--bar); }
-.age-num { font: var(--fs-xs)/1 var(--font-num); text-align: right; color: var(--muted); white-space: nowrap; }
 
 /* ------------------------------------------------------------------ pipeline and legend (supporting layer) */
 .pipeline-stats { margin: 0; display: flex; flex-wrap: wrap; gap: var(--sp-2) var(--sp-6); }
@@ -661,25 +685,11 @@ main:focus { outline: none; }
 .drivers-note { margin: var(--sp-2) var(--sp-3) var(--sp-3); font-size: var(--fs-xs); }
 .site-footer { margin: var(--sp-8) auto var(--sp-4); padding: 0 var(--sp-4); max-width: 90rem; font-size: var(--fs-xs); color: var(--muted); }
 
-/* ------------------------------------------------------------------ the race-status banner (post-race archive) */
-.race-status {
-  display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-1) var(--sp-3); margin-bottom: var(--sp-2);
-  padding: var(--sp-2) var(--sp-3); background: var(--surface); border: 1px solid var(--rule); border-left-width: 6px;
-  border-radius: var(--radius-md);
-}
-.race-status-code { font: 700 var(--fs-sm)/1 var(--font-ui); min-width: 5.5rem; }
-.race-status-text { display: flex; flex-wrap: wrap; gap: 2px var(--sp-3); font-size: var(--fs-sm); flex: 1 1 14rem; min-width: 0; }
-.race-status-lap { font-family: var(--font-num); color: var(--muted); }
-.race-status-msg { font-weight: 500; overflow-wrap: anywhere; }
-.race-status-src { font-size: var(--fs-xs); }
-/* The status differs by its text code and by the left border style; the colour only repeats it. */
-.race-status.race-status-green { border-left-color: var(--gain); }
-.race-status.race-status-sc { border-left-color: var(--loss); }
-.race-status.race-status-vsc { border-left-color: var(--loss); border-left-style: dashed; }
-.race-status.race-status-neutralised { border-left-color: var(--loss); border-left-style: dotted; }
-.race-status.race-status-red { border-left-color: var(--danger); border-left-style: double; border-left-width: 9px; }
-.race-status.race-status-unknown { border-left-color: var(--border); }
-.ss-track.race-status { display: inline-flex; margin: 0; padding: 0; background: none; border: 0; }
+/* ------------------------------------------------------------------ track status cell (live and archive strips) */
+/* The track status is a text code in a chip whose border style repeats it (solid SC, dashed VSC, dotted
+ * neutralised, double red flag; see the .ss-track rules above). The archive's side-bar banner is gone (step 4A). */
+/* (these values were inherited from the old banner rule; kept so the live strip renders exactly as before) */
+.ss-track.race-status { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--sp-1) var(--sp-3); margin: 0; padding: 0; background: none; border: 0; border-radius: var(--radius-md); }
 
 /* ------------------------------------------------------------------ responsive */
 /* Below 1440 px the tower keeps Undercut next to the driver and scrolls inside its own region. */
@@ -705,11 +715,17 @@ main:focus { outline: none; }
   .race-head-live .race-views { order: 1; margin-left: auto; gap: var(--sp-3); }
   .race-head-live .race-head-tabs { order: 2; flex: 1 1 100%; gap: var(--sp-2); }
   .race-head-live .seg-tabs [role="tab"] { min-height: 1.5rem; padding: 0 var(--sp-2); }
+  /* the post-race archive's head wraps the same way (step 4A) */
+  .race-head-arc { gap: var(--sp-1) var(--sp-3); min-height: 0; margin-bottom: var(--sp-2); }
+  .race-head-arc h1 { font-size: var(--fs-md); }
+  .race-head-arc .race-views { order: 1; margin-left: auto; gap: var(--sp-3); }
+  .race-head-arc .race-head-tabs { order: 2; flex: 1 1 100%; gap: var(--sp-2); }
+  .race-head-arc .seg-tabs [role="tab"] { min-height: 1.5rem; padding: 0 var(--sp-2); }
   /* the other race pages keep their wrapping head (not redesigned yet) */
-  .race-head:not(.race-head-live) { gap: var(--sp-2); }
-  .race-head:not(.race-head-live) h1 { font-size: var(--fs-lg); flex: 1 1 100%; order: -1; }
-  .race-head:not(.race-head-live) .crumbs { order: -2; }
-  .race-head:not(.race-head-live) .race-views { margin-left: 0; }
+  .race-head:not(.race-head-live):not(.race-head-arc) { gap: var(--sp-2); }
+  .race-head:not(.race-head-live):not(.race-head-arc) h1 { font-size: var(--fs-lg); flex: 1 1 100%; order: -1; }
+  .race-head:not(.race-head-live):not(.race-head-arc) .crumbs { order: -2; }
+  .race-head:not(.race-head-live):not(.race-head-arc) .race-views { margin-left: 0; }
   .status-strip { gap: var(--sp-1) var(--sp-3); min-height: 0; margin-bottom: var(--sp-2); padding: 2px var(--sp-1); }
   .ss-cells { display: contents; }
   .ss-cells > *, .ss-end { flex: none; min-width: max-content; }
@@ -746,7 +762,6 @@ main:focus { outline: none; }
   .tower .c-uc { left: 11rem; box-shadow: 1px 0 0 var(--border); }
   .tower-columns-panel { right: auto; left: 0; min-width: min(18rem, calc(100vw - 2rem)); }
   .gkey-start .gkey-panel, .gkey-end .gkey-panel { right: 0; }
-  .tyre-row { grid-template-columns: 2.6rem 5.5rem 1fr 3.8rem; }
   .drivers-table { min-width: 30rem; }
   .drivers-table .c-team { width: 8.5rem; }
   .feed { --row: 5.5rem; }
@@ -806,7 +821,9 @@ main:focus { outline: none; }
 .compare-summary { margin: 0.25rem 0 0.5rem; font-size: 0.9rem; }
 .rc-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.2rem; }
 .rc-list li { display: grid; grid-template-columns: 4.5rem 7rem 6.5rem 1fr; gap: 0.5rem; align-items: baseline; padding: 0.3rem 0.4rem; border-bottom: 1px solid var(--surface-2); font-size: 0.85rem; }
-.rc-list li.is-key { border-left: 3px solid var(--accent-ink); }
+/* a key message: its text in semibold and a neutral "Key" chip (F35: no side bar) */
+.rc-list li.is-key .rc-msg { font-weight: 600; }
+.rc-key-tag { margin-left: var(--sp-2); vertical-align: 1px; }
 .rc-kind { font: 700 0.75rem/1.2 var(--font-num); text-transform: uppercase; letter-spacing: 0.04em; }
 .rc-time { font: 0.78rem/1.2 var(--font-num); color: var(--muted); }
 .rc-red_flag, .rc-penalty { color: var(--danger); }
@@ -819,79 +836,165 @@ main:focus { outline: none; }
 }
 
 
-/* ---------------------------------------------------------------- engineer view (display only) */
-/* Shared tokens only: colours var(--*), spacing calc(var(--gap) ...), var(--radius), var(--row-h),
-   the font tokens; small text reuses .panel-note / .tag / .code. */
-.engineer { margin-bottom: var(--gap); }
-.engineer h3 { margin: calc(var(--gap) / 2) 0; font: inherit; font-weight: 700; }
-.eng-status { margin: 0 0 calc(var(--gap) / 2); font-family: var(--font-num); }
-.eng-cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--gap); }
-.eng-card { padding: calc(var(--gap) * 0.75); border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface-2); min-width: 0; }
-.eng-card.is-focus { border-width: 3px; border-color: var(--accent-ink); }
-.eng-card h3 { display: flex; flex-wrap: wrap; align-items: center; gap: calc(var(--gap) / 3); margin-top: 0; }
-.eng-dl { display: grid; gap: calc(var(--gap) / 3); margin: 0; }
-.eng-dl dt { color: var(--muted); }
-.eng-dl dd { margin: 0; font-family: var(--font-num); overflow-wrap: anywhere; }
-.eng-pairs, .eng-rejoin-box, .eng-calls { margin-top: var(--gap); }
-.eng-pair { display: flex; flex-wrap: wrap; align-items: center; gap: var(--gap); }
-.eng-pair p { flex: 1 1 calc(var(--gap) * 20); margin: 0; }
-.eng-spark { margin: 0; color: var(--info); }
-.eng-spark-svg { display: block; width: calc(var(--row-h) * 4); height: var(--row-h); }
-.eng-spark figcaption { overflow-wrap: anywhere; }
-.eng-unreliable { color: var(--warn); }
-.rejoin-bar { position: relative; height: calc(var(--row-h) * 1.5); margin: calc(var(--gap) / 2) 0; border-top: 2px solid var(--grid); }
-.rejoin-mark, .rejoin-slot { position: absolute; top: 0; transform: translateX(-50%); font-family: var(--font-num); white-space: nowrap; }
-.rejoin-mark { color: var(--text); border-left: 2px solid var(--text); padding-left: calc(var(--gap) / 6); }
-.rejoin-mark.is-projected { border-left-style: dashed; color: var(--muted); }
-.rejoin-slot { top: calc(var(--row-h) * 0.6); color: var(--accent-ink); font-weight: 800; }
-.eng-calls ul { list-style: none; margin: 0; padding: 0; display: grid; gap: calc(var(--gap) / 3); }
-.eng-calls li { padding: calc(var(--gap) / 3) calc(var(--gap) / 2); border-left: 3px solid var(--border); background: var(--surface-2); }
-.eng-calls li.is-warn { border-left-color: var(--warn); }
+/* ---------------------------------------------------------------- engineer view (redesign step 4A) */
+/* The engineer tab of the race page: no loud element (the amber stays with the call on the Race tab). The three
+ * cars are columns of one panel split by hairlines (no panel inside a panel); the focus column is marked by a 2px
+ * text-ink top rule and its heading, never by the signal colour. Tokens only. */
+.engineer { margin-bottom: var(--sp-4); }
+.engineer h3 { margin: 0 0 var(--sp-2); display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-1) var(--sp-2); font: 600 var(--fs-md)/1.3 var(--font-ui); color: var(--text); }
+.engineer .panel-head label > span { color: var(--muted); }
+.eng-status { margin: 0 0 var(--sp-3); display: flex; flex-wrap: wrap; gap: var(--sp-1) var(--sp-5); font: 500 var(--fs-sm)/1.4 var(--font-ui); }
+.eng-cell { display: inline-flex; flex-wrap: wrap; align-items: baseline; gap: 0 var(--sp-1); }
+.eng-cell .num { font-weight: 600; }
+.eng-cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); border-top: 1px solid var(--rule); border-bottom: 1px solid var(--rule); }
+.eng-card { min-width: 0; padding: var(--sp-3) var(--sp-3) var(--sp-3); border-top: 2px solid transparent; margin-top: -1px; }
+.eng-card + .eng-card { border-left: 1px solid var(--rule); }
+.eng-card.is-focus { border-top-color: var(--text); background: var(--surface-2); }
+.eng-card h3 { min-height: 1.5rem; }
+.eng-card h3 .code { font-size: var(--fs-md); }
+.eng-card h3 .muted { font: 500 var(--fs-sm)/1.2 var(--font-ui); }
+.eng-dl { display: grid; gap: var(--sp-2); margin: 0; }
+.eng-dl > div { display: grid; grid-template-columns: 7.5rem minmax(0, 1fr); gap: var(--sp-2); align-items: baseline; }
+.eng-dl dt { font: 500 var(--fs-xs)/1.4 var(--font-ui); color: var(--muted); }
+.eng-dl dd { margin: 0; font: 500 var(--fs-sm)/1.4 var(--font-num); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.eng-pairs, .eng-rejoin-box, .eng-calls { margin-top: var(--sp-5); }
+/* the sentence and its small chart side by side, top-aligned (F21) */
+/* the sentence column is capped at a reading measure and the chart follows it directly (never pushed to the far
+ * edge of a wide panel) */
+.eng-pair { display: grid; grid-template-columns: minmax(0, 36rem) 16rem; justify-content: start; gap: var(--sp-2) var(--sp-6); align-items: start; padding: var(--sp-2) 0; border-top: 1px solid var(--rule); }
+.eng-pair p { margin: 0; font: 400 var(--fs-sm)/1.5 var(--font-body); }
+.eng-spark { margin: 0; display: grid; gap: var(--sp-1); color: var(--text); }
+.eng-spark-plot { display: flex; align-items: center; gap: var(--sp-2); }
+.eng-spark-svg { display: block; flex: none; width: 7.5rem; height: 2rem; overflow: visible; }
+.eng-spark-end { font: 600 var(--fs-sm)/1 var(--font-num); white-space: nowrap; }
+.eng-spark figcaption { font: 400 var(--fs-2xs)/1.4 var(--font-num); color: var(--muted); overflow-wrap: anywhere; }
+.eng-rejoin p { margin: 0 0 var(--sp-1); }
+.eng-rejoin-sentence { font: 400 var(--fs-sm)/1.5 var(--font-body); }
+.eng-unreliable { color: var(--loss); font-weight: 600; }
+/* The rejoin bar (F20): one seconds axis; car codes in lanes above it (never overlapping), 0 s and the scale under
+ * it, the rejoin slot in its own row. Neutral marks only; positions are fixed per lap, nothing animates. */
+.rejoin-chart { --rj-lane: 1.25rem; margin-top: var(--sp-2); padding: 0 var(--sp-5); }
+.rejoin-labels { position: relative; height: calc(var(--rj-lanes, 3) * var(--rj-lane)); }
+.rejoin-mark {
+  position: absolute; bottom: calc(var(--lane, 0) * var(--rj-lane)); transform: translateX(-50%);
+  font: 600 var(--fs-2xs)/1.25rem var(--font-num); color: var(--text); white-space: nowrap;
+}
+/* the leader line from a label down to the axis */
+.rejoin-mark::after {
+  content: ""; position: absolute; left: 50%; top: calc(100% - 3px); width: 0;
+  height: calc(var(--lane, 0) * var(--rj-lane) + 3px); border-left: 1px solid var(--grid);
+}
+.rejoin-mark.is-projected { color: var(--muted); }
+.rejoin-mark.is-projected::after { border-left-style: dashed; }
+.rejoin-axis { position: relative; height: 0.75rem; border-top: 2px solid var(--grid); }
+.rejoin-tick, .rejoin-zero, .rejoin-slot-tick { position: absolute; top: -2px; width: 0; transform: translateX(-1px); }
+.rejoin-tick { height: 0.5rem; border-left: 2px solid var(--text); }
+.rejoin-tick.is-projected { border-left-style: dashed; border-left-color: var(--muted); }
+.rejoin-zero { height: 0.75rem; border-left: 1px dashed var(--muted); }
+.rejoin-slot-tick { height: 0.75rem; border-left: 3px double var(--text); transform: translateX(-1.5px); }
+.rejoin-scale { position: relative; height: 1rem; font: 500 var(--fs-2xs)/1rem var(--font-num); color: var(--muted); }
+.rejoin-scale > span { position: absolute; top: 0; white-space: nowrap; }
+.rejoin-scale-lo { left: 0; }
+.rejoin-scale-zero { padding-left: var(--sp-1); }
+.rejoin-scale-hi { right: 0; }
+.rejoin-slot-row { position: relative; height: 1.25rem; }
+.rejoin-slot {
+  position: absolute; top: 2px; transform: translateX(-50%); display: inline-flex; align-items: center; gap: var(--sp-1);
+  font: 600 var(--fs-xs)/1 var(--font-ui); color: var(--text); white-space: nowrap;
+}
+.rejoin-slot-mark { display: block; }
+.eng-calls ul { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--rule); }
+.eng-call { display: flex; align-items: baseline; gap: var(--sp-2); min-height: 2.25rem; padding: var(--sp-2) 0; border-bottom: 1px solid var(--rule); font: 400 var(--fs-sm)/1.45 var(--font-body); }
+/* the kind differs by its word and its outline (a shape), not by a colour bar */
+.eng-kind {
+  flex: none; display: inline-grid; place-items: center; min-width: 3.5rem; min-height: 1.25rem; padding: 0 var(--sp-1);
+  font: 600 var(--fs-2xs)/1 var(--font-ui); border-radius: var(--radius-sm); color: var(--muted); border: 1px dotted var(--border);
+}
+.eng-kind.kind-watch { color: var(--text); font-weight: 700; border: 2px solid var(--text); }
 @media (max-width: 1080px) {
   .eng-cards { grid-template-columns: minmax(0, 1fr); }
+  .eng-card + .eng-card { border-left: 0; border-top: 1px solid var(--rule); }
+  .eng-card.is-focus { border-top: 2px solid var(--text); }
+}
+@media (max-width: 640px) {
+  .eng-pair { grid-template-columns: minmax(0, 1fr); }
+  .eng-dl > div { grid-template-columns: 6.5rem minmax(0, 1fr); }
+  .rejoin-chart { padding: 0 var(--sp-3); }
 }
 
-/* ---------------------------------------------------------------- post-race archive (display only) */
-/* Mode tabs reuse the analysis tab style; a disabled mode is struck through (a shape, not a colour). */
+/* ---------------------------------------------------------------- post-race archive (redesign step 4A) */
+/* The stored race scrubbed lap by lap. The transport spans the page; the tower is the evidence on the left, the
+ * alert feed and race control on the right (as tall as the tower block, so the feed scrolls in reserved space),
+ * the gap chart and the key below. The one loud element is the live view's own: alerts from the scrubbed lap or
+ * the one before (none after the finish). Tokens only; nothing animates but the shared hover and press. */
 .mode-tabs { align-items: center; }
 .mode-tabs [role="tab"][aria-disabled="true"] { cursor: not-allowed; text-decoration: line-through; }
+/* the live head's "no archive for this race yet" note (kept as it was: the live view is unchanged in step 4A) */
 .mode-note { flex: 0 0 auto; padding: 0 0.5rem; font-size: 0.8rem; }
-.conn-archive .conn-icon { color: var(--info); }
-.archive-notes .num, .arc-lap { font-family: var(--font-num); }
-.ac-status { margin: 0; min-width: 9rem; font: 600 0.85rem/1.4 var(--font-num); color: var(--muted); text-align: right; }
-.ac-buttons { display: flex; flex-wrap: wrap; align-items: end; gap: 0.5rem 0.75rem; margin-bottom: 0.6rem; }
+.arc-dash {
+  display: grid; gap: var(--sp-4); align-items: start;
+  grid-template-columns: minmax(0, 1fr) 27.5rem;
+  grid-template-areas: "controls controls" "tower side" "more more";
+}
+.arc-controls { grid-area: controls; min-width: 0; }
+.arc-tower { grid-area: tower; min-width: 0; }
+.arc-side {
+  grid-area: side; min-width: 0; display: grid; grid-template-rows: minmax(0, 1fr) auto; gap: var(--sp-3);
+  height: calc(1.75rem + var(--sp-2) + var(--row-h) * var(--tower-rows, 20) + 1.75rem + 2px);
+}
+.arc-more { grid-area: more; min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--sp-4); }
+.archive-controls:focus { outline: none; }
+.archive-controls:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.arc-note { max-width: none; }
+.arc-synthetic { font: 700 var(--fs-xs)/1 var(--font-ui); color: var(--text); padding: 1px var(--sp-1); border: 1px dashed var(--text); border-radius: var(--radius-sm); }
+.ac-status { margin: 0; min-width: 9rem; font: 600 var(--fs-sm)/1.4 var(--font-num); color: var(--muted); text-align: right; }
+.ac-buttons { display: flex; flex-wrap: wrap; align-items: end; gap: var(--sp-2) var(--sp-3); margin-bottom: var(--sp-2); }
 .ac-play { min-width: 6.5rem; }
 /* The slider and the marker lanes share one column, so a marker sits under its lap. */
-.ac-grid { display: grid; grid-template-columns: 3.4rem minmax(0, 1fr); gap: 0.35rem 0.5rem; align-items: center; }
-.ac-slider { width: 100%; min-height: 2.5rem; margin: 0; accent-color: var(--accent); cursor: pointer; }
-.ac-slider:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
-.ac-lanes { grid-column: 1 / -1; display: grid; gap: 0.3rem; }
-.ac-lane { display: grid; grid-template-columns: 3.4rem minmax(0, 1fr); gap: 0 0.5rem; align-items: start; }
-.ac-lane-name { font: 600 0.75rem/1.6rem var(--font-ui); color: var(--muted); }
-.ac-track { position: relative; margin: 0 8px; border-top: 1px dashed var(--border); }
-.ac-none { font: 600 0.72rem/1.6rem var(--font-ui); color: var(--muted); }
+.ac-grid { display: grid; grid-template-columns: 3.5rem minmax(0, 1fr); gap: var(--sp-1) var(--sp-2); align-items: center; }
+.ac-slider { width: 100%; min-height: 2.5rem; margin: 0; accent-color: var(--text); cursor: pointer; }
+.ac-lanes { grid-column: 1 / -1; display: grid; gap: var(--sp-1); }
+.ac-lane { display: grid; grid-template-columns: 3.5rem minmax(0, 1fr); gap: 0 var(--sp-2); align-items: start; }
+.ac-lane-name { font: 500 var(--fs-xs)/1.75rem var(--font-ui); color: var(--muted); }
+/* inset by half a 24 px marker, so a marker at the first or last lap stays inside its lane */
+.ac-track { position: relative; margin: 0 var(--sp-3); border-top: 1px dashed var(--rule); }
+.ac-none { font: 500 var(--fs-xs)/1.75rem var(--font-ui); color: var(--muted); }
 .ac-marker {
-  position: absolute; transform: translateX(-50%); min-width: 24px; height: 1.4rem; margin-top: 0.1rem; padding: 0 0.25rem;
-  font: 800 0.7rem/1 var(--font-num); color: var(--text); background: var(--surface-2);
-  border: 1px solid var(--border); border-radius: var(--radius); cursor: pointer;
+  position: absolute; transform: translateX(-50%); min-width: 24px; height: 1.5rem; margin-top: 2px; padding: 0 var(--sp-1);
+  font: 600 var(--fs-2xs)/1 var(--font-num); color: var(--text); background: var(--surface-2);
+  border: 1px solid var(--border); border-radius: var(--radius-sm); cursor: pointer;
 }
-.ac-marker:hover { border-color: var(--text); }
-.ac-marker:focus-visible { outline: 3px solid var(--focus); outline-offset: 1px; z-index: 1; }
-/* Kinds differ by their letters and by the border style; the colour only repeats it. */
-.ac-sc { border-color: var(--warn); }
-.ac-vsc { border-color: var(--warn); border-style: dashed; }
+@media (hover: hover) and (pointer: fine) { .ac-marker:hover { border-color: var(--text); } }
+.ac-marker:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; z-index: 1; }
+/* Kinds differ by their letters and by the border style; the colour only repeats it. The alert marker is neutral
+ * (a 2px outline and bold letter): the signal amber stays with the alerts of the scrubbed lap. */
+.ac-sc { border-color: var(--loss); border-width: 2px; }
+.ac-vsc { border-color: var(--loss); border-style: dashed; border-width: 2px; }
 .ac-red { border-color: var(--danger); border-style: double; border-width: 3px; }
-.ac-neutral { border-style: dotted; }
-.ac-alert { border-color: var(--accent-ink); }
-.ac-marker[aria-current="true"] { border-width: 2px; border-color: var(--text); text-decoration: underline; z-index: 1; }
-.arc-feed { max-height: 14rem; overflow-y: auto; }
-.arc-list { list-style: none; margin: 0; padding: 0; font-size: 0.82rem; }
-.arc-list li { padding: 0.25rem 0; border-bottom: 1px solid var(--surface-2); }
-.arc-key { border-left: 3px solid var(--accent-ink); padding-left: 0.4rem !important; }
-.arc-lap { display: inline-block; min-width: 2.6rem; color: var(--muted); }
+.ac-neutral { border-style: dotted; border-width: 2px; }
+.ac-alert { border-width: 2px; border-color: var(--text); font-weight: 700; }
+.ac-marker[aria-current="true"] { background: var(--raised); color: var(--text); text-decoration: underline; text-underline-offset: 2px; z-index: 1; box-shadow: 0 0 0 1px var(--text); }
+.arc-side .alert-panel { min-height: 0; }
+.arc-panel h2 { margin-bottom: var(--sp-2); }
+.arc-feed { max-height: 15rem; overflow-y: auto; }
+.arc-list { list-style: none; margin: 0; padding: 0; }
+/* a key message: its text in semibold and a neutral "Key" chip (F35: no side bar) */
+.arc-rc { display: grid; grid-template-columns: 2.75rem minmax(0, 1fr) auto; gap: var(--sp-2); align-items: baseline; padding: var(--sp-1) 0; border-bottom: 1px solid var(--rule); font: 400 var(--fs-sm)/1.4 var(--font-ui); }
+.arc-rc.is-key .arc-msg { font-weight: 600; }
+.arc-msg { overflow-wrap: anywhere; }
+.arc-lap { font: 500 var(--fs-xs)/1.4 var(--font-num); color: var(--muted); }
+.arc-key-tag { margin-left: 0; }
+.arc-rc-none { margin: 0; font-size: var(--fs-sm); }
+@media (max-width: 1080px) {
+  .arc-dash { grid-template-columns: minmax(0, 1fr); grid-template-areas: "controls" "tower" "side" "more"; }
+  .arc-side { height: auto; grid-template-rows: 22rem auto; }
+}
 @media (max-width: 640px) {
   .ac-status { text-align: left; min-width: 0; }
-  .ac-grid, .ac-lane { grid-template-columns: 2.8rem minmax(0, 1fr); }
+  .ac-grid, .ac-lane { grid-template-columns: 2.75rem minmax(0, 1fr); }
+  .arc-side { grid-template-rows: 26rem auto; }
+  /* the race-control line ends the strip on a phone (after the lap, track and model cells) */
+  .arc-strip .ss-rc { order: 7; }
 }
 
 

@@ -4,14 +4,71 @@ import Link from "next/link";
 import { type KeyboardEvent, useEffect, useMemo, useRef, useState } from "react";
 
 import { api, type Race } from "@/lib/api";
-import { filterRaces, groupBySeason } from "@/lib/races";
+import { filterRaces, groupBySeason, type RunningReplay, type StartHere, startHere } from "@/lib/races";
+import { archiveApi } from "@/lib/useArchive";
 
-/** Races grouped by season, filtered by name. Arrow keys / Home / End move between races; Tab
- * leaves the list. */
+/** The first choice for a grader (critique F36): the race replaying now, else the demo race. Neutral styling (the
+ * signal amber belongs to the undercut call); its height is reserved while the lists load. */
+function StartHereCard({ pick, loading }: { pick: StartHere | null; loading: boolean }) {
+  if (pick === null) {
+    return loading ? (
+      <section className="panel start-here" aria-labelledby="start-h" aria-busy="true">
+        <h2 id="start-h">Start here</h2>
+        <p className="muted">Loading races…</p>
+      </section>
+    ) : null;
+  }
+  const { race } = pick;
+  const href = `/race/${race.season}/${race.round}`;
+  const name = race.name ?? `Round ${race.round}`;
+  const why =
+    pick.why === "replaying"
+      ? `Replaying now${pick.paused ? ", paused" : ""}${pick.lap !== null ? ` at lap ${pick.lap} of ${race.laps}` : ", starting"}.`
+      : pick.why === "demo"
+        ? "The demo race (the one make demo replays)."
+        : "The newest race in this lake.";
+  return (
+    <section className="panel start-here" aria-labelledby="start-h">
+      <h2 id="start-h">Start here</h2>
+      <p className="start-race">
+        <span className="race-season">{race.season}</span> <span className="start-name">{name}</span>
+        <span className="start-meta">
+          <span className="num">R{String(race.round).padStart(2, "0")}</span>
+          <span className="num">{race.laps} laps</span>
+          {race.synthetic ? <span className="tag">synthetic tyres</span> : null}
+        </span>
+      </p>
+      <p className="start-why">{why}</p>
+      <p className="start-actions">
+        <Link className="btn start-open" href={href}>
+          {pick.why === "replaying" ? "Open the live race" : "Open the race"}
+          <span className="visually-hidden">{`: ${race.season} ${name}`}</span>
+        </Link>
+        {pick.archived ? (
+          <Link className="btn btn-secondary" href={`${href}?mode=archive`}>
+            Open the post-race archive<span className="visually-hidden">{`: ${race.season} ${name}`}</span>
+          </Link>
+        ) : null}
+      </p>
+      {pick.why !== "replaying" ? (
+        <p className="panel-note start-how">
+          On the race page, start a replay with Replay controls in the status strip. The undercut call is the panel at
+          the top right; the timing tower beside it is its evidence.
+        </p>
+      ) : null}
+    </section>
+  );
+}
+
+/** Races grouped by season, filtered by name, after a "Start here" choice. Arrow keys / Home / End move between
+ * races; Tab leaves the list. */
 export function RacePicker() {
   const [races, setRaces] = useState<Race[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
+  // the replay and archive lists only refine "Start here": a failure leaves them empty, never an error
+  const [running, setRunning] = useState<RunningReplay[]>([]);
+  const [archived, setArchived] = useState<{ season: number; round: number }[] | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -22,8 +79,18 @@ export function RacePicker() {
       .catch((err: unknown) => {
         if (!ctl.signal.aborted) setError((err as Error).message);
       });
+    api
+      .replays(ctl.signal)
+      .then((st) => setRunning(st.running))
+      .catch(() => undefined);
+    archiveApi
+      .list(ctl.signal)
+      .then(setArchived)
+      .catch(() => undefined);
     return () => ctl.abort();
   }, []);
+
+  const pick = useMemo(() => startHere(races ?? [], running, archived), [races, running, archived]);
 
   const shown = useMemo(() => filterRaces(races ?? [], query), [races, query]);
   const groups = useMemo(() => groupBySeason(shown), [shown]);
@@ -43,6 +110,7 @@ export function RacePicker() {
 
   return (
     <div className="picker">
+      <StartHereCard pick={pick} loading={races === null && error === null} />
       <search className="picker-search">
         <label htmlFor="race-search">Search races</label>
         <input

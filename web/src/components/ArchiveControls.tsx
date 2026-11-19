@@ -1,6 +1,6 @@
 "use client";
 
-import { type Dispatch, type KeyboardEvent, useState } from "react";
+import { type Dispatch, type KeyboardEvent, type ReactNode, useState } from "react";
 
 import { tabKeyTarget } from "@/lib/analysis";
 import {
@@ -15,8 +15,9 @@ import {
 } from "@/lib/archive";
 import { useWidth } from "@/lib/useWidth";
 
-const ROW_REM = 1.6;
-const markerPx = (code: string) => (code.length <= 1 ? 24 : code.length * 9 + 12);
+/** one marker lane row: a 24 px marker (WCAG 2.5.8 target size) plus a 4 px gap */
+const ROW_REM = 1.75;
+const markerPx = (code: string) => (code.length <= 1 ? 24 : code.length * 8 + 12);
 
 /** The post-race transport: a lap slider (native range input: arrows, Page Up/Down, Home, End),
  * step and play/pause buttons, the 1×/10×/60× speed, and the event markers laid out along the
@@ -29,12 +30,15 @@ export function ArchiveControls({
   state,
   dispatch,
   markers,
+  children = null,
 }: {
   laps: readonly number[];
   total: number;
   state: Playback;
   dispatch: Dispatch<PlaybackAction>;
   markers: readonly Marker[];
+  /** a note under the heading (what the replay is, and honesty labels) */
+  children?: ReactNode;
 }) {
   const first = laps[0] ?? 1;
   const last = laps[laps.length - 1] ?? 1;
@@ -48,13 +52,14 @@ export function ArchiveControls({
     document.getElementById(`ac-marker-${target}`)?.focus();
   };
   return (
-    <section className="panel archive-controls" aria-labelledby="archive-h">
+    <section className="panel archive-controls" aria-labelledby="archive-h" id="archive-controls" tabIndex={-1}>
       <div className="panel-head">
         <h2 id="archive-h">Post-race replay</h2>
         <p className="ac-status" role="status">
           {state.playing ? `Playing at ${state.speed}×` : "Paused"}
         </p>
       </div>
+      {children}
       <div className="ac-buttons">
         <button
           type="button"

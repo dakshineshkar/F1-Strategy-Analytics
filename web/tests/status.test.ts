@@ -1,11 +1,12 @@
-/** Feature 5 race-status banner: the guard, the announcement transitions (only on change), the
- * rendered banner, and the archive's per-lap status (v2) next to v1 bundles. */
+/** Feature 5 race status: the guard, the announcement transitions (only on change), and its place in the post-race
+ * archive's status strip (step 4A: the code chip with its border class, the latest key message with its lap, the
+ * source as visible text, silent while scrubbing). */
 
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
-import { RaceStatusBanner } from "@/components/RaceStatusBanner";
+import { ArchiveStrip } from "@/components/ArchiveStrip";
 import { type RaceStatus, type RaceStatusKind, statusAnnouncement, toRaceStatus } from "@/lib/raceStatus";
 
 const st = (status: RaceStatusKind, lap: number, more: Partial<RaceStatus> = {}): RaceStatus => ({
@@ -65,9 +66,11 @@ describe("announcements: politely, only when the status changes", () => {
   });
 });
 
-describe("the banner", () => {
+describe("the archive strip's race status (was the banner)", () => {
   const html = (status: RaceStatus | null, more: Record<string, unknown> = {}) =>
-    renderToStaticMarkup(createElement(RaceStatusBanner, { status, ...more }));
+    renderToStaticMarkup(
+      createElement(ArchiveStrip, { status, lap: status?.lap ?? 1, laps: 56, modelVersion: "deploy_real_G3.5_k2", scorerSha256: "0a9b7dfbc2056f4b", ...more }),
+    );
 
   it.each([
     ["green", "GREEN"],
@@ -76,30 +79,36 @@ describe("the banner", () => {
     ["red", "RED FLAG"],
     ["neutralised", "SC / VSC"],
     ["unknown", "UNKNOWN"],
-  ] as const)("%s shows the text code %s and a border class", (kind, code) => {
+  ] as const)("%s shows the text code %s in the chip that carries the border style", (kind, code) => {
     const m = html(st(kind, 10));
-    expect(m).toContain(`class="race-status race-status-${kind}"`);
-    expect(m).toMatch(new RegExp(`class="race-status-code"[^>]*>${code.replace("/", "\\/")}`));
+    expect(m).toContain(`class="ss-cell ss-track race-status race-status-${kind}"`);
+    expect(m).toMatch(new RegExp(`class="ss-v race-status-code">${code.replace("/", "\\/")}`));
+    // no side bar: the old banner class is gone
+    expect(m).not.toContain('class="race-status race-status-');
   });
 
-  it("shows the latest race-control message with its lap and the source; a live region exists", () => {
+  it("shows the lap, the latest race-control message with its lap and the source, as visible text", () => {
     const m = html(st("sc", 24, { message: "SAFETY CAR DEPLOYED", messageLap: 23 }));
-    expect(m).toContain("Lap 24");
-    expect(m).toContain("SAFETY CAR DEPLOYED (lap 23)");
-    // the parts are separate sentences for screen readers (no "Lap 24SAFETY")
-    expect(m).toContain('Lap 24</span><span class="visually-hidden">. </span>');
-    expect(m).toContain("from the track-status feed and race control (laps up to now)");
-    expect(m).toContain('aria-live="polite"');
-    expect(m).toContain('aria-describedby="tip-racestatus"');
+    expect(m).toContain('aria-label="Race status"');
+    expect(m).toContain('<span class="lc-now">24</span><span class="ss-of">/56</span>');
+    expect(m).toContain("Race control, lap 23:");
+    expect(m).toContain('<span class="ss-rc-text">SAFETY CAR DEPLOYED</span>');
+    expect(m).toContain("Track status from the track-status feed and race control (laps up to now).");
+    expect(m).toContain("POST-RACE");
+    expect(m).toContain("deploy_real_G3.5_k2");
+    expect(m).toContain("scorer 0a9b7dfbc205…");
+    expect(m).not.toContain("aria-live");
   });
 
-  it("labels the estimate, waits before the first lap, and stays silent in post-race mode", () => {
+  it("labels the estimate, says when there is no key message, and shows the v1 note", () => {
     const est = html(st("neutralised", 22, { source: "estimated" }));
     expect(est).toContain('<span class="race-status-est"> est.</span>');
     expect(est).toContain("estimated from lap times (no race-control feed for this race)");
+    expect(est).toContain("No key race-control message up to this lap.");
     expect(html(null)).toContain("Waiting for the first lap.");
-    const v1 = html(null, { unavailable: "v1 bundle note", announce: false });
+    const v1 = html(null, { unavailable: "v1 bundle note" });
     expect(v1).toContain("v1 bundle note");
+    expect(v1).toContain(">n/a<");
     expect(v1).not.toContain("aria-live");
   });
 });
