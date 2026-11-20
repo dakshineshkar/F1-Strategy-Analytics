@@ -2635,18 +2635,62 @@
     the symptom; the reducer is unchanged (see Known issues).
   - **Tests:** `web/tests/step5.test.ts` (13 tests). `web/e2e/step5.spec.ts` covers the Driver column live and
     archive at 5 widths, the 1280×800 first viewport, and axe on every screen in both themes (0 serious/critical).
+- Step 18 final (2026-11-20, on `main`; documentation only): the report and the demo script describe the final
+  dashboard, then every proof was run.
+  - **Report** (`docs/report/report.md`):
+    - the "2025 base rate" line is gone from §10 and the honesty labels (the 2025 base rate of the test results in
+      §11.3 is kept);
+    - §10 describes the final live view (mode chip with NOT REPLAYING, the call with "order changed since"), links
+      the final engineer, archive, analysis and picker shots in `docs/design/after/`, and adds the final audit;
+    - Figure 4 caption now matches `after/d-dark-mid.png` (lap 20, SAR → ZHO, 78%) and Figure 5 matches
+      `after/d-dark-latejoin.png` (lap 45, ALB → OCO, "order changed since"); Figure 3 keeps the pre-redesign
+      what-if shot, the only one of that panel;
+    - §13 adds the stale gap for up to one lap after a late join (the stale-car rule was already there); §15 future
+      work and the §12 timeline are updated; §14 and Appendix A61 quote the final proofs below; new rows A84–A87.
+      Section 16 still says "TO BE COMPLETED BEFORE SUBMISSION".
+  - **Demo script** (`docs/demo_script.md`): the base-rate narration removed; NO REPLAY / NOT REPLAYING before a
+    start, the Start here card, the call as on screen, the order-changed call at a late join, "Data to lap N" and
+    Gaps in the engineer view, the POST-RACE strip, STOPPED with "Open the post-race archive"; the fallback
+    screenshots are the final ones.
+  - **Final proofs:**
+
+    | Proof | Result |
+    |---|---|
+    | Python unit suite (`make test`) | 2340 passed in 951 s |
+    | Web (`make web-test`) | lint and typecheck clean; Vitest 563 passed (28 files) |
+    | Contrast (`contrast-report.mjs --check`) | 92 of 92 pairs per theme meet AA |
+    | `impeccable detect --json web/src/app web/src/components` | 0 findings, no suppressions |
+    | Sample e2e (`make api-up REPLAY=1`, `make web-up`, `E2E_NO_SERVER=1 npx playwright test`) | 40 passed, 1 skipped (latency, by design) |
+    | `make archive-equivalence SEASON=2024 ROUND=5 LAPS=5,22,45` | EQUIVALENT; 113 / 19 / 9 (141 alerts), 409 decisions |
+    | `make experiments-sample` | OK 7, OK (metadata differs) 1, DIFF 0, NEW 2 |
+    | `scripts/check_traceability.py` | OK 506, GENERATED 2 |
+    | `make lint`, `make typecheck`, `test_repo_docs.py` | clean; 153 files mypy-clean |
+    | `sha256sum results/stream_parity_full.csv` | `aad8df67…` |
+    | `git status --short results/` | empty |
+
+    In short: python 2340 passed, web 563 Vitest, sample e2e 40 passed / 1 skipped.
+  - **Notes on two proofs:**
+    - `make demo-pipeline` had rebuilt the sample 2024 R5 archive bundle with the SMOKE TEST model, so
+      `make archive-equivalence` without `MODEL_DIR` refused (scorer mismatch) and with the sample model gave
+      EQUIVALENT with 113 / 15 / 9 (137 alerts). The 113 / 19 / 9 figure belongs to the deployed model, so the bundle
+      was rebuilt with it (`make archive-sample ARCHIVE_SEASON=2024 ARCHIVE_ROUND=5
+      MODEL_DIR=models/undercut/deploy_real_G3.5_k2`), checked, and rebuilt again with the sample model so the
+      fallback demo is as `make demo-pipeline` left it. Only `data/lake/archive` was written.
+    - `make experiments-sample` reports DIFF for `models/sim/tyre_model_sample.json` when the working tree is dirty:
+      `git_dirty` is not an ignored metadata field. It was rerun on a clean tree (the three edited docs stashed and
+      restored) for the result above.
+  - **Services at the end:** `make api-up FULL=1 REPLAY=1`; health 200 (hdfs, full, `deploy_real_G3.5_k2`,
+    smoke_test false, trained on full); no replay running. The web container was rebuilt from 98940c5.
 ## Next
 - S18B: the demo rehearsal with `docs/demo_script.md` (full lake, then the sample-mode fallback); fill in section 16
-  (team contributions) of the report and run `make report-pdf` again.
+  (team contributions) of the report and run `make report-pdf` again. The report and demo script already describe
+  the final dashboard (Step 18 final, 2026-11-20).
 - The UI redesign is complete (Steps 2–4B). F23 remains: a session-end summary for a page that joined late needs an
   additive API change. It was not done in 4B and needs approval first.
   - F24 API stays declined (revisit only if time allows).
 ## Known issues
 - Report §16 team contributions still to be filled in (blocker for submission).
 - UI Step 5 (2026-11-19):
-  - **Base-rate wording in docs:** `docs/report/report.md` lines 418 and 443 and `docs/demo_script.md` line 65 (the
-    walkthrough step and its narration) still describe the removed "2025 base rate" line. Not edited; they need your
-    decision.
   - **Reducer, late join:** for up to one lap after a late join or reconnect, a car's gap to the leader (and in the
     same way its interval) can be the previous lap's value. The leader's crossing came in the snapshot, and
     `applyLap` falls back to the old value. The tower now never shows "Leader" off P1, but a stale non-zero gap
@@ -2664,7 +2708,8 @@
   - **Parity wording.** The parity result is "maximum input difference 0.0, maximum probability difference
     3.3e-16" (`docs/architecture.md`), not byte-identical. The report uses the docs' wording.
   - **Screenshots.** The what-if view exists only as a pre-redesign screenshot (`docs/design/before/`,
-    2026-11-18). The engineer, archive and picker (4A) and the analysis and drivers views (4B) have after shots.
+    2026-11-18), so report Figure 3 still uses it. Every other view has a final shot in `docs/design/after/`
+    (retaken in UI Step 5).
 - UI redesign Step 4B (2026-11-19):
   - **F23 not done.** A page opened after `session_end` gets no race summary; it needs an API change.
   - **Telemetry legend.** The "similar colours" note uses fixed ΔE floors (15 normal, 8 protan/deutan), with a

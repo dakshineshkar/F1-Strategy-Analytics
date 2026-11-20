@@ -2,7 +2,7 @@
 
 **Final report.** DA231o course project, M.Tech, Indian Institute of Science (IISc), Bengaluru.
 Team **Data Wranglers**: Parinith D., Dakshinesh K., Rohan Deore, Kaushal V.
-Repository state: `main` after the `submission-rc1` freeze checks (2026-11-19). Code: MIT. Data: see §4.5.
+Repository state: `main` after the final dashboard audit and the final proofs (2026-11-20). Code: MIT. Data: see §4.5.
 
 Every number is copied from a committed file in `results/` or `docs/`, and its source is named after each table or
 claim. Appendix A lists every headline number with its source; a unit test checks that each appears there verbatim.
@@ -407,45 +407,67 @@ Everything below was pre-registered in `docs/sim_spec.md` before any backtest:
 The calibrated model probability is shown next to the simulator's, unchanged. Source: `docs/sim_spec.md`,
 `docs/architecture.md` "What-if simulator".
 
-![Figure 3. What-if panel before the redesign (captured 2026-11-18, full lake, 2024 R5, lap 10, PER on VER, 500 draws, seed 42): the three strategies with the share of sim runs ahead, the expected gap and its 80% interval, then the sensitivity case where the defender covers 2 laps later. This pair is 8.04 s apart, outside the 3.5 s rule window, so every strategy is at 0% and the model line is empty.](../design/before/d-dark-whatif.png)
+![Figure 3. What-if panel before the redesign (captured 2026-11-18, full lake, 2024 R5, lap 10, PER on VER, 500 draws, seed 42): the three strategies with the share of sim runs ahead, the expected gap and its 80% interval, then the sensitivity case where the defender covers 2 laps later. This pair is 8.04 s apart, outside the 3.5 s rule window, so every strategy is at 0% and the model line is empty. No screenshot of the redesigned panel was taken; it keeps these rows and their wording.](../design/before/d-dark-whatif.png)
 
 ## 10. Dashboard
 
-The dashboard is a Next.js app (TypeScript strict) at `http://localhost:3000`. The live race view was redesigned in
-November 2026 around one question, "is there a call now?". Its parts:
-- **Status strip:** replay mode and speed, lap, track status, the scoring model's id and the connection state.
-- **The call:** the best eligible pair, with the calibrated probability labelled "model estimate", the model id, the
-  2025 base rate beside it, a gap gauge with the 3.5 s rule window, the rule checks, and "Simulate this pair".
-- **Alert feed:** opportunity and attempt alerts grouped by pair.
-- **Timing tower:** a fourth panel next to the call and the alerts.
+The dashboard is a Next.js app (TypeScript strict) at `http://localhost:3000`. It was redesigned in November 2026
+around one question, "is there a call now?". The live race view has four parts:
+- **Status strip:** the replay mode (REPLAY 10×, PAUSED, STOPPED, FINISHED, or NOT REPLAYING when the page holds an
+  earlier run's state and nothing streams), the lap, how many running cars crossed the line on the leader's lap,
+  the track status, the scoring model's id, the connection state and the Replay controls.
+- **The call:** the best eligible pair, with the calibrated probability labelled "model estimate" and the model id,
+  a gap gauge with the 3.5 s rule window and the trend to next lap, the pit loss, both cars' tyres, the rule
+  checks and "Simulate this pair". When the alert's defender is no longer directly ahead, the call keeps that
+  defender and reads "flagged at lap N against D; order changed since", with a muted gauge and the rule checks not
+  shown as passing.
+- **Alert feed:** candidate, opportunity and attempt alerts grouped by pair, the newest marked "new".
+- **Timing tower:** position, interval and gap, last lap, sectors and speed trap, stops, tyre and age, with the
+  undercut flags; a car with no crossing for 2 leader laps shows "no timing since L…".
 
 <figure class="pair">
 <div><img src="../design/after/d-dark-mid.png" alt="Live race view after the redesign"></div>
 <div><img src="../design/before/d-dark-fold.png" alt="Live race view before the redesign"></div>
-<figcaption>Figure 4. Live race view, full lake, 2024 Chinese Grand Prix (R5), 10x replay. Top, after the redesign (lap 38): the call (PER → LEC, 69% model estimate) leads, and the timing tower and the alert feed are its evidence. Bottom, before the redesign (captured 2026-11-18, lap 10): the replay control and the alerts sat in a side column with no single call.</figcaption>
+<figcaption>Figure 4. Live race view, full lake, 2024 Chinese Grand Prix (R5), 10x replay. Top, after the redesign (lap 20): the call (SAR → ZHO, 78% model estimate that pitting next lap brings SAR out ahead, model deploy_real_G3.5_k2) leads, with its gap gauge, pit loss, tyres and rule line; the timing tower (SAR and ZHO highlighted) and the alert feed are its evidence. Bottom, before the redesign (captured 2026-11-18, lap 10): the replay control and the alerts sat in a side column with no single call.</figcaption>
 </figure>
 
-**The other views** (not yet redesigned, `docs/PROGRESS.md` "Next"):
-- **Engineer tab:** ahead / focus / behind cards with the pair's pace and the rejoin estimate.
-- **What-if panel** (Figure 3): a run for the chosen pair; the results are "share of sim runs ahead", the expected gap and its
-  80% range.
-- **Post-race (archive):** a stored bundle replayed through the live reducer, with a lap slider and event lanes.
-- **Race analysis:** tyre strategy, lap times, tyre degradation, positions, compare, pit stops, race control and,
-  for 2024, telemetry overlays.
+**The other views** (final screenshots in `docs/design/after/`):
+- **Engineer tab** ([d-dark-engineer.png](../design/after/d-dark-engineer.png)): one car's seat. Ahead, focus and
+  behind columns with tyres, stint, pace and the undercut probability, a "Data to lap N" line, the gaps to both
+  neighbours with their trend, and where the car would rejoin if it pitted now.
+- **What-if panel** (Figure 3): a run for the chosen pair; the results are "share of sim runs ahead", the expected
+  gap and its 80% range.
+- **Post-race (archive)** ([d-dark-archive.png](../design/after/d-dark-archive.png)): a stored bundle replayed
+  through the live reducer. A POST-RACE strip with the lap, the track status and the latest key race-control
+  message, then lap controls, a lap slider and Flags, Pits and Alerts lanes above the tower and the alerts.
+- **Race analysis** ([d-dark-analysis-strategy.png](../design/after/d-dark-analysis-strategy.png)): tyre strategy,
+  lap times, tyre degradation, positions, compare, pit stops, race control and, for 2024, telemetry overlays. Each
+  chart has a text summary and a table.
 - **Drivers:** the entrant list.
+- **Race picker** ([d-dark-picker.png](../design/after/d-dark-picker.png)): a "Start here" card (the race replaying
+  now, else the demo race 2024 R5), a search box and the 90 races by season.
 
 The archive is built by the stream's own processor and checked equal to a live replay at the compared laps
 (`make archive-equivalence`).
 
-![Figure 5. Late join at lap 45 (full lake, 2024 R5, 10x replay): the call is shown at once, and the alert feed lists the run's earlier alerts under "Received before you opened the page" (the connect snapshot's alert history).](../design/after/d-dark-latejoin.png)
+![Figure 5. Late join at lap 45 (full lake, 2024 R5, 10x replay): the page is complete at once. The call (ALB → OCO, 48%) reads "flagged at lap 33 against OCO; order changed since", because OCO is no longer directly ahead of ALB, so its gauge is muted at the decision gap. The alert feed lists the run's earlier alerts under "Received before you opened the page" (the connect snapshot's alert history), and three cars show "no timing since L…".](../design/after/d-dark-latejoin.png)
 
 **Honesty labels** (`docs/design/DESIGN.md` "Honesty rules"):
-- Probabilities are labelled as model estimates with the model id, next to the 2025 base rate.
+- Probabilities are labelled as model estimates with the model id.
 - What-if results are labelled as modelled ranges, not odds.
-- SMOKE TEST (the sample model) and SYNTHETIC DEMO DATA (the sample lake) are always visible when they apply.
+- SMOKE TEST (the sample model) and SYNTHETIC DEMO DATA (the sample lake) are always visible when they apply, in
+  the live view and the archive.
+- An earlier run's state with nothing streaming is NOT REPLAYING, never LIVE, and the call then shows no pair.
 - Nothing in the live view uses a lap the stream has not reached. After a late join, history from before the page
   opened is shown as "not received", never back-filled.
 - Every empty value says why.
+
+**Final audit** (`docs/PROGRESS.md` "UI redesign Step 5"). Every screen was checked at 1440, 1280, 1024, 768 and
+390 px and at 200% zoom, in the dark, light and Auto themes, with a keyboard-only Tab walk and Escape, landmarks and
+headings, reduced motion, layout shift and long tasks. axe runs on every screen in both themes in the end-to-end
+tests (0 serious/critical). The fixes it led to: the tower's Driver column no longer collapses below 1440 px, the
+call never relabels its defender ("order changed since"), a stored state reads NOT REPLAYING, and the archive
+stamps SMOKE TEST for a bundle scored by the sample model.
 
 ## 11. Evaluation
 
@@ -719,7 +741,7 @@ week below is the week tag on each step in `docs/PROGRESS.md`. The actual column
 | W6 | Kafka replay and Structured Streaming; FastAPI with SSE | 2026-11-12 |
 | W7 | live dashboard; what-if simulator | 2026-11-12 to 11-13 |
 | not tagged (last steps) | final experiments, hardening and CI; this report and the demo script | 2026-11-14; 2026-11-19 |
-| unplanned | TracingInsights instead of FastF1 (2026-11-12); the single 2025 test run (2026-11-13); dashboard features and the race-view redesign (2026-11-15 to 11-19) | as listed |
+| unplanned | TracingInsights instead of FastF1 (2026-11-12); the single 2025 test run (2026-11-13); dashboard features, the dashboard redesign and its final audit (2026-11-15 to 11-19) | as listed |
 | open | the demo rehearsal | not done |
 
 ## 13. Limitations and threats to validity
@@ -752,6 +774,11 @@ week below is the week tag on each step in `docs/PROGRESS.md`. The actual column
   for eligibility and exclusion.
 - **Jolpica data gaps.** Lap timestamps are estimated (about ±1 min or more). Penalties are not in the data, so they are inferred
   as heuristics. Wet running is excluded as neutralised rather than as wet.
+- **A stale gap for up to one lap after a late join.** When a page opens mid-lap or reconnects, the leader's
+  crossing for that lap can arrive only in the connect snapshot. Until the next per-lap snapshot, a car's gap to
+  the leader (and its interval) can then be the previous lap's value. The tower never shows "Leader" off P1, but a
+  stale non-zero gap can remain for up to one lap. The fix belongs in the web reducer (`lib/reducer.ts`) and was not
+  made.
 - **The inferred stale-car rule.** The dashboard marks a car "no timing since L…" after 2 leader laps without a
   crossing. This is inferred, not a retirement signal: a car in a long repair stop is marked stale until it crosses
   again.
@@ -776,8 +803,11 @@ Source: `README.md` "Limitations", `docs/PROGRESS.md` "Known issues", `docs/expe
   and refuse to overwrite. `make experiments` reruns every regenerable generator in a sandbox and compares it byte for
   byte: 66 OK, 2 DIFF (the expected what-if 2025 row).
 - **CI** (`.github/workflows/ci.yml`): `python` (ruff, mypy, the traceability check, unit tests), `web` (ESLint,
-  `tsc`, Vitest, build) and `e2e` (core profile, `make demo`, Playwright smoke). Freeze run: "python 2326 passed / 7
-  skipped, web 524 Vitest, e2e demo + Playwright 2 passed / 1 skipped".
+  `tsc`, Vitest, build) and `e2e` (core profile, `make demo`, Playwright smoke).
+- **Final proofs** (2026-11-20, on the dev host): python 2340 passed, web 563 Vitest, sample e2e 40 passed /
+  1 skipped (the latency spec runs only on request). The traceability check prints OK 506, GENERATED 2; the
+  archive equivalence check on sample 2024 R5 is EQUIVALENT at laps 5, 22 and 45; `make experiments-sample` gives
+  OK 7, OK (metadata differs) 1, DIFF 0; and `results/` is unchanged (`docs/PROGRESS.md` "Step 18 final").
 - **This report.** `make report-pdf` renders it to `docs/report/report.pdf`.
 
 Source: `README.md`, `docs/reproduce.md`, `docs/experiments.md`, `docs/PROGRESS.md`.
@@ -798,7 +828,8 @@ Future work:
    drying laps. That changes labels, so it would need a fresh review on 2021–2024 first.
 2. More labelled attempts (more seasons, or sprint races) to narrow the intervals.
 3. A multi-host cluster and a synthetic load test for the streaming path's maximum throughput.
-4. The remaining UI redesign (engineer, archive, picker, analysis pages) and the demo rehearsal.
+4. The demo rehearsal; a race summary for a page opened after the session ended (it needs an additive API change);
+   and the web reducer fix for the stale gap after a late join (§13).
 
 ## 16. Team contributions
 
@@ -898,7 +929,7 @@ both, ignoring line breaks). Paths are relative to the repository root.
 | A58 | What-if 2025 simulator mean P | 0.395 | README.md | What-if backtest table, 2025 row |
 | A59 | What-if 2025 simulator Brier | 0.245 | README.md | What-if backtest table, 2025 row |
 | A60 | Clean-clone `make demo` | 193 s | README.md | Run it |
-| A61 | CI freeze run | python 2326 passed / 7 skipped, web 524 Vitest, e2e demo + Playwright 2 passed / 1 skipped | docs/PROGRESS.md | Done, Freeze checks for submission-rc1 |
+| A61 | Final local proofs | python 2340 passed, web 563 Vitest, sample e2e 40 passed / 1 skipped | docs/PROGRESS.md | Done, Step 18 final |
 | A62 | `make experiments` regeneration result | 66 OK, 2 DIFF | docs/experiments.md | `make experiments` (full lake) |
 | A63 | Majority baseline, 2025 ECE 10 bins (lower than the primary model's) | 0.051 | docs/model_results.md | Results, G=3.5, k=2 table, majority baseline |
 | A64 | LOSO mean PR-AUC of the rule, development, primary setting | 0.559 | docs/model_spec_v2.md | §7 Disclosure |
@@ -921,3 +952,7 @@ both, ignoring line breaks). Paths are relative to the repository root.
 | A81 | `build_s1_x1_local1`, slowest timed run | 82.8875 | results/scalability.csv | cell_id=build_s1_x1_local1, max_s |
 | A82 | `build_s3_x1_local1`, fastest timed run | 56.6513 | results/scalability.csv | cell_id=build_s3_x1_local1, min_s |
 | A83 | `build_s3_x1_local1`, slowest timed run | 64.5230 | results/scalability.csv | cell_id=build_s3_x1_local1, max_s |
+| A84 | Dashboard audit widths | 1440, 1280, 1024, 768 and 390 px and at 200% zoom | docs/PROGRESS.md | Done, UI redesign Step 5, Audit |
+| A85 | axe on every screen, both themes | 0 serious/critical | docs/PROGRESS.md | Done, UI redesign Step 5, Tests |
+| A86 | Traceability check | OK 506, GENERATED 2 | docs/PROGRESS.md | Done, Step 18 final |
+| A87 | `make experiments-sample` result | OK 7, OK (metadata differs) 1, DIFF 0 | docs/PROGRESS.md | Done, Step 18 final |
