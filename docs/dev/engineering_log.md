@@ -2705,6 +2705,12 @@
     "body 21, appendices 1" summary line is not used).
   - **Tests**: `test_repo_docs.py` README test, wording only: `` ```mermaid `` became the `<picture>` sources,
     and the platform names are read from `architecture.mmd`. New `web/tests/readmeAssets.test.ts` (11 tests).
+  - **Shorter README** (same day): the Quick start moved word for word to the new `docs/getting-started.md`
+    (Prerequisites, Installation, Run the demo, Full-data mode, Stop); "Getting started", "Key results" and
+    "Documentation" are now one line or two links each, pointing to `docs/getting-started.md`,
+    `docs/reproduce.md`, `docs/results.md` and `docs/README.md`. The README test now finds the demo commands in
+    `docs/getting-started.md` and the headline PR-AUC in `docs/results.md`; traceability row 5 cites
+    `docs/reproduce.md` for full-data ingestion instead of the README.
 ## Next
 - S18B: the demo rehearsal with `docs/demo_script.md` (full lake, then the sample-mode fallback); fill in section 16
   (team contributions) of the report and run `make report-pdf` again. The report and demo script already describe

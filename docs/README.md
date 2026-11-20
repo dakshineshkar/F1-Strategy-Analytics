@@ -1,11 +1,13 @@
 # Documentation
 
-Every document in the repository. Start with the [README](../README.md), then [reproduce.md](reproduce.md) to run
-it, or the [report](report/report.md) for the full write-up.
+Every document in the repository. Start with the [README](../README.md), then
+[getting-started.md](getting-started.md) to run it and [reproduce.md](reproduce.md) for every experiment, or the
+[report](report/report.md) for the full write-up.
 
 | Document | What it covers |
 |---|---|
-| [README](../README.md) | Landing page: what the project is, quick start, headline results |
+| [getting-started.md](getting-started.md) | Installation, the sample demo, full-data mode and how to stop |
+| [README](../README.md) | Landing page: what the project is, its features, how it works, links to getting started and results |
 | [reproduce.md](reproduce.md) | Prerequisites, sample and full-data mode, every target that writes `results/`, clean-clone timing, tests and CI |
 | [architecture.md](architecture.md) | Code map and how each layer is built: ingestion, lake, Spark ETL and features, model, streaming, Redis, API, dashboard, memory budget |
 | [assets/architecture.mmd](assets/architecture.mmd) | Source of the README architecture image (`architecture-{dark,light}.{svg,png}`, redrawn by `make readme-assets`) |

@@ -109,54 +109,24 @@ More detail: [docs/architecture.md](docs/architecture.md). The diagram's source 
 
 ---
 
-## Quick start
+## Getting started
 
-Needs Docker with 12 GB of memory, GNU `make`, `python3` and [`uv`](https://docs.astral.sh/uv/). Details for
-Windows 11 + WSL 2, Linux and macOS: [Prerequisites](docs/reproduce.md#prerequisites).
+The sample demo runs on one machine with Docker, with no credentials and no HDFS.
 
-```bash
-git clone https://github.com/parinithd-27/F1-Strategy-Analytics.git
-cd F1-Strategy-Analytics
-make up            # core profile: kafka, redis, app, api, web (builds the images the first time)
-make sample-data   # validates data/sample offline
-make demo          # sample pipeline + sample model + a 60x replay of 2024 R5
-```
-
-Open http://localhost:3000/race/2024/5 while the replay runs. The demo uses two real Jolpica races with synthetic
-tyres and telemetry, so the dashboard shows a **SYNTHETIC DEMO DATA** banner. `make down` stops it.
-
-**Full-data mode** (HDFS, 2021–2025): `make up-full`, then the steps in
-[docs/reproduce.md](docs/reproduce.md#2-full-data-mode-hdfs-20212025).
+- Installation and how to run: [docs/getting-started.md](docs/getting-started.md)
+- Reproducing every experiment: [docs/reproduce.md](docs/reproduce.md)
 
 ---
 
 ## Key results
 
-2025 is the held-out test season, evaluated once. All numbers, with their intervals and sources, are in
-[docs/results.md](docs/results.md).
-
-| Result | Value |
-|---|---|
-| Undercut model, 49 labelled 2025 attempts (calibrated LR) | PR-AUC **0.670 [0.421, 0.898]**, Brier **0.177 [0.106, 0.232]**; better than the rule baseline on every metric, with overlapping intervals |
-| Streaming, produced → Pub/Sub at 60x (p50 / p95 / p99) | **798 / 1461.5 / 1757 ms** on a single host, one replayed race |
-| Partitioning by `season`, `round` | one-race queries **1.74x** faster on file:// and **1.20x** on HDFS |
-| What-if simulator | ordering **17 of 18** checks pass; 2025 simulator ECE **0.207** |
+All results, with their intervals and sources (2025 is the held-out test season, evaluated once): [docs/results.md](docs/results.md).
 
 ---
 
 ## Documentation
 
-| Document | What it covers |
-|---|---|
-| [docs/README.md](docs/README.md) | Index of every document |
-| [docs/reproduce.md](docs/reproduce.md) | Prerequisites, sample and full-data mode, every experiment target, tests and CI |
-| [docs/architecture.md](docs/architecture.md) | Code map and the design of each layer |
-| [docs/results.md](docs/results.md) | All results: model, ablation, what-if, streaming, Redis, Spark |
-| [docs/model_results.md](docs/model_results.md) | The 2025 model evaluation |
-| [docs/experiments.md](docs/experiments.md) | Spark, streaming and Redis experiments: method and runtime |
-| [docs/report/report.md](docs/report/report.md) ([PDF](docs/report/report.pdf)) | The project report |
-| [docs/demo_script.md](docs/demo_script.md) | The live demo script, with a fallback plan |
-| [docs/traceability.md](docs/traceability.md) | Every proposal commitment mapped to code, tests and proof |
+Every document is indexed in [docs/README.md](docs/README.md); the full write-up is the [project report (PDF)](docs/report/report.pdf).
 
 ---
 

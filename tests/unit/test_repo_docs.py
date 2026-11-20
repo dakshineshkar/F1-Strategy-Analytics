@@ -47,10 +47,7 @@ def test_readme_has_the_clone_and_run_essentials() -> None:
         'srcset="docs/assets/architecture-dark.svg"',
         'srcset="docs/assets/architecture-light.svg"',
         'src="docs/assets/architecture-dark.png"',
-        "make up",
-        "make sample-data",
-        "make demo",
-        "SYNTHETIC DEMO DATA",
+        "](docs/getting-started.md)",
         "docs/README.md",
         "docs/reproduce.md",
         "DATA_LICENSES.md",
@@ -58,9 +55,20 @@ def test_readme_has_the_clone_and_run_essentials() -> None:
         "DA231o",
         "Data Wranglers",
         "## Key results",
-        "0.670 [0.421, 0.898]",  # copied from docs/report/report.md
+        "](docs/results.md)",
     ):
         assert needle in readme, needle
+    # The quick start moved to docs/getting-started.md and the headline numbers to docs/results.md.
+    getting_started = _text("docs/getting-started.md")
+    for needle in (
+        "make up",
+        "make sample-data",
+        "make demo",
+        "SYNTHETIC DEMO DATA",
+        "reproduce.md#prerequisites",
+    ):
+        assert needle in getting_started, needle
+    assert "0.670 [0.421, 0.898]" in _text("docs/results.md")  # copied from docs/report/report.md
     assert "## Limitations" not in readme  # scope lives in the report, section 13
     for name in TEAM:
         assert name in readme, name

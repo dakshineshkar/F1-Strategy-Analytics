@@ -1,6 +1,6 @@
 # Key results
 
-The full results digest. The headline numbers are on the [README](../README.md). The method, runtime and
+The full results digest; the [README](../README.md) links here. The method, runtime and
 caveats of each experiment are in [experiments.md](experiments.md) and [model_results.md](model_results.md),
 and the full write-up is the [report](report/report.md). All documents: [docs/README.md](README.md).
 
