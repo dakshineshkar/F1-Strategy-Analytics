@@ -42,27 +42,7 @@ follows their order. The proposal PDF itself is not in the repository, so the ma
 
 ### 3.1 Architecture
 
-```mermaid
-flowchart TB
-    subgraph SRC[Sources]
-        direction LR
-        J[Jolpica-F1 API<br/>races, results, laps, pit stops] ~~~ TI[TracingInsights<br/>FastF1-derived tyres, race control,<br/>telemetry; pinned commits] ~~~ F[FastF1<br/>optional, F1 TV Access]
-    end
-    subgraph LAKE[Data lake on HDFS, partitioned season= / round=, and batch Spark]
-        direction LR
-        R[(raw zone)] -->|Spark ETL| C[(clean Parquet)] -->|RDD / DataFrame / SQL| FT[(feature tables)] --> M[MLlib LR + GBT<br/>Platt calibration<br/>2021-23 / 2024 / 2025]
-    end
-    subgraph LIVE[Streaming and serving]
-        direction LR
-        K[[Kafka f1.race.events<br/>replay 1x / 10x / 60x]] --> SS[Structured Streaming<br/>500 ms trigger, shared rule<br/>+ calibrated LR] --> RD[(Redis<br/>hashes, order zset,<br/>events channel, TTL)] --> A[FastAPI<br/>state, SSE, what-if] --> W[Next.js<br/>dashboard]
-        SIM[What-if simulator<br/>seeded Monte Carlo] --> A
-    end
-    SRC -->|ingest: rate-limited, cached, checksummed| LAKE
-    LAKE -->|clean race replayed, deployed scorer, earlier-race priors| LIVE
-```
-
-Figure 1. Data flow from the sources to the dashboard (rows: sources, lake and batch Spark, streaming and serving). Every component runs in Docker Compose on one host
-(`docker-compose.yml`, profiles `core` and `full`). Source: `docs/architecture.md`, README "Architecture".
+![Figure 1. Data flow from the sources to the dashboard in three stages (rows: data in, batch, live); each link between stages is labelled with what it carries. Every component runs in Docker Compose on one host (docker-compose.yml, profiles core and full). Source: docs/architecture.md; drawn from docs/assets/architecture.mmd, the image of the README section "How it works".](../assets/architecture-light.svg)
 
 ### 3.2 The role of each platform
 
@@ -853,7 +833,7 @@ Tools (versions pinned in the repository):
 5. Apache Spark / PySpark 4.2.1 (RDD, DataFrame, SQL, MLlib, Structured Streaming) on Java 17; Apache Hadoop HDFS
    3.4.3 with HttpFS; Apache Kafka 4.3 (KRaft) with `spark-sql-kafka-0-10_2.13:4.2.1`; Redis 8.10.
 6. FastAPI (Python 3.12) with Server-Sent Events; Next.js 16.4.5, React 19.3.1, TypeScript (strict), Playwright
-   1.64.1, Vitest; Docker Compose on WSL 2; marked and mermaid (only to render this report).
+   1.64.1, Vitest; Docker Compose on WSL 2; marked and mermaid (only to render this report and the README architecture image).
 
 Project documents cited: `docs/traceability.md`, `docs/label_definition.md`, `docs/model_spec.md`,
 `docs/model_spec_v2.md`, `docs/model_results.md`, `docs/sim_spec.md`, `docs/experiments.md`, `docs/architecture.md`,

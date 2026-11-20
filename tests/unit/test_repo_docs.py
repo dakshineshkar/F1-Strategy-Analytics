@@ -43,7 +43,10 @@ def test_citation_cff_names_the_team_and_licence() -> None:
 def test_readme_has_the_clone_and_run_essentials() -> None:
     readme = _text("README.md")
     for needle in (
-        "```mermaid",
+        "<picture>",
+        'srcset="docs/assets/architecture-dark.svg"',
+        'srcset="docs/assets/architecture-light.svg"',
+        'src="docs/assets/architecture-dark.png"',
         "make up",
         "make sample-data",
         "make demo",
@@ -61,6 +64,8 @@ def test_readme_has_the_clone_and_run_essentials() -> None:
     assert "## Limitations" not in readme  # scope lives in the report, section 13
     for name in TEAM:
         assert name in readme, name
+    # The architecture is a static image drawn from docs/assets/architecture.mmd.
+    diagram = _text("docs/assets/architecture.mmd")
     for part in (
         "HDFS",
         "RDD",
@@ -71,7 +76,7 @@ def test_readme_has_the_clone_and_run_essentials() -> None:
         "FastAPI",
         "Next.js",
     ):
-        assert part in readme.split("```mermaid", 1)[1].split("```", 1)[0], part
+        assert part in diagram, part
 
 
 def test_reproduce_has_the_prerequisites_for_both_host_types() -> None:

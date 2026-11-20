@@ -483,6 +483,16 @@ report-pdf: web/node_modules ## Render docs/report/report.md to docs/report/repo
 	cd web && npx playwright install chromium
 	cd web && node scripts/report-pdf.mjs ../docs/report/report.md ../docs/report/report.pdf
 
+# ---------------------------------------------------------------- README assets
+# The README's architecture image: docs/assets/architecture.mmd drawn by mermaid in Playwright's Chromium (the
+# report's devDependencies), rows stacked on stage bands and the links between rows routed by the script. Writes
+# docs/assets/architecture-{dark,light}.svg and .png (2x), which are committed; it fails if text would be smaller
+# than 11 px at GitHub's 830 px content width or if a label overlaps.
+.PHONY: readme-assets
+readme-assets: web/node_modules ## Render docs/assets/architecture.mmd to docs/assets/architecture-{dark,light}.{svg,png}
+	cd web && npx playwright install chromium
+	cd web && node scripts/readme-assets.mjs ../docs/assets/architecture.mmd ../docs/assets
+
 # ---------------------------------------------------------------- demo (Step 17)
 # make demo: the sample pipeline and a 60x replay from a fresh clone (no credentials, no HDFS).
 # Needs `make up` (core profile) and `make sample-data`. Every Spark step runs in the running app

@@ -2681,6 +2681,30 @@
       restored) for the result above.
   - **Services at the end:** `make api-up FULL=1 REPLAY=1`; health 200 (hdfs, full, `deploy_real_G3.5_k2`,
     smoke_test false, trained on full); no replay running. The web container was rebuilt from 98940c5.
+- 2026-11-20: README landing page and a static architecture image (docs and README assets only; no app code,
+  `results/` or `data/` change).
+  - **README** rewritten as a landing page (175 lines, `---` between sections): hero, overview, one linked
+    full-width screenshot per feature from `docs/design/after/` (the call and the timing tower refer to the hero),
+    How it works, quick start, key results (copied verbatim from `docs/results.md`), documentation, team,
+    licence. Every earlier link is kept; its 41 relative links and images resolve.
+  - **Architecture image**: source `docs/assets/architecture.mmd`; `make readme-assets`
+    (`web/scripts/readme-assets.mjs`, mermaid 12.3.0 + Playwright Chromium, no new dependency) writes
+    `architecture-{dark,light}.svg` and `.png` (2x). The three rows (Data in, Batch, Live) sit on tinted stage
+    bands. The links between rows are explicit and labelled, and the script routes them. mermaid cannot do this,
+    because it drops a subgraph's direction once its nodes link outside it. Fonts are embedded and the labels are
+    SVG text (no `foreignObject`), so the image renders inside `<img>`.
+  - **Guards**: smallest text 11.4 px at 830 px (at least 11), in-row links left to right, no label overlaps. The
+    README shows the image with `<picture>` (dark and light sources, dark PNG fallback).
+  - **Diagram choices**:
+    - the what-if simulator sits in the Batch row (its tyre model is fitted offline; it is run per request by the
+      API);
+    - FastAPI's replay control is in its node label, not drawn as a link back to Kafka.
+  - **Report**: Figure 1 is now `docs/assets/architecture-light.svg` (Appendix A unchanged), and
+    `make report-pdf` was rerun: 22 pages, body 19,
+    Appendix A 3 (pypdf: the page whose first line is the Appendix A heading is page 20; the script's own
+    "body 21, appendices 1" summary line is not used).
+  - **Tests**: `test_repo_docs.py` README test, wording only: `` ```mermaid `` became the `<picture>` sources,
+    and the platform names are read from `architecture.mmd`. New `web/tests/readmeAssets.test.ts` (11 tests).
 ## Next
 - S18B: the demo rehearsal with `docs/demo_script.md` (full lake, then the sample-mode fallback); fill in section 16
   (team contributions) of the report and run `make report-pdf` again. The report and demo script already describe

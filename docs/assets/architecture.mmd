@@ -1,0 +1,71 @@
+%% Architecture of F1 Strategy Analytics at Scale: the source of docs/assets/architecture-{dark,light}.{svg,png}.
+%% Render it with `make readme-assets` (web/scripts/readme-assets.mjs adds the colours of each theme).
+%% Every node and link is described in docs/architecture.md.
+%% Rules the renderer relies on: one statement per line; three top-level row subgraphs (ROW_DATA, ROW_BATCH,
+%% ROW_LIVE), each read left to right, whose links stay inside the row; the links between rows come after the
+%% rows, one per line, each with a label. The renderer draws each row with mermaid and the links between rows
+%% itself, because mermaid drops a subgraph's direction as soon as its nodes link outside it.
+flowchart TB
+    subgraph ROW_DATA["Data in"]
+        direction LR
+        subgraph SRC["Sources"]
+            J["Jolpica-F1 API<br/>races, laps, pit stops"]
+            TI["TracingInsights<br/>FastF1-derived tyres<br/>and telemetry, pinned"]
+            FF["FastF1, optional<br/>F1 TV Access"]
+        end
+        ING["Ingestion<br/>rate-limited clients<br/>HttpFS sink, sha256"]
+        subgraph LAKE["HDFS lake, season= / round="]
+            direction LR
+            RAW[("raw")]
+            CLEAN[("clean")]
+            FEAT[("features")]
+            ARC[("archive")]
+            RAW ~~~ CLEAN
+            CLEAN ~~~ FEAT
+            FEAT ~~~ ARC
+        end
+        J --> ING
+        TI --> ING
+        FF -.-> ING
+        ING --> LAKE
+    end
+    subgraph ROW_BATCH["Batch"]
+        direction LR
+        SPARK["Spark batch<br/>ETL: raw to clean<br/>RDD, DataFrame, SQL"]
+        MOD["MLlib: LR + GBT<br/>Platt calibration<br/>train 2021-23, val 2024,<br/>test 2025"]
+        SC["Deployed scorer<br/>calibrated LR<br/>scorer.json"]
+        SIM["What-if simulator<br/>tyre model fit offline<br/>seeded Monte Carlo"]
+        SPARK ~~~ MOD
+        MOD --> SC
+        SC ~~~ SIM
+    end
+    subgraph ROW_LIVE["Live"]
+        direction LR
+        K[["Kafka<br/>f1.race.events<br/>replay 1x / 10x / 60x"]]
+        SS["Structured Streaming<br/>500 ms trigger<br/>live features, rule,<br/>calibrated LR"]
+        RD[("Redis<br/>driver hash,<br/>order zset, events,<br/>TTL")]
+        API["FastAPI<br/>state, SSE,<br/>replay control,<br/>what-if, archive"]
+        UI["Next.js<br/>dashboard"]
+        K --> SS
+        SS --> RD
+        RD --> API
+        API --> UI
+    end
+    LAKE <-->|"read raw + clean, write clean + features"| SPARK
+    FEAT -->|"training"| MOD
+    LAKE -->|"tyre model, priors"| SIM
+    SC -->|"deployed model"| SS
+    SIM -->|"pit now / next lap / stay out"| API
+    CLEAN -->|"one race replayed"| K
+    FEAT -->|"earlier-race priors"| SS
+    ARC -->|"archive bundles"| API
+    class J,TI,FF sources
+    class ING sources
+    class RAW,CLEAN,FEAT,ARC storage
+    class SPARK batch
+    class MOD,SC ml
+    class K,SS streaming
+    class RD serving
+    class API api
+    class UI ui
+    class SIM sim

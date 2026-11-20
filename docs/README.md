@@ -8,6 +8,7 @@ it, or the [report](report/report.md) for the full write-up.
 | [README](../README.md) | Landing page: what the project is, quick start, headline results |
 | [reproduce.md](reproduce.md) | Prerequisites, sample and full-data mode, every target that writes `results/`, clean-clone timing, tests and CI |
 | [architecture.md](architecture.md) | Code map and how each layer is built: ingestion, lake, Spark ETL and features, model, streaming, Redis, API, dashboard, memory budget |
+| [assets/architecture.mmd](assets/architecture.mmd) | Source of the README architecture image (`architecture-{dark,light}.{svg,png}`, redrawn by `make readme-assets`) |
 | [data_dictionary.md](data_dictionary.md) | Every table and column of the clean and feature zones, the sample bundle, the synthetic data and the model outputs |
 | [data_source_audit.md](data_source_audit.md) | Audit of TracingInsights (primary source of tyres, race control and telemetry) and OpenF1 (cross-check) |
 | [label_definition.md](label_definition.md) | The undercut label and the decision-time feature definitions (frozen, `label-definition-v1`) |
