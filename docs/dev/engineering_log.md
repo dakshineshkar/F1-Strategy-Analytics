@@ -1,4 +1,4 @@
-# Progress
+# Engineering log
 ## Done
 - Step 0: repo bootstrapped, CLAUDE.md, traceability matrix and Claude Code permissions added
 - Step 1 (W1): monorepo scaffold and tooling
@@ -2976,7 +2976,7 @@
     data (see DATA_LICENSES.md).
 - The 1,936 old under-replicated blocks remain until the user runs `setrep` (see Next).
 - Wet running is excluded as `neutralised` in full mode (compounds are null, so `wet` cannot fire). Kept on
-  purpose; the reporting split estimates the share. See `docs/label_definition.md` "Known limitations".
+  purpose; the reporting split estimates the share. See `docs/label_definition.md` "Scope notes".
 - At L=5 `gap_ahead_change_3l` uses the lap-1 gap (standing start). L=4 is now excluded as `early_lap`.
 - The app container does not come back after a Docker Desktop/WSL restart (exit 128, not OOM; seen twice). The
   scratchpad in /tmp is wiped at the same time.

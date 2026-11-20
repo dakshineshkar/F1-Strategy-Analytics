@@ -2,7 +2,7 @@
 
 This page takes you from a fresh clone to the demo (sample mode) and to every committed result (full-data mode).
 Run all commands from the repository root in a Linux shell, or in WSL 2 on Windows. Prerequisites and memory needs
-are in the [README](../README.md#prerequisites).
+are in [Prerequisites](#prerequisites) below. All documents: [docs/README.md](README.md).
 
 Ground rules:
 - **`results/` is the record.** It holds the committed results. Targets write it only where the tables below say
@@ -17,6 +17,35 @@ Ground rules:
   `results/` itself is never written. This is the quickest way to check that the code still reproduces the
   committed files.
 
+## Prerequisites
+
+The demo runs on the committed sample: two races (2023 R5 and 2024 R5) of real Jolpica laps and pit stops with
+**synthetic** tyres and telemetry (`is_synthetic=true`). It needs no credentials, no HDFS and no Java on the
+host. The dashboard always shows a **SYNTHETIC DEMO DATA** banner.
+
+
+| | Windows 11 + WSL 2 | Linux / macOS |
+|---|---|---|
+| Docker | Docker Desktop with WSL integration for your distro | Docker Engine or Docker Desktop, Compose v2 (`docker compose`) |
+| Tools in the shell | `git`, GNU `make`, `python3` 3.8 or newer (only the standard library, for `make up`'s replay check), [`uv`](https://docs.astral.sh/uv/) (installs Python 3.12 itself, for `make sample-data`) | the same (macOS: `make` from the Xcode command line tools) |
+| Memory for Docker | `memory=12GB` or more in `%UserProfile%\.wslconfig`, then `wsl --shutdown` | 12 GB or more available to Docker |
+| Disk | about 15 GB free (images: app 7.2 GB, web 0.4 GB, kafka 0.7 GB, redis 0.2 GB) | the same |
+| Free ports | 3000 (web), 8000 (api), 9092 (kafka), 6379 (redis) on 127.0.0.1 | the same |
+
+- **WSL 2: clone inside the Linux file system** (for example `~/code`), not under `/mnt/c`. Bind mounts and
+  Spark are much slower across the Windows boundary.
+- **Memory.** The core profile's container limits add up to about 9.6 GiB (kafka 768 MiB, redis 384 MiB, app
+  6 GiB, api 2 GiB, web 512 MiB). The demo itself uses far less, and the full table is in
+  [architecture.md#memory-budget](architecture.md#memory-budget).
+- **User id.** Without a `.env`, `make` builds the app image for your user id (`id -u`), so the containers can
+  write `data/` and `models/`. To change ports or the user id, copy `.env.example` to `.env`.
+- **A second checkout on the same host.** `docker-compose.yml` fixes the compose project name (`name: f1sa`), so
+  a second clone would join a stack that already runs: it would share that stack's `kafka-data` volume and
+  rebuild its `:dev` images. Stop the running stack with `make down` (it uses the same ports) and run the second
+  clone as its own project, in the same shell as every `make` command of that clone
+  ([§4](#4-timing-of-a-fresh-clone)):
+  `export COMPOSE_PROJECT_NAME=f1sa-clone F1SA_IMAGE_TAG=clone`.
+
 ## 1. Sample mode (no credentials, no HDFS)
 
 | Step | Command | What it does | Time |
@@ -29,16 +58,24 @@ Ground rules:
 
 **`make demo-pipeline`** runs the sample pipeline in the running `app` container (`docker compose exec`):
 1. `python -m f1sa.etl.clean --source sample` builds `data/lake/clean`.
-2. `python -m f1sa.features.build --source sample --results-dir data/demo/demo_<stamp>` builds
+2. `python -m f1sa.etl.entrants` builds the display-only per-race **entrants** table (`clean/entrants`: driver,
+   team, colours).
+3. `python -m f1sa.etl.analysis --source sample` builds the display-only post-race **analysis** tables
+   (`clean/analysis_*`: laps, stints, pit stops, race control, positions).
+4. `python -m f1sa.features.build --source sample --results-dir data/demo/demo_<stamp>` builds
    `data/lake/features`. The undercut counts go to `data/demo/`, not `results/`.
-3. `python experiments/model_save.py --source sample --force` builds the **sample deployment model**
-   `models/undercut/sample_deploy_real_G3.5_k2/`.
+5. `python experiments/model_save.py --source sample --force` builds the **sample deployment model**
+   `models/undercut/sample_deploy_real_G3.5_k2/`, which is what the stream job scores with.
    - It is the frozen procedure on the two sample races: 2023 R5 trains it and 2024 R5 calibrates it.
-   - It is stamped `smoke_test: true`.
+   - It is stamped `smoke_test: true` (SMOKE TEST). Its probabilities are not findings.
    - The comparison with a development run is skipped (the sample has none). The reload round trip and the
      pure-Python scorer against Spark still run.
-   - It never writes `models/undercut/deploy_*` or `results/`.
-4. `python -m f1sa.sim.tyre_model --source sample` builds `models/sim/tyre_model_sample.json`.
+   - It never writes `models/undercut/deploy_*` or `results/`. The real deployment model is built from the full
+     lake (`make model-save-full`) and is not part of the demo.
+6. `python -m f1sa.archive.build --source sample --model-dir <sample model>` builds the **post-race archive**
+   bundles (`data/lake/archive`): each sample race replayed lap by lap through the stream path with the sample
+   model, for the post-race viewer.
+7. `python -m f1sa.sim.tyre_model --source sample` builds the what-if tyre model `models/sim/tyre_model_sample.json`.
 
 **`make demo-replay`** starts the replay:
 1. It runs `make api-up REPLAY=1 MODEL_DIR=models/undercut/sample_deploy_real_G3.5_k2`, which recreates only the api
@@ -52,6 +89,9 @@ Ground rules:
    - `DEMO_WAIT=finished` also waits for the replay to finish (CI uses it);
    - `DEMO_SPEED=1|10|60`, `DEMO_SEASON=` and `DEMO_ROUND=` choose the replay.
 4. Outputs: `data/demo/<run_id>/` (`make demo-clean` lists them).
+
+Open the printed URL while the replay runs (about 2 minutes at 60x). Start another replay from the page, or run
+`make demo-replay`. Use `localhost`, not `127.0.0.1`: it is the API's CORS origin.
 
 **Other sample targets** (on the host; they need Java 17 and `uv sync --all-extras`):
 - `make etl-sample`, `make features-sample`, `make model-eval-sample`, `make sim-tyre-model-sample` and
@@ -77,7 +117,39 @@ Needs `make up-full`, which adds namenode, datanode, HttpFS, the Spark master an
 | 8 | `make sim-tyre-model-full` | `models/sim/tyre_model_full.json` | `TEST_SEASON=1` adds the 2025 entries that the RECORD what-if run needs |
 | 9 | `make api-up FULL=1 REPLAY=1` | | dashboard on the full lake (90 races) |
 
+- **Scope.** The lake holds 114 races (2021–2025), and the API serves the 90 of 2021–2024 (2025 is the sealed
+  test season).
+- **FastF1, optional.** Since October 2026 FastF1 needs an **F1 TV Access** login (`F1_USERNAME`, `F1_PASSWORD`
+  in the environment, never committed). Without one it returns empty sessions, and the loaders fail loudly. The
+  project's results use TracingInsights instead.
+- **The single 2025 test run**, `make model-test-full CONFIRM=yes`, is pre-registered and refuses to run twice.
+- **Serve the full lake after a `make down`.** `make api-up FULL=1` needs the hdfs profile, so start the full stack
+  again with `make up-full` first (the HDFS volumes are kept), then run `make api-up FULL=1 REPLAY=1` and, for a
+  rebuilt dashboard, `make web-up`.
+
 ## 3. Every target that writes `results/`
+
+### Experiments at a glance
+
+Every experiment is a make target. Targets with `RECORD=1` write `results/` and refuse to overwrite an existing
+file. Without `RECORD`, they write only to `data/`. `make experiments` (full lake) and `make experiments-sample`
+rerun every regenerable generator in a sandbox and compare each output byte for byte with the committed
+`results/`. They never write `results/`. Method, runtime and limits are in [experiments.md](experiments.md).
+
+| Experiment (traceability #) | Command | Runtime on the dev host | Outputs |
+|---|---|---|---|
+| Model evaluation, chronological split, calibration (#29, #39) | `make model-dev-full`; the 2025 test run `make model-test-full CONFIRM=yes` (once) | 211 s per development run (both settings) | `results/model_dev_*`, `results/model_eval_*`, `results/calibration_*` |
+| Paired ablation intervals (#30) | `make ablation-full RECORD=1` | 1 min 45 s | `results/ablation_paired.{csv,png}` |
+| ORACLE out-lap variant, development data only (#30) | `make oracle-dev-full RECORD=1` | 2 min 49 s | `results/model_dev_{eval,loso}_oracle*.csv` |
+| Spark scalability, 1/3/5 seasons (#27, #33, #38) | `make experiments-spark RECORD=1 GRID_ARGS="..."` (overnight, nothing else running) | hours | `results/scalability.csv`, `scalability_{build,telemetry}.png` |
+| Partitioning and caching (#28, #34) | part of `make experiments-spark` | about 0.5 h (estimate) | `results/partitioning.csv`, `partitioning_speedup.png` |
+| Streaming replay latency, throughput, resources (#31, #35, #36, #38) | `make stream-latency-suite RECORD=1` (core profile only) | 28 min 28 s | `results/streaming_*` |
+| UI render latency (#35) | `make api-up DEBUG=1 UI_LATENCY_CSV=data/demo/ui_latency/ui_latency.csv`, then `make stream-latency-ui RECORD=1` | 2 min 9 s | `results/ui_latency*.csv` |
+| Redis latency at streaming rates (#37) | `make redis-latency RECORD=1` | 3 min 31 s | `results/redis_latency_quiet.csv` |
+| What-if consistency + backtest (#32, #40) | `make whatif-consistency-full RECORD=1` | 17 s (development run) | `results/whatif_consistency.{csv,png}` |
+| Regeneration check (all non-2025 generators) | `make experiments` / `make experiments-sample` | 19 min 26 s / 1 min 27 s | `data/experiments/<run_id>/summary.txt` |
+
+### The full list
 
 Every file in `results/` is tracked by git (154 files; `git ls-files results`).
 - "Refuses" means the target stops before any work if one of its output files exists, prints which ones and
@@ -139,6 +211,12 @@ CPU, memory, container limits and versions.
 
 ## 4. Timing of a fresh clone
 
+On the dev host, `make demo` takes about **193 s** (clean clone of 2026-11-19 with a warm image cache; `make up`
+63 s). An earlier clean clone (2026-11-14) took 5 min 57 s for an image build without cache plus
+`make up && make sample-data && make demo`, when `make demo` took 103 s because it did not yet build the
+entrants, analysis and archive tables. Base images and package caches were warm both times, so a first run on a
+new machine also pays for the downloads (below).
+
 Measured with the clean-clone check of Step 17 (below). The clone ran as its own compose project, so its containers,
 volumes and image tags were separate:
 
@@ -183,6 +261,20 @@ On a new machine, the image pulls and the Python and Node downloads add their ne
 
 CI (`.github/workflows/ci.yml`) runs the three jobs in parallel, each under 30 minutes, with the uv and npm caches.
 It never uses the full profile, full data, 2025 or `RECORD=1`.
+
+**For developers.**
+
+```bash
+make setup                 # uv sync --all-extras
+make lint typecheck test   # ruff, mypy, Python unit tests (Java 17 needed on the host for Spark tests)
+make web-test              # dashboard lint, typecheck, Vitest
+uv run python scripts/check_traceability.py
+```
+
+- **CI** (`.github/workflows/ci.yml`) runs these checks. It also runs an end-to-end job on the core profile:
+  `make up`, `make sample-data`, `make demo DEMO_WAIT=finished` and the Playwright smoke test.
+- **Integration tests** (`tests/integration`, which need `make up-full`) are run by hand (table above).
+- Step-by-step build history: the [engineering log](dev/engineering_log.md).
 
 ## 6. Clean-up
 

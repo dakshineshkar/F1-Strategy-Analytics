@@ -2,8 +2,8 @@
 deletes or overwrites a pre-existing file in ``results/``.
 
 The loss itself was a ``git clean -f -q -- results/...`` run by the editor's git integration (see
-docs/PROGRESS.md), not repo code. These tests pin that down for the repo code that ran in that
-window, against a temporary copy of the results folder:
+docs/dev/engineering_log.md), not repo code. These tests pin that down for the repo code that ran
+in that window, against a temporary copy of the results folder:
 
 * the six ``--allow-test-season`` runs (``make model-test-full``): refused, nothing touched;
 * the ``real_tyre`` / ``real_ti`` development runs (``make model-dev-tyre-full model-dev-ti-full``):

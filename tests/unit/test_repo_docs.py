@@ -1,4 +1,4 @@
-"""Clone-and-run documentation of Step 17: README, docs/reproduce.md and CITATION.cff."""
+"""Clone-and-run docs of Step 17: README, docs/README.md, docs/reproduce.md and CITATION.cff."""
 
 from __future__ import annotations
 
@@ -48,19 +48,17 @@ def test_readme_has_the_clone_and_run_essentials() -> None:
         "make sample-data",
         "make demo",
         "SYNTHETIC DEMO DATA",
-        "Windows 11 + WSL 2",
-        "Linux / macOS",
-        ".wslconfig",
+        "docs/README.md",
         "docs/reproduce.md",
         "DATA_LICENSES.md",
         "CITATION.cff",
         "DA231o",
         "Data Wranglers",
-        "## Limitations",
         "## Key results",
-        "0.670 [0.421, 0.898]",  # copied from docs/model_results.md
+        "0.670 [0.421, 0.898]",  # copied from docs/report/report.md
     ):
         assert needle in readme, needle
+    assert "## Limitations" not in readme  # scope lives in the report, section 13
     for name in TEAM:
         assert name in readme, name
     for part in (
@@ -74,6 +72,13 @@ def test_readme_has_the_clone_and_run_essentials() -> None:
         "Next.js",
     ):
         assert part in readme.split("```mermaid", 1)[1].split("```", 1)[0], part
+
+
+def test_reproduce_has_the_prerequisites_for_both_host_types() -> None:
+    doc = _text("docs/reproduce.md")
+    assert "## Prerequisites" in doc
+    for needle in ("Windows 11 + WSL 2", "Linux / macOS", ".wslconfig"):
+        assert needle in doc, needle
 
 
 def test_reproduce_lists_every_record_target_and_the_integration_tests() -> None:
@@ -115,7 +120,7 @@ REPORT_SECTIONS = (
     "10. Dashboard",
     "11. Evaluation",
     "12. Results against the success metrics",
-    "13. Limitations and threats to validity",
+    "13. Scope and assumptions",
     "14. Reproducibility",
     "15. Conclusion and future work",
     "16. Team contributions",

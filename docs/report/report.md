@@ -234,7 +234,7 @@ exclusion, never as a feature. Source: `docs/label_definition.md` "Leakage rules
 (git tag `label-definition-v1`, 2026-11-11) before the TracingInsights ingest (2026-11-12), and changing it would
 change labels. TracingInsights track status is therefore used only for display: the race-analysis tables, the
 dashboard's race-status line and the archive's flag lane. Its two forms, per-lap codes and race-control periods,
-agree with each other: "463 leader laps flagged by both, 0 by only one source" (`docs/PROGRESS.md`, race-analysis
+agree with each other: "463 leader laps flagged by both, 0 by only one source" (`docs/dev/engineering_log.md`, race-analysis
 evidence). This checks the display data only; the heuristic itself was not compared with TracingInsights.
 
 ## 6. Undercut definition and detection
@@ -343,7 +343,7 @@ At the primary setting:
     was fixed after those tables had been seen. Both sets score below `real`, so the outcome is the same for any
     margin of 0 or more (`docs/model_spec_v2.md` §2).
 - **Approval.** On 2026-11-13 the specs were approved for the single test run "by Parinith D. on behalf of the team"
-  (the approval record at the end of `docs/PROGRESS.md`).
+  (the approval record at the end of `docs/dev/engineering_log.md`).
 - **The one run.** `make model-test-full CONFIRM=yes` ran 3 feature sets × 2 settings. It refuses to run again once
   its files exist. An earlier attempt crashed overnight before any test number was written, and the rerun rule
   allowed it to be repeated.
@@ -462,7 +462,7 @@ The archive is built by the stream's own processor and checked equal to a live r
   opened is shown as "not received", never back-filled.
 - Every empty value says why.
 
-**Final audit** (`docs/PROGRESS.md` "UI redesign Step 5"). Every screen was checked at 1440, 1280, 1024, 768 and
+**Final audit** (`docs/dev/engineering_log.md` "UI redesign Step 5"). Every screen was checked at 1440, 1280, 1024, 768 and
 390 px and at 200% zoom, in the dark, light and Auto themes, with a keyboard-only Tab walk and Escape, landmarks and
 headings, reduced motion, layout shift and long tasks. axe runs on every screen in both themes in the end-to-end
 tests (0 serious/critical). The fixes it led to: the tower's Driver column no longer collapses below 1440 px, the
@@ -573,7 +573,7 @@ of 0.347.
 | Rule baseline | 0.513 [0.246, 0.799] | 0.273 [0.168, 0.353] | 0.702 [0.516, 0.860] | 0.357 [0.000, 0.542] | 0.258 [0.162, 0.360] |
 | Majority-class baseline | 0.347 [0.162, 0.517] | 0.229 | 0.500 | 0.000 | 0.051 |
 
-Source: `README.md` "Key results", `docs/model_results.md`, `results/model_eval_G3.5_k2.csv`.
+Source: `docs/results.md` "Key results", `docs/model_results.md`, `results/model_eval_G3.5_k2.csv`.
 
 **Reading.**
 - The primary model scores better than the rule baseline on every metric, but the intervals are per-model and
@@ -632,7 +632,7 @@ Source: `docs/model_results.md` "ORACLE variant".
 | Produced → Pub/Sub (end to end) | 729 / 1039 / 1115.4 ms | 786.5 / 1227.0 / 1586.5 ms | 798 / 1461.5 / 1757 ms |
 | Redis write → SSE client | p50 2 / p99 5.4 ms | p50 2 / p99 8 ms | p50 2 / p99 5 ms |
 
-Source: `README.md` "Streaming, UI and Redis latency", `docs/experiments.md`, `results/streaming_latency_summary.csv`.
+Source: `docs/results.md` "Streaming, UI and Redis latency", `docs/experiments.md`, `results/streaming_latency_summary.csv`.
 
 **Reading.**
 - **The trigger and the Kafka hop dominate.** The 500 ms trigger and the Kafka hop take about 0.73–0.80 s of the
@@ -700,7 +700,7 @@ core. The peaks come from JVM and Spark start-up.
 | 2021–2024 (development) | 155 | 0.185 | 0.090 | 0.295 | 0.303 | 0.152 (157; its own training and calibration rows) | 0.058 |
 | **2025 (held out)** | 49 | **0.245** | **0.207** | **0.395** | 0.347 | 0.177 | 0.107 |
 
-Source: `README.md` "What-if simulator", `results/whatif_consistency.csv`.
+Source: `docs/results.md` "What-if simulator", `results/whatif_consistency.csv`.
 
 **Reading.**
 - On 2025 the simulator over-predicts success (mean P 0.395 against an observed 0.347).
@@ -716,19 +716,19 @@ Read the simulator's probabilities as a comparison between strategies from the s
 | 17 | F1 vs. majority-class baseline (positive class, fixed threshold 0.5) | 0.571 [0.323, 0.778] against 0.000; PR-AUC 0.670 against 0.347 | done | `docs/model_results.md` |
 | 33 | Spark runtime and scaling trend | telemetry 18.01 s → 7.49 s (2.40x) on `local[4]`; build at 3 seasons x4 fastest on the cluster, 1.59x over `local[1]` | done (single host) | `docs/experiments.md` |
 | 34 | Speed-up from partitioning and caching | one race 1.74x (file://), 1.20x (HDFS); full scans 0.30x; `cache()` 1.41x on one race | done | `docs/experiments.md` |
-| 35 | Streaming latency | end to end at 60x 798 / 1461.5 / 1757 ms; SSE send → paint 28 / 37 / 40 ms | done | `README.md` |
+| 35 | Streaming latency | end to end at 60x 798 / 1461.5 / 1757 ms; SSE send → paint 28 / 37 / 40 ms | done | `docs/results.md` |
 | 36 | Event throughput | 12.71 messages/s at 60x, equal to the produced rate; maximum not load-tested | done | `docs/experiments.md` |
-| 37 | Redis read/write latency at streaming rate | write 1.21 / 1.59 / 1.78 ms at 60/s; 0 late ticks | done | `README.md` |
+| 37 | Redis read/write latency at streaming rate | write 1.21 / 1.59 / 1.78 ms at 60/s; 0 late ticks | done | `docs/results.md` |
 | 38 | Resource usage | host job tree 1.62 GiB at 60x; Spark cells measured against a 5.40 GiB memory guard | done | `docs/experiments.md` |
 | 39 | Calibration | ECE 0.107 [0.076, 0.234]; Brier 0.177 [0.106, 0.232] | done | `docs/model_results.md` |
-| 40 | Useful and consistent what-if comparisons | monotonicity and determinism pass; ordering 17 of 18; 2025 simulator ECE 0.207 | done, with the weakness reported | `README.md` |
+| 40 | Useful and consistent what-if comparisons | monotonicity and determinism pass; ordering 17 of 18; 2025 simulator ECE 0.207 | done, with the weakness reported | `docs/results.md` |
 | 41 | Interactive dashboard | live race view, engineer, what-if, archive, analysis; UI paint p50 28 ms | done | `docs/traceability.md` #41 |
 
 Of the 44 commitments in `docs/traceability.md`, #4 (FastF1 data via TracingInsights), #43 (timeline) and #44
 (report and demo rehearsal) are partial. None is dropped.
 
 **Timeline (#43), planned against actual.** The proposal's own week dates are not in the repository. The planned
-week below is the week tag on each step in `docs/PROGRESS.md`. The actual column is the date the work was committed
+week below is the week tag on each step in `docs/dev/engineering_log.md`. The actual column is the date the work was committed
 (`git log`), so it shows order and slippage, not effort.
 
 | Planned week | Work | Committed |
@@ -744,60 +744,59 @@ week below is the week tag on each step in `docs/PROGRESS.md`. The actual column
 | unplanned | TracingInsights instead of FastF1 (2026-11-12); the single 2025 test run (2026-11-13); dashboard features, the dashboard redesign and its final audit (2026-11-15 to 11-19) | as listed |
 | open | the demo rehearsal | not done |
 
-## 13. Limitations and threats to validity
+## 13. Scope and assumptions
 
-- **A small labelled set, so wide intervals.** The test season has 49 labelled attempts in 19 races, and the training
-  set has 108. The 2025 intervals are wide, and no difference between models or feature sets is claimed as significant.
-  The model choice rests on an in-sample 2024 Brier (§7.2).
-- **The label depends on the defender's response.** An attempt is labelled only when D makes its first stop in
-  [L + 1, L + k]. If it does not, the outcome is `defender_stayed_out`, which is not part of the binary label, and
-  those rows are dropped from the model data (`docs/label_definition.md` "Definition", item 3, and "Model inputs").
-  The model's probability is therefore the chance of success given that D responds within k laps, and whether D
-  will respond is not known at decision time.
-- **A single host.**
+- **Test-set size.** The test season has 49 labelled attempts in 19 races, and the training set has 108. The 2025
+  intervals are therefore wide, and no difference between models or feature sets is claimed as significant. The
+  model choice rests on an in-sample 2024 Brier (§7.2).
+- **What the probability means.** An attempt is labelled only when D makes its first stop in [L + 1, L + k]. If it
+  does not, the outcome is `defender_stayed_out`, which is not part of the binary label, and those rows are dropped
+  from the model data (`docs/label_definition.md` "Definition", item 3, and "Model inputs"). The model's
+  probability is therefore the chance of success given that D responds within k laps, and whether D will respond
+  is not known at decision time.
+- **Deployment on a single host.**
   - Every "node" is a container on one VM: there is no network shuffle and one HDFS datanode (no data locality), and
     the page cache is shared, so timed runs read warm.
   - The "cluster" is 2 workers × 2 cores on the same CPUs as the driver.
-- **Synthetic scale-up.** Inputs above x1 are exact copies of the lap tables with shifted keys, so skew, cardinality
-  and compression are idealised. Telemetry is real but only one season.
-- **Modest real data.** The real data is about 2 GB raw (§4.2). Scale behaviour beyond it comes only from synthetic
-  replication.
-- **The largest local cells have no timing.** Four `local[N]` cells were stopped by the memory guard. The two
-  cluster cells that finished each lost an executor and may include recovery time. One of them had 0.2 GiB of
-  memory margin.
-- **FastF1 was replaced by TracingInsights.**
-  - The data is FastF1-derived but comes through a third party at pinned commits.
-  - Compound coverage is low for 2025 Miami R6 (55.6%).
+- **Scale-up inputs.** Inputs above x1 are exact copies of the lap tables with shifted keys, so skew, cardinality
+  and compression are idealised. Telemetry is real but only one season. The real data is about 2 GB raw (§4.2), and
+  scale behaviour beyond it comes only from the synthetic replication.
+- **Memory guard on the largest cells.** Four `local[N]` cells were stopped by the memory guard and have no timing.
+  The two cluster cells that finished each lost an executor and may include recovery time. One of them had 0.2 GiB
+  of memory margin.
+- **Source of tyres, race control and telemetry.**
+  - TracingInsights is used in place of FastF1: the data is FastF1-derived but comes through a third party at
+    pinned commits.
+  - Compound coverage is 55.6% for 2025 Miami R6.
   - The direct FastF1 path is tested only on hand-made files.
-- **Hindsight track status and race distance in the replay.** Track status (a whole-race heuristic) and `race_laps`
-  are carried on the replayed events. They are the only non-causal inputs of the stream. In batch they are used only
+- **Track status and race distance in the replay.** Track status (a whole-race heuristic) and `race_laps` are
+  carried on the replayed events. They are the only non-causal inputs of the stream. In batch they are used only
   for eligibility and exclusion.
-- **Jolpica data gaps.** Lap timestamps are estimated (about ±1 min or more). Penalties are not in the data, so they are inferred
-  as heuristics. Wet running is excluded as neutralised rather than as wet.
-- **A stale gap for up to one lap after a late join.** When a page opens mid-lap or reconnects, the leader's
-  crossing for that lap can arrive only in the connect snapshot. Until the next per-lap snapshot, a car's gap to
-  the leader (and its interval) can then be the previous lap's value. The tower never shows "Leader" off P1, but a
-  stale non-zero gap can remain for up to one lap. The fix belongs in the web reducer (`lib/reducer.ts`) and was not
-  made.
-- **The inferred stale-car rule.** The dashboard marks a car "no timing since L…" after 2 leader laps without a
-  crossing. This is inferred, not a retirement signal: a car in a long repair stop is marked stale until it crosses
-  again.
-- **The simulator's weaker calibration.**
+- **Jolpica fields.** Lap timestamps are estimated (about ±1 min or more). Penalties are not in the data, so they
+  are inferred as heuristics. Wet running is excluded as neutralised rather than as wet.
+- **Gaps after a late join.** When a page opens mid-lap or reconnects, the leader's crossing for that lap can
+  arrive only in the connect snapshot. Until the next per-lap snapshot, a car's gap to the leader (and its
+  interval) can then be the previous lap's value, for up to one lap. The tower never shows "Leader" off P1. A
+  refresh in the web reducer (`lib/reducer.ts`) is future work (§15).
+- **The stale-car marker.** The dashboard marks a car "no timing since L…" after 2 leader laps without a crossing.
+  This is inferred, not a retirement signal: a car in a long repair stop is marked stale until it crosses again.
+- **The what-if simulator compares strategies.** Its probabilities compare options from the same state and are not
+  calibrated odds.
   - On 2025: Brier 0.245 and ECE 0.207, against the model's 0.177 and 0.107.
   - One pre-registered ordering cell fails (+0.022).
   - Traffic is third cars only, and the compound after a stop follows a fixed rule.
-- **Streaming load.** Latency was measured at replay rates of at most about 13 events/s. The pipeline's maximum
-  throughput was not load-tested.
-- **The demo model** in sample mode is a smoke-test model trained on one sample race. It shows the plumbing, not
-  model quality.
+- **Measured streaming load.** Latency was measured at replay rates of at most about 13 events/s. The pipeline's
+  maximum throughput was not load-tested.
+- **The sample-mode model.** The demo model in sample mode is a smoke-test model trained on one sample race. It
+  shows the plumbing, not model quality.
 
-Source: `README.md` "Limitations", `docs/PROGRESS.md` "Known issues", `docs/experiments.md`.
+Source: `docs/results.md`, `docs/dev/engineering_log.md` "Known issues", `docs/experiments.md`.
 
 ## 14. Reproducibility
 
 - **Sample demo, no credentials.** `make up`, `make sample-data`, `make demo` run the sample pipeline, build a SMOKE
   TEST model and the archive, and replay 2024 R5 at 60x. A clean clone on 2026-11-19 took `make demo` about 193 s
-  (`make up` 63 s), with a warm image cache (README "Run it").
+  (`make up` 63 s), with a warm image cache (`docs/reproduce.md` §4).
 - **Full mode.** `make up-full`, then `make pipeline-full`, `make etl-ti-full`, `make model-dev-full`,
   `make model-save-full` and the single `make model-test-full CONFIRM=yes`. Targets with `RECORD=1` write `results/`
   and refuse to overwrite. `make experiments` reruns every regenerable generator in a sandbox and compares it byte for
@@ -807,10 +806,10 @@ Source: `README.md` "Limitations", `docs/PROGRESS.md` "Known issues", `docs/expe
 - **Final proofs** (2026-11-20, on the dev host): python 2340 passed, web 563 Vitest, sample e2e 40 passed /
   1 skipped (the latency spec runs only on request). The traceability check prints OK 506, GENERATED 2; the
   archive equivalence check on sample 2024 R5 is EQUIVALENT at laps 5, 22 and 45; `make experiments-sample` gives
-  OK 7, OK (metadata differs) 1, DIFF 0; and `results/` is unchanged (`docs/PROGRESS.md` "Step 18 final").
+  OK 7, OK (metadata differs) 1, DIFF 0; and `results/` is unchanged (`docs/dev/engineering_log.md` "Step 18 final").
 - **This report.** `make report-pdf` renders it to `docs/report/report.pdf`.
 
-Source: `README.md`, `docs/reproduce.md`, `docs/experiments.md`, `docs/PROGRESS.md`.
+Source: `docs/reproduce.md`, `docs/results.md`, `docs/experiments.md`, `docs/dev/engineering_log.md`.
 
 ## 15. Conclusion and future work
 
@@ -875,14 +874,14 @@ both, ignoring line breaks). Paths are relative to the repository root.
 | A4 | Laps in 2025 | 26,657 | docs/data_dictionary.md | Coverage table, 2025 |
 | A5 | Labelled training attempts at G=3.5, k=2 | 108 (32, 32, 44) | docs/data_dictionary.md | Undercut attempt counts |
 | A6 | 2025 compound coverage, Miami R6 | 55.6% | docs/model_results.md | Miami R6 / Belgium R13 |
-| A7 | Primary model, 2025 PR-AUC | 0.670 [0.421, 0.898] | README.md | Key results, Undercut model vs baselines |
-| A8 | Primary model, 2025 Brier | 0.177 [0.106, 0.232] | README.md | Key results, Undercut model vs baselines |
-| A9 | Primary model, 2025 ROC-AUC | 0.792 [0.667, 0.929] | README.md | Key results, Undercut model vs baselines |
-| A10 | Primary model, 2025 F1 positive class at 0.5 | 0.571 [0.323, 0.778] | README.md | Key results, Undercut model vs baselines |
-| A11 | Primary model, 2025 ECE 10 bins | 0.107 [0.076, 0.234] | README.md | Key results, Undercut model vs baselines |
-| A12 | Rule baseline, 2025 PR-AUC | 0.513 [0.246, 0.799] | README.md | Key results, Undercut model vs baselines |
-| A13 | Rule baseline, 2025 Brier | 0.273 [0.168, 0.353] | README.md | Key results, Undercut model vs baselines |
-| A14 | Majority baseline, 2025 PR-AUC | 0.347 [0.162, 0.517] | README.md | Key results, Undercut model vs baselines |
+| A7 | Primary model, 2025 PR-AUC | 0.670 [0.421, 0.898] | docs/results.md | Key results, Undercut model vs baselines |
+| A8 | Primary model, 2025 Brier | 0.177 [0.106, 0.232] | docs/results.md | Key results, Undercut model vs baselines |
+| A9 | Primary model, 2025 ROC-AUC | 0.792 [0.667, 0.929] | docs/results.md | Key results, Undercut model vs baselines |
+| A10 | Primary model, 2025 F1 positive class at 0.5 | 0.571 [0.323, 0.778] | docs/results.md | Key results, Undercut model vs baselines |
+| A11 | Primary model, 2025 ECE 10 bins | 0.107 [0.076, 0.234] | docs/results.md | Key results, Undercut model vs baselines |
+| A12 | Rule baseline, 2025 PR-AUC | 0.513 [0.246, 0.799] | docs/results.md | Key results, Undercut model vs baselines |
+| A13 | Rule baseline, 2025 Brier | 0.273 [0.168, 0.353] | docs/results.md | Key results, Undercut model vs baselines |
+| A14 | Majority baseline, 2025 PR-AUC | 0.347 [0.162, 0.517] | docs/results.md | Key results, Undercut model vs baselines |
 | A15 | Calibrated GBT, 2025 PR-AUC (primary setting) | 0.703 [0.505, 0.872] | docs/model_results.md | Results, G=3.5, k=2 table |
 | A16 | Primary model, 2025 PR-AUC at the sensitivity setting | 0.723 [0.541, 0.858] | docs/model_results.md | Results, G=5.0, k=3 table |
 | A17 | Calibrated validation Brier, LR vs GBT | 0.168 against 0.205 | docs/model_spec.md | Primary model |
@@ -898,12 +897,12 @@ both, ignoring line breaks). Paths are relative to the repository root.
 | A27 | Stream–batch parity on the full lake | 90 races, 34,608 eligible pairs and 157 labelled attempts matched | docs/architecture.md | Feature parity, Parity check |
 | A28 | Parity: maximum probability difference | 3.3e-16 | docs/architecture.md | Feature parity, Parity check |
 | A29 | Alerts on sample 2024 R5 | 141 alerts (113 new candidates, 19 threshold crossings, 9 attempts) | docs/architecture.md | Redis writes and latency fields, Alert policy |
-| A30 | End to end at 60x, p50 / p95 / p99 | 798 / 1461.5 / 1757 ms | README.md | Streaming, UI and Redis latency |
-| A31 | End to end at 1x, p50 / p95 / p99 | 729 / 1039 / 1115.4 ms | README.md | Streaming, UI and Redis latency |
-| A32 | End to end at 10x, p50 / p95 / p99 | 786.5 / 1227.0 / 1586.5 ms | README.md | Streaming, UI and Redis latency |
-| A33 | SSE send → browser paint at 60x | 28 / 37 / 40 ms | README.md | Streaming, UI and Redis latency |
-| A34 | Produced → browser paint at 60x | 855 / 1519.5 / 3443.5 ms | README.md | Streaming, UI and Redis latency |
-| A35 | Throughput at 60x | 12.71 messages/s at 60x | README.md | Streaming, UI and Redis latency |
+| A30 | End to end at 60x, p50 / p95 / p99 | 798 / 1461.5 / 1757 ms | docs/results.md | Streaming, UI and Redis latency |
+| A31 | End to end at 1x, p50 / p95 / p99 | 729 / 1039 / 1115.4 ms | docs/results.md | Streaming, UI and Redis latency |
+| A32 | End to end at 10x, p50 / p95 / p99 | 786.5 / 1227.0 / 1586.5 ms | docs/results.md | Streaming, UI and Redis latency |
+| A33 | SSE send → browser paint at 60x | 28 / 37 / 40 ms | docs/results.md | Streaming, UI and Redis latency |
+| A34 | Produced → browser paint at 60x | 855 / 1519.5 / 3443.5 ms | docs/results.md | Streaming, UI and Redis latency |
+| A35 | Throughput at 60x | 12.71 messages/s at 60x | docs/results.md | Streaming, UI and Redis latency |
 | A36 | Redis write at 60/s, p50 / p95 / p99 | 1.21 / 1.59 / 1.78 | docs/experiments.md | Redis latency table, 60/s write |
 | A37 | Redis HGETALL at 60/s, p50 / p95 / p99 | 0.18 / 0.32 / 0.41 | docs/experiments.md | Redis latency table, 60/s HGETALL |
 | A38 | Redis late ticks, earlier busy run at 60/s | 2876 late ticks | docs/experiments.md | Redis latency, reading |
@@ -911,25 +910,25 @@ both, ignoring line breaks). Paths are relative to the repository root.
 | A40 | Telemetry aggregation, 24 rounds, local[1] | 18.01 s | docs/experiments.md | Telemetry aggregation table |
 | A41 | Telemetry aggregation, 24 rounds, local[4] | 7.49 s (2.40x) | docs/experiments.md | Telemetry aggregation table |
 | A42 | Feature build, 3 seasons x4, cluster | 161.9 s [160.9, 164.8] | docs/experiments.md | Feature build, Per-core scaling |
-| A43 | Cluster over local[1] at 3 seasons x4 | 1.59x over `local[1]` | README.md | Spark scalability |
-| A44 | Build time growth 1 → 5 seasons, local[4] | 48.0 → 65.8 s | README.md | Spark scalability |
+| A43 | Cluster over local[1] at 3 seasons x4 | 1.59x over `local[1]` | docs/results.md | Spark scalability |
+| A44 | Build time growth 1 → 5 seasons, local[4] | 48.0 → 65.8 s | docs/results.md | Spark scalability |
 | A45 | Supplement cluster cell, 1 season x16 | 175.6 s [169.6, 186.7] | docs/experiments.md | Supplementary re-run table |
 | A46 | Supplement cluster cell, 5 seasons x4 | 213.6 s [211.2, 216.6] | docs/experiments.md | Supplementary re-run table |
 | A47 | Memory guard | 5.40 GiB | docs/experiments.md | Memory limits, Supplementary re-run |
 | A48 | One-race speed-up with partitioning, file:// | 0.164 to 0.095 s (1.74x) | docs/experiments.md | Partitioning and caching table |
-| A49 | Full scans and joins, partitioned, file:// | 0.30x and 0.32x | README.md | Spark scalability, Partitioning |
-| A50 | Full scans and joins, partitioned, HDFS | 0.14x and 0.12x | README.md | Spark scalability, Partitioning |
-| A51 | `cache()` speed-up on one race | 1.41x | README.md | Spark scalability, Caching |
-| A52 | `cache()` materialisation time | 1.13 s | README.md | Spark scalability, Caching |
-| A53 | What-if monotonicity | 0 of 155 states | README.md | What-if simulator, Pre-registered checks |
-| A54 | What-if determinism | 157 of 157 states | README.md | What-if simulator, Pre-registered checks |
-| A55 | What-if ordering | 17 of 18 pass/fail rows pass | README.md | What-if simulator, Pre-registered checks |
-| A56 | What-if failing ordering cell | +0.022 | README.md | What-if simulator, Pre-registered checks |
-| A57 | What-if 2025 simulator ECE, 10 bins | 0.207 | README.md | What-if backtest table, 2025 row |
-| A58 | What-if 2025 simulator mean P | 0.395 | README.md | What-if backtest table, 2025 row |
-| A59 | What-if 2025 simulator Brier | 0.245 | README.md | What-if backtest table, 2025 row |
-| A60 | Clean-clone `make demo` | 193 s | README.md | Run it |
-| A61 | Final local proofs | python 2340 passed, web 563 Vitest, sample e2e 40 passed / 1 skipped | docs/PROGRESS.md | Done, Step 18 final |
+| A49 | Full scans and joins, partitioned, file:// | 0.30x and 0.32x | docs/results.md | Spark scalability, Partitioning |
+| A50 | Full scans and joins, partitioned, HDFS | 0.14x and 0.12x | docs/results.md | Spark scalability, Partitioning |
+| A51 | `cache()` speed-up on one race | 1.41x | docs/results.md | Spark scalability, Caching |
+| A52 | `cache()` materialisation time | 1.13 s | docs/results.md | Spark scalability, Caching |
+| A53 | What-if monotonicity | 0 of 155 states | docs/results.md | What-if simulator, Pre-registered checks |
+| A54 | What-if determinism | 157 of 157 states | docs/results.md | What-if simulator, Pre-registered checks |
+| A55 | What-if ordering | 17 of 18 pass/fail rows pass | docs/results.md | What-if simulator, Pre-registered checks |
+| A56 | What-if failing ordering cell | +0.022 | docs/results.md | What-if simulator, Pre-registered checks |
+| A57 | What-if 2025 simulator ECE, 10 bins | 0.207 | docs/results.md | What-if backtest table, 2025 row |
+| A58 | What-if 2025 simulator mean P | 0.395 | docs/results.md | What-if backtest table, 2025 row |
+| A59 | What-if 2025 simulator Brier | 0.245 | docs/results.md | What-if backtest table, 2025 row |
+| A60 | Clean-clone `make demo` | 193 s | docs/reproduce.md | 4. Timing of a fresh clone |
+| A61 | Final local proofs | python 2340 passed, web 563 Vitest, sample e2e 40 passed / 1 skipped | docs/dev/engineering_log.md | Done, Step 18 final |
 | A62 | `make experiments` regeneration result | 66 OK, 2 DIFF | docs/experiments.md | `make experiments` (full lake) |
 | A63 | Majority baseline, 2025 ECE 10 bins (lower than the primary model's) | 0.051 | docs/model_results.md | Results, G=3.5, k=2 table, majority baseline |
 | A64 | LOSO mean PR-AUC of the rule, development, primary setting | 0.559 | docs/model_spec_v2.md | §7 Disclosure |
@@ -942,7 +941,7 @@ both, ignoring line breaks). Paths are relative to the repository root.
 | A71 | HDFS raw zone size and file count | 2,024,360,565 B and 3,542 files | docs/data_dictionary.md | Telemetry trace table, `/f1/raw` row |
 | A72 | Laps 2021–2025 | 124,834 | docs/experiments.md | Feature build, real seasons at x1 |
 | A73 | 2024 telemetry trace table size on HDFS | 209,217,336 B | docs/data_dictionary.md | Telemetry trace table, Size row |
-| A74 | TracingInsights track-status cross-check (per-lap codes vs race-control periods) | 463 leader laps flagged by both, 0 by only one source | docs/PROGRESS.md | Done, race-analysis evidence |
+| A74 | TracingInsights track-status cross-check (per-lap codes vs race-control periods) | 463 leader laps flagged by both, 0 by only one source | docs/dev/engineering_log.md | Done, race-analysis evidence |
 | A75 | Snapshot-before-frame change, lap's first frame at the median | +3 ms | docs/experiments.md | "the per-lap snapshot now precedes its lap frame" (2026-11-15) |
 | A76 | LR standardised coefficient of `gap_ahead_change_1l` | -0.163837 | results/feature_importance_G3.5_k2.csv | model=lr, method=lr_std_coefficient |
 | A77 | LR standardised coefficient of `attacker_stint_laps` | -0.059743 | results/feature_importance_G3.5_k2.csv | model=lr, method=lr_std_coefficient |
@@ -952,7 +951,7 @@ both, ignoring line breaks). Paths are relative to the repository root.
 | A81 | `build_s1_x1_local1`, slowest timed run | 82.8875 | results/scalability.csv | cell_id=build_s1_x1_local1, max_s |
 | A82 | `build_s3_x1_local1`, fastest timed run | 56.6513 | results/scalability.csv | cell_id=build_s3_x1_local1, min_s |
 | A83 | `build_s3_x1_local1`, slowest timed run | 64.5230 | results/scalability.csv | cell_id=build_s3_x1_local1, max_s |
-| A84 | Dashboard audit widths | 1440, 1280, 1024, 768 and 390 px and at 200% zoom | docs/PROGRESS.md | Done, UI redesign Step 5, Audit |
-| A85 | axe on every screen, both themes | 0 serious/critical | docs/PROGRESS.md | Done, UI redesign Step 5, Tests |
-| A86 | Traceability check | OK 506, GENERATED 2 | docs/PROGRESS.md | Done, Step 18 final |
-| A87 | `make experiments-sample` result | OK 7, OK (metadata differs) 1, DIFF 0 | docs/PROGRESS.md | Done, Step 18 final |
+| A84 | Dashboard audit widths | 1440, 1280, 1024, 768 and 390 px and at 200% zoom | docs/dev/engineering_log.md | Done, UI redesign Step 5, Audit |
+| A85 | axe on every screen, both themes | 0 serious/critical | docs/dev/engineering_log.md | Done, UI redesign Step 5, Tests |
+| A86 | Traceability check | OK 506, GENERATED 2 | docs/dev/engineering_log.md | Done, Step 18 final |
+| A87 | `make experiments-sample` result | OK 7, OK (metadata differs) 1, DIFF 0 | docs/dev/engineering_log.md | Done, Step 18 final |

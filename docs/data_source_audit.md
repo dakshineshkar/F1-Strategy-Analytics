@@ -5,7 +5,7 @@ Measured on 2026-11-11. Every number below was measured unless it is marked *est
 
 **Why:** since mid-October 2026, FastF1 downloads need an F1 TV Access login, which nobody on the team has. As a
 result, compound, tyre life, race control, exact track status and telemetry are null or synthetic in full mode
-(PROGRESS "Known issues").
+(`docs/dev/engineering_log.md` "Known issues").
 
 **2025 is sealed.** For 2025 this file reports only field availability, completeness shares and the compound
 agreement with OpenF1. It gives no lap times, positions, pit laps, stint lengths, compound mix or race-control
@@ -119,7 +119,7 @@ str; the loader must parse them.
 "FIA STEWARDS: 5 SECOND TIME PENALTY FOR CAR 14 (ALO) - …") · `status` · `flag` (GREEN, YELLOW, DOUBLE YELLOW, RED,
 BLUE, CLEAR, CHEQUERED, BLACK AND WHITE) · `scope` (Track, Sector, Driver) · `sector` · `dNum` · **`lap` (int)**.
 At least 99.95% of messages carry a lap number in every season (2021-2024: 2034/2035, 1998/1998, 1849/1849,
-2130/2131). Penalties are machine-readable from the text, which fills the Jolpica penalty gap in Known issues.
+2130/2131). Penalties are machine-readable from the text, which fills the Jolpica penalty gap in the engineering log's Known issues.
 
 ### Telemetry: `<DRV>/<lap>_tel.json` → `{"tel": {...}}` (FastF1 car data merged with position data)
 | Channel | Unit / values (seen in samples) |

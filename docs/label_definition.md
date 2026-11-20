@@ -206,7 +206,7 @@ is. The thresholds come from 2021-2024 only: of the 9 runs of 8 or more laps, th
 R7, 2023 R6, R13, 2024 R12) have run medians of 1.10-1.20, and the three long safety cars (2022 R19, R21, 2024 R5)
 have 1.31-1.44. Safety-car laps are mostly 1.3× or more (the median of laps in short runs is 1.33).
 
-### Known limitations
+### Scope notes
 - **Wet running is excluded as `neutralised`.** In full mode tyre compounds are null (Jolpica has none), so the
   `wet` exclusion (reason 15) cannot fire. The track-status heuristic flags laps where the whole field is slow, so
   wet and drying running is neutralised and its attempts are counted as `excluded_neutralised`, not

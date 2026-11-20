@@ -64,7 +64,7 @@ Hadoop 3.4.3, FastF1 3.9.2, Next.js + TypeScript strict.
 - Never read or print .env; never commit secrets, data/, caches, model binaries > 5 MB.
 - Small, scoped changes; show the test command output as evidence before saying "done".
 - STOP and ask before: changing pinned versions, the label definition, the Redis contract, or the repo layout.
-- Update docs/PROGRESS.md (Done / Next / Known issues) at the end of each step.
+- Update docs/dev/engineering_log.md (Done / Next / Known issues) at the end of each step.
 
 ## Gotchas
 - Repo lives in WSL filesystem; Docker via Docker Desktop WSL integration.

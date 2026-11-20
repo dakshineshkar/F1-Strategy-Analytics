@@ -2,7 +2,7 @@
 
 How the pipeline is built, layer by layer. Each section was written by the step that built that layer (see
 [traceability.md](traceability.md) for the commitment of each file). To run it, see the [README](../README.md) and
-[reproduce.md](reproduce.md).
+[reproduce.md](reproduce.md). All documents: [docs/README.md](README.md).
 
 ```mermaid
 flowchart LR
@@ -22,6 +22,28 @@ flowchart LR
     SIM[sim/ what-if engine] --> A
     C --> SIM
 ```
+
+## Code map
+
+**Why.** An undercut is a pit stop timed to gain track position on fresh tyres. Whether it works depends on
+the gap, tyre age and degradation, the pit-lane loss, out-lap pace and traffic, and all of that changes lap by
+lap. The project uses that question to exercise the whole big-data stack:
+- a lake partitioned by season and race;
+- distributed feature engineering;
+- a model evaluated strictly chronologically, with a sealed test season;
+- an event-driven serving path with measured latency;
+- benchmarks of how the Spark jobs scale and what partitioning and caching buy.
+
+| Layer | Code | Details |
+|---|---|---|
+| Ingestion (rate-limited, cached, resumable) | `src/f1sa/ingest/` | [Ingestion](#ingestion-srcf1saingest) |
+| Lake, clean zone, Spark ETL and features | `src/f1sa/{lake,etl,features}/` | this page, [data_dictionary.md](data_dictionary.md) |
+| Undercut label and model | `src/f1sa/model/` | [label_definition.md](label_definition.md), [model_spec.md](model_spec.md), [model_spec_v2.md](model_spec_v2.md) |
+| Kafka + Structured Streaming | `src/f1sa/streaming/` | [Streaming](#streaming-streaming-step-12) |
+| Redis serving contract | `src/f1sa/serving/` | 9-field hash, order zset, events channel, TTL (tested in `tests/unit/test_keys.py`) |
+| API and dashboard | `src/f1sa/api/`, `web/` | FastAPI docs at `/api/docs` |
+| What-if simulator | `src/f1sa/sim/` | [sim_spec.md](sim_spec.md) (pre-registered) |
+| Benchmarks | `src/f1sa/bench/`, `experiments/` | [experiments.md](experiments.md) |
 
 ## Modules (`src/f1sa/`)
 | Package | Responsibility |
@@ -767,7 +789,7 @@ browser (http://localhost:3000) --CORS--> FastAPI (uvicorn, 127.0.0.1:8000)
   POST /api/debug/latency                  API_UI_LATENCY_CSV, default data/demo/ui_latency/ (ENABLE_DEBUG=1)
   POST /api/races/{s}/{r}/whatif           Redis state + recorded laps + priors -> sim/ (S15)
 ```
-Run modes (README "API"):
+Run modes (see also [reproduce.md](reproduce.md)):
 - `make up`: the compose `api` service (core profile, app image) in sample mode on 127.0.0.1:8000.
 - `make api-up [FULL=1] [REPLAY=1] [DEBUG=1] [TEST_SEASON=1]`: recreates **only** the `api` container
   (`up -d --no-deps --no-build --force-recreate api`). Its first step is the replay guard, `python3 -I src/f1sa/replay_guard.py`
