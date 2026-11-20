@@ -2,7 +2,7 @@
 
 Input to the full UI redesign of the Pit Wall race view. **No code was changed in this pass.** Every finding below
 is a requirement for the redesign, not a fix to apply on the current layout. Product truth comes from
-[PRODUCT.md](../../PRODUCT.md).
+[the product brief](../design/product-brief.md).
 
 **Hard constraint for the redesign:** the Redis contract in [CLAUDE.md](../../CLAUDE.md) is off-limits. Every
 requirement here must be met in the UI, or through API data that already exists.
@@ -40,7 +40,7 @@ Seven screenshots are committed in [before/](../design/before/) (`docs/design/be
 - `B/` = `/tmp/claude-1000/-home-parinith-code-F1-Strategy-Analytics/64b63c12-194c-4940-9578-9319f5d8f0eb/scratchpad/critiqueB/`
   (script `overlay.js`; raw results `overlay-results.json`, `console-dump.txt`, CLI output `detect.json`)
 - The archived snapshot of the critique: `.impeccable/critique/2026-11-18T17-01-20Z__web-src-app-race-season-round-page-tsx.md`
-  (gitignored).
+  (local only, not in the repository).
 
 Files marked "committed copy" are copied unchanged into [before/](../design/before/), so they don't depend on the scratch
 folder.
@@ -92,7 +92,7 @@ folder.
 
 ## Severity scale
 
-- **P0:** defeats the product's first purpose (PRODUCT.md success #1) in the demo viewport.
+- **P0:** defeats the product's first purpose (the product brief's success #1) in the demo viewport.
 - **P1:** breaks trust or a product-truth requirement.
 - **P2:** real difficulty or an accessibility failure, with a workaround.
 - **P3:** polish.
@@ -170,7 +170,7 @@ redesign. Line numbers refer to the code at commit `48ee7a2`.
 - **Evidence:**
   - `A/d-dark-side.png`: Replay heads the sidebar.
   - Pipeline health is only "N events applied · 0 malformed" in 12 px at the bottom, with no latency.
-- **Requirement (PRODUCT.md principle 2):**
+- **Requirement (the product brief's principle 2):**
   - Replay controls move to a compact demo drawer or strip.
   - Pipeline status becomes a compact status and latency strip, plus a "how it works" panel.
   - Neither sits above the race call.
@@ -364,7 +364,7 @@ redesign. Line numbers refer to the code at commit `48ee7a2`.
 - **Screen:** live race, 1440×900.
 - **Evidence:** `A/notes.json`: cumulative layout shift about 0.11 over about 20 s. The sources are tower
   row reorders (inherent) and alert cards inserted at the top of the feed.
-- **Requirement (PRODUCT.md principle 4):** new alerts never move content the viewer is reading. Keep the
+- **Requirement (the product brief's principle 4):** new alerts never move content the viewer is reading. Keep the
   scroll position anchored, or insert into reserved space.
 
 **F26 · P3 · Alert meta text wraps mid-phrase.**

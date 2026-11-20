@@ -652,8 +652,9 @@ main:focus { outline: none; }
 
 
 /* ------------------------------------------------------------------ pipeline and legend (supporting layer) */
-/* Quiet by design (PRODUCT.md principle 2): counters in Plex Mono, labels muted, explanations behind native
- * disclosures with a chevron (shape) and a 24px target; reading text capped at 72ch. */
+/* Quiet by design (the product brief, docs/design/product-brief.md, principle 2): counters in Plex Mono,
+ * labels muted, explanations behind native disclosures with a chevron (shape) and a 24px target; reading
+ * text capped at 72ch. */
 .pipeline-stats { margin: 0; display: flex; flex-wrap: wrap; gap: var(--sp-2) var(--sp-6); }
 .pipeline-stats div { display: grid; gap: 2px; }
 .pipeline-stats dt { display: inline-flex; align-items: center; gap: var(--sp-1); font: 500 var(--fs-xs)/1.2 var(--font-ui); color: var(--muted); }

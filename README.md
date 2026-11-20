@@ -143,3 +143,7 @@ Kaushal V. (Indian Institute of Science, Bengaluru).
   Formula 1 / FOM, used for private academic study only and never committed.
 - **Cite:** [CITATION.cff](CITATION.cff) (GitHub shows "Cite this repository").
 - Unofficial project; not associated with the Formula 1 companies.
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) to work on the project, [SECURITY.md](SECURITY.md) to report a vulnerability and [CHANGELOG.md](CHANGELOG.md) for the release history.

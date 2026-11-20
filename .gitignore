@@ -23,14 +23,12 @@ node_modules/
 # generated knowledge graph (graphify)
 graphify-out/
 
-# Impeccable design skill. Committed: .impeccable/config.json (shared detector rules and suppressions),
-# .impeccable/surfaces/ (surface briefs), .impeccable/design.json, .impeccable/live/config.json and
-# .impeccable/critique/ignore.md. Its runtime folders (critique snapshots, mocks/, review/, questions/)
-# ignore themselves. Per-developer and generated state stays local:
-.impeccable/config.local.json
-.impeccable/hook.cache.json
-.impeccable/*.log
-.impeccable/*.ndjson
+# AI-assistant tooling: kept on disk, never tracked (CLAUDE.md and .claude/settings.json stay tracked)
+.claude/skills/
+.claude/agents/
+.claude/commands/
+.impeccable/
+.graphifyignore
 # coverage / packaging
 .coverage
 htmlcov/

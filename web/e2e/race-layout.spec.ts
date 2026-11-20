@@ -9,10 +9,11 @@ import { API, stopReplay } from "./replay";
  *   - no horizontal page scroll, and the tower scrolls neither (every column fits; critique F01);
  *   - all 20 tower rows, the call and the alert feed sit inside the first viewport, in both themes (F02);
  *   - during the replay no panel or region moves: the status strip, the call, the feed, the what-if and the
- *     tower keep their boxes, and no layout-shift entry names one of them (reserved sizes; PRODUCT.md
- *     principle 4). What remains are sub-pixel reflows inside a line when a value changes width (a tyre
- *     age going from 9 to 10 laps); their CLS outside the tower's rows must stay under 0.01, a tenth of
- *     the browser's "good" limit (0.1), and the measured value is reported as an annotation.
+ *     tower keep their boxes, and no layout-shift entry names one of them (reserved sizes; the product
+ *     brief, docs/design/product-brief.md, principle 4). What remains are sub-pixel reflows inside a line
+ *     when a value changes width (a tyre age going from 9 to 10 laps); their CLS outside the tower's rows
+ *     must stay under 0.01, a tenth of the browser's "good" limit (0.1), and the measured value is reported
+ *     as an annotation.
  *   - one loud element: at most 2 tower rows carry the signal band, and they are the call's attacker and defender
  *     (2026-11-19 polish round);
  *   - no tower cell and no alert line is cut off: nothing has scrollWidth > clientWidth (no ellipsis on data).

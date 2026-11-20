@@ -1,6 +1,6 @@
 """Report-only copies of five figures, re-plotted from the committed ``results/*.csv``.
 
-    uv run python docs/report/make_figures.py
+    uv run python scripts/report_figures.py
 
 The PNGs in ``results/`` are drawn for a screen and become unreadable when they are printed at
 A4 text width. This script re-draws the same data at the report's size (7 in wide, 8-10 pt
@@ -30,7 +30,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-REPO = Path(__file__).resolve().parents[2]
+REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / "src"))
 
 from f1sa.bench.report import (  # noqa: E402
@@ -43,7 +43,7 @@ from f1sa.bench.report import (  # noqa: E402
 )
 
 RESULTS = REPO / "results"
-OUT = Path(__file__).resolve().parent / "figures"
+OUT = REPO / "docs" / "report" / "figures"
 WIDTH_IN = 7.0
 DPI = 200
 INK, MUTED, GRID = "#0b0b0b", "#52514e", "#e4e3df"

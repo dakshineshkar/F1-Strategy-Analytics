@@ -2,10 +2,15 @@
 
 from __future__ import annotations
 
+import json
 import re
+import subprocess
+import tomllib
 from pathlib import Path
 
 import yaml
+
+import f1sa
 
 REPO = Path(__file__).resolve().parents[2]
 TEAM = ("Parinith D.", "Dakshinesh K.", "Rohan Deore", "Kaushal V.")
@@ -219,3 +224,80 @@ def test_appendix_a_values_appear_verbatim_in_their_source_and_the_report() -> N
 def test_report_pdf_is_committed_next_to_the_report() -> None:
     pdf = REPO / "docs" / "report" / "report.pdf"
     assert pdf.read_bytes()[:5] == b"%PDF-"
+
+
+# ---------------------------------------------------------------- repository layout and links
+# A deliberately broken image link: the input of the report-pdf "missing image" test.
+LINK_FIXTURES = ("web/tests/fixtures/report/report.md",)
+LINK = re.compile(
+    r"\]\(([^)\s]+)(?:\s+\"[^\"]*\")?\)|<(?:img|a|source)\s[^>]*(?:src|href|srcset)=\"([^\"]+)\""
+)
+
+
+def _tracked_markdown() -> list[str]:
+    """Tracked and new (not ignored) Markdown files, without the link fixtures."""
+    out = subprocess.run(
+        ["git", "ls-files", "-z", "--cached", "--others", "--exclude-standard", "--", "*.md"],
+        cwd=REPO,
+        check=True,
+        capture_output=True,
+    ).stdout.decode("utf-8")
+    return sorted(f for f in out.split("\0") if f and f not in LINK_FIXTURES)
+
+
+def _anchors(path: Path) -> set[str]:
+    text = re.sub(r"```.*?```", "", path.read_text(encoding="utf-8"), flags=re.DOTALL)
+    return {_slug(h.strip()) for h in re.findall(r"^#{1,6} (.+)$", text, re.MULTILINE)}
+
+
+def _relative_links(text: str) -> list[str]:
+    text = re.sub(r"```.*?```", "", text, flags=re.DOTALL)
+    text = re.sub(r"`[^`\n]*`", "", text)
+    links = []
+    for m in LINK.finditer(text):
+        link = (m.group(1) or m.group(2)).split(",")[0].split()[0]
+        if not link.startswith(("http://", "https://", "mailto:")):
+            links.append(link)
+    return links
+
+
+def test_every_relative_link_in_every_tracked_markdown_file_resolves() -> None:
+    files = _tracked_markdown()
+    assert "README.md" in files and "CONTRIBUTING.md" in files
+    broken = []
+    for rel in files:
+        source = REPO / rel
+        for link in _relative_links(source.read_text(encoding="utf-8")):
+            target_part, _, anchor = link.partition("#")
+            target = (source.parent / target_part).resolve() if target_part else source
+            if not target.exists() or not target.is_relative_to(REPO):
+                broken.append(f"{rel}: {link}")
+            elif anchor and target.suffix == ".md" and anchor not in _anchors(target):
+                broken.append(f"{rel}: {link} (no such heading)")
+    assert broken == []
+
+
+def test_ai_tool_files_are_not_tracked() -> None:
+    out = subprocess.run(
+        ["git", "ls-files", "--", ".claude", ".impeccable", ".graphifyignore", "PRODUCT.md"],
+        cwd=REPO,
+        check=True,
+        capture_output=True,
+    ).stdout.decode("utf-8")
+    assert out.split() == [".claude/settings.json"]
+
+
+def test_contributing_security_and_changelog_are_linked_and_versions_agree() -> None:
+    for doc in ("CONTRIBUTING.md", "SECURITY.md", "CHANGELOG.md"):
+        assert f"]({doc})" in _text("README.md"), doc
+        assert f"](../{doc})" in _text("docs/README.md"), doc
+    contributing = _text("CONTRIBUTING.md")
+    for needle in ("make lint", "make typecheck", "make test", "make web-test", "make web-e2e"):
+        assert needle in contributing, needle
+    assert "docker compose down -v" in contributing and "RECORD=1" in contributing
+    assert "private security advisory" in _text("SECURITY.md")
+    top = re.search(r"^## \[(\d+\.\d+\.\d+)\] - \d{4}-\d{2}-\d{2}$", _text("CHANGELOG.md"), re.M)
+    assert top is not None
+    assert tomllib.loads(_text("pyproject.toml"))["project"]["version"] == top.group(1)
+    assert json.loads(_text("web/package.json"))["version"] == top.group(1)
+    assert f1sa.__version__ == top.group(1)

@@ -28,7 +28,7 @@ Every document in the repository. Start with the [README](../README.md), then
 | [demo_script.md](demo_script.md) | The 10-minute and 5-minute live demo, a fallback plan and likely questions |
 | [design/DESIGN.md](design/DESIGN.md) | The dashboard design system (Pit Wall) |
 | [assets/architecture.mmd](assets/architecture.mmd) | Source of the README architecture image (`architecture-{dark,light}.{svg,png}`, redrawn by `make readme-assets`) |
-| [../PRODUCT.md](../PRODUCT.md) | Product brief for the dashboard (users, purpose, constraints, principles) |
+| [design/product-brief.md](design/product-brief.md) | Product brief for the dashboard (users, purpose, constraints, principles) |
 | [../DATA_LICENSES.md](../DATA_LICENSES.md) | Licences and usage terms of every data source |
 | [../CITATION.cff](../CITATION.cff) | How to cite the project |
 | [../LICENSE](../LICENSE) | MIT licence of the code |
@@ -43,6 +43,15 @@ Every document in the repository. Start with the [README](../README.md), then
 | [model_spec.md](model_spec.md) | Pre-registered model specification for the single 2025 test run |
 | [model_spec_v2.md](model_spec_v2.md) | Pre-registered specification of the 2025 tyre and telemetry ablation |
 | [sim_spec.md](sim_spec.md) | Pre-registered specification of the what-if simulator and its checks |
+
+## Contributing
+
+| Document | What it covers |
+|---|---|
+| [../CONTRIBUTING.md](../CONTRIBUTING.md) | Setup, the development commands, commit conventions and the rules every change follows |
+| [../SECURITY.md](../SECURITY.md) | How to report a vulnerability, where secrets live and which ports are exposed |
+| [../CHANGELOG.md](../CHANGELOG.md) | What each release contains |
+| [../.github/pull_request_template.md](../.github/pull_request_template.md) | The checklist every pull request fills in |
 
 ## Development records
 

@@ -19,7 +19,7 @@ from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 JOLPICA_HARD_LIMIT_PER_HOUR = 500
 """Jolpica's published per-hour request limit; the configured budget may not exceed it."""
 
-DEFAULT_USER_AGENT = "F1-Strategy-Analytics/0.1.0 (IISc academic project; python-requests)"
+DEFAULT_USER_AGENT = "F1-Strategy-Analytics/1.0.0 (IISc academic project; python-requests)"
 
 _LAKE_SCHEMES = frozenset({"file", "hdfs"})
 _REDIS_SCHEMES = frozenset({"redis", "rediss"})

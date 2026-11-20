@@ -1,7 +1,7 @@
 # Pit Wall design system
 
 The design system of the Pit Wall dashboard (redesigned 2026-11-18). Product truth is in
-[PRODUCT.md](../../PRODUCT.md); the problems this system answers are in
+[the product brief](product-brief.md); the problems this system answers are in
 [the design critique](../dev/design-critique-2026-11-18.md); the screens and states it covers are in
 [the UI inventory](../dev/design-inventory.md).
 

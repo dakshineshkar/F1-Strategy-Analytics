@@ -2711,6 +2711,24 @@
     `docs/reproduce.md`, `docs/results.md` and `docs/README.md`. The README test now finds the demo commands in
     `docs/getting-started.md` and the headline PR-AUC in `docs/results.md`; traceability row 5 cites
     `docs/reproduce.md` for full-data ingestion instead of the README.
+- 2026-11-20: repository layout made production grade (no app behaviour change; `results/`, `data/` and the frozen
+  specs byte-identical).
+  - **Untracked, kept on disk:** `.claude/skills/`, `.claude/agents/`, `.claude/commands/`, `.impeccable/` and
+    `.graphifyignore` (AI-assistant tooling), now in `.gitignore`. `CLAUDE.md` and `.claude/settings.json` stay
+    tracked.
+  - **Moved:** `PRODUCT.md` to `docs/design/product-brief.md`; `docs/report/make_figures.py` to
+    `scripts/report_figures.py` (paths fixed; rerun gives the same five PNGs in `docs/report/figures/`).
+    Deleted the empty placeholders `docs/decisions/` and `tests/e2e/` (the Playwright tests live in `web/e2e/`).
+    Older entries in this log keep the old paths as history.
+  - **Added:** `CONTRIBUTING.md`, `SECURITY.md`, `CHANGELOG.md` (v1.0.0) and `.github/pull_request_template.md`,
+    linked from `README.md` and `docs/README.md`; traceability row 44 lists them.
+  - **Version 1.0.0** in `pyproject.toml`, `f1sa.__version__`, the Jolpica User-Agent and `web/package.json`;
+    `uv.lock` and `web/package-lock.json` were updated by `uv lock` and `npm install --package-lock-only` (only
+    the project's own version lines changed). `data/sample/MANIFEST.json` keeps `f1sa_version 0.1.0`, the version
+    it was built with (the validator does not compare it).
+  - **Tests** (`test_repo_docs.py`): every relative link and heading anchor in every Markdown file resolves (the
+    deliberate `web/tests/fixtures/report/report.md` excepted); the AI-tool files are not tracked; the new docs
+    are linked and the CHANGELOG, pyproject, package.json and `__version__` versions agree.
 ## Next
 - S18B: the demo rehearsal with `docs/demo_script.md` (full lake, then the sample-mode fallback); fill in section 16
   (team contributions) of the report and run `make report-pdf` again. The report and demo script already describe
