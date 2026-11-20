@@ -2589,6 +2589,52 @@
     - `docs/design/after/`: `d-dark-analysis-strategy`, `-laps`, `-positions`, `-compare`, `-telemetry`,
       `d-light-analysis-laps`, `m-dark-analysis`, `d-dark-drivers`.
     - All are full lake, 2024 R5, each under 240 KB.
+- UI redesign Step 5 (2026-11-19, on `main`; not committed): final audit of the whole dashboard, then the approved
+  display-only fixes. No reducer logic, API, stream, Python, Redis or `results/` change.
+  - **Audit (read-only first):** every screen at 1440, 1280, 1024, 768 and 390 px and at 200% zoom, in dark, light
+    and Auto. It covered the Tab walk, Escape, landmarks and headings, axe, reduced motion, CLS, long tasks and JS per
+    route, and the honesty labels on the full lake and the sample deployment. The report is
+    `.impeccable/audit/2026-11-19T19-41-22Z__web-src.md` (gitignored).
+  - **New devDependency:** `@axe-core/playwright` 4.14.0 (exact pin, released 2026-10-15).
+  - **P0, tower Driver column:** it collapsed to 0 px at 768 and 1100–1366 px (`width: auto` in a fixed-layout
+    table), live and archive. Below 1440 px it is now a fixed 7.25rem, and Pos/pin/Driver/Undercut stay sticky while
+    the other columns scroll inside the tower.
+  - **P1:**
+    - The call never relabels its defender. When the alert's defender is no longer directly ahead, it shows
+      "flagged at lap N against D; order changed since" (the car ahead now is in the accessible text), the alert's
+      probability and a muted gauge at the decision gap with no trend, and the rule checks are not presented as
+      passing (`pairAt`, `latestAlertOf`, `orderChangedText` in `lib/call.ts`). The first live capture at lap 45
+      showed the longer wording cut off and the gauge label wrapping; both were fixed before the screenshots were
+      retaken.
+    - **Stored state:** an earlier run's Redis state with nothing streaming (for example after an API restart) is
+      "NOT REPLAYING", never LIVE. The call is one line with no pair, probability or model id, and the tower's note
+      says the flags came from that run (`storedLap`, `modeOf`).
+    - The "2025 base rate" line is removed (option a).
+    - Engineer: "Data to lap N", and one "Gaps" key (`enggaps` replaces `gaptrend` and `engprob`).
+    - Only P1 says "Leader" (`towerGap`).
+    - The archive strip stamps SMOKE TEST for a bundle scored by the sample model.
+    - Archive a11y: the ±1 lap and marker names start with their visible text, and the archive's alert list is
+      focusable.
+  - **P2:**
+    - The 60× archive border was verified as `--text`, not amber: no change.
+    - SC/VSC are text ink in the archive markers and race-control lists; the strip's track chip keeps `--loss`.
+    - Lap number right-aligned; Drivers table capped at 56rem; no-break spaces in the model line.
+    - Positions starts on the summary's drivers, the others thin and grey.
+    - Load CLS: `main` keeps a min-height, and the call reserves its height until `/api/replays` answers.
+    - The race status is fetched at the leader lap the page holds; with none it shows a dash after the finish or
+      for a stored state.
+    - One h3 size (`--fs-md`), and the legend has its own h2.
+    - The data banner is inside the header landmark; unique pit-stop region name; the gauge is a `div role="img"`.
+    - On a phone the archive's button rows sit 4 px apart, so the sample bundle's SMOKE TEST stamp keeps the event
+      markers in the first viewport.
+  - **Investigation (read-only), "Leader" on VER at P3, lap 14:** Redis was right (end of lap 14: P3, gap ahead
+    3.006, gap to leader 10.101; lap 13: P1, 0.0). The web reducer mixed laps for a page that joined mid-lap.
+    `applyLap` recomputes gaps from the lap frames the page received and falls back to the previous value
+    (`gapLeaderS: g.leader ?? r.gapLeaderS`). The leader's lap-14 crossing had arrived only in the connect snapshot,
+    which writes no history, so VER kept his lap-13 value 0.0 until the next per-lap snapshot. The display fix hides
+    the symptom; the reducer is unchanged (see Known issues).
+  - **Tests:** `web/tests/step5.test.ts` (13 tests). `web/e2e/step5.spec.ts` covers the Driver column live and
+    archive at 5 widths, the 1280×800 first viewport, and axe on every screen in both themes (0 serious/critical).
 ## Next
 - S18B: the demo rehearsal with `docs/demo_script.md` (full lake, then the sample-mode fallback); fill in section 16
   (team contributions) of the report and run `make report-pdf` again.
@@ -2597,6 +2643,16 @@
   - F24 API stays declined (revisit only if time allows).
 ## Known issues
 - Report §16 team contributions still to be filled in (blocker for submission).
+- UI Step 5 (2026-11-19):
+  - **Base-rate wording in docs:** `docs/report/report.md` lines 418 and 443 and `docs/demo_script.md` line 65 (the
+    walkthrough step and its narration) still describe the removed "2025 base rate" line. Not edited; they need your
+    decision.
+  - **Reducer, late join:** for up to one lap after a late join or reconnect, a car's gap to the leader (and in the
+    same way its interval) can be the previous lap's value. The leader's crossing came in the snapshot, and
+    `applyLap` falls back to the old value. The tower now never shows "Leader" off P1, but a stale non-zero gap
+    can remain until the next snapshot. The fix belongs in `lib/reducer.ts` and was out of scope.
+  - **Stale Redis state:** a page opened after an API restart shows the stored state as "NOT REPLAYING" with no
+    status: the API records track status only for laps it replays.
 - Step 18a (2026-11-19):
   - **Report body page count.** `make report-pdf` prints "body N" from a separate render of the body alone, which
     paginates differently from the full document since the figures became full-width (it printed body 21 for a

@@ -8,7 +8,10 @@ export const LIVE_GROUPS: readonly GlossaryGroup[] = ["tower", "alerts", "whatif
 export function Legend({ groups = LIVE_GROUPS }: { groups?: readonly GlossaryGroup[] }) {
   return (
     <details className="legend panel">
-      <summary>How to read this</summary>
+      {/* a heading of its own, so the group headings below nest under it, not under the section before (Step 5) */}
+      <summary>
+        <h2 className="legend-h">How to read this</h2>
+      </summary>
       <div className="legend-body">
         {groups.map((g) => (
           <section key={g} className="legend-group" aria-label={GROUP_TITLE[g]}>

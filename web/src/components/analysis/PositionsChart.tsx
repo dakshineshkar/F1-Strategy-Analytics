@@ -2,7 +2,7 @@
 
 import { useId, useState } from "react";
 
-import { positionLines, positionsSummary, teamStyles, type PositionSeries } from "@/lib/analysis";
+import { positionLines, positionsKeyDrivers, positionsSummary, teamStyles, type PositionSeries } from "@/lib/analysis";
 import { gridLabel } from "@/lib/entrants";
 import { innerX, innerY, linear, pathOf, spreadLabels } from "@/lib/plot";
 import { useWidth } from "@/lib/useWidth";
@@ -17,11 +17,14 @@ export const FULL_NAME_MIN_WIDTH = 560;
 /** Position at the end of every lap (lap 0 = the grid; a pit-lane start at the back). Each line has
  * its team colour over a border-coloured halo (visible on any background), the second driver of a
  * team is dashed, and every line ends in a label (code or full name), so colour is never the only
- * cue. A highlight dims the others. */
+ * cue. The highlight starts on the three drivers the summary names (winner, biggest gain, biggest loss); the
+ * others are thin and grey. "None" and any single driver stay selectable. */
+const SUMMARY = "__summary";
 export function PositionsChart({ series, totalLaps, names }: { series: PositionSeries[]; totalLaps: number; names: Names }) {
   const id = useId();
   const [labels, setLabels] = useState<"code" | "name">("code");
-  const [focus, setFocus] = useState("");
+  const keyIds = positionsKeyDrivers(series);
+  const [focus, setFocus] = useState(keyIds.length > 0 ? SUMMARY : "");
   const { ref, width } = useWidth<HTMLDivElement>(BASE.width);
   const narrow = width < FULL_NAME_MIN_WIDTH;
   const shown = narrow ? "code" : labels;
@@ -43,6 +46,9 @@ export function PositionsChart({ series, totalLaps, names }: { series: PositionS
   );
   const endY = new Map(ends.map((e) => [e.id, e.y]));
   const label = (id: string) => (shown === "code" ? names.code(id) : names.name(id));
+  const chosenIds = new Set(focus === SUMMARY ? keyIds : focus === "" ? [] : [focus]);
+  // the highlighted lines are drawn last, so they sit on top of the grey ones
+  const drawn = [...lines].sort((a, b) => Number(chosenIds.has(a.driverId)) - Number(chosenIds.has(b.driverId)));
   const summary = positionsSummary(series, names.code);
   const laps = Array.from({ length: Math.max(1, totalLaps) + 1 }, (_, i) => i);
   const [yTop, yBottom] = innerY(frame);
@@ -77,6 +83,11 @@ export function PositionsChart({ series, totalLaps, names }: { series: PositionS
         <label className="inline-field">
           <span>Highlight</span>
           <select value={focus} onChange={(e) => setFocus(e.target.value)}>
+            {keyIds.length > 0 ? (
+              <option value={SUMMARY}>
+                The summary&apos;s {keyIds.length === 1 ? "driver" : keyIds.length} ({keyIds.map((d) => names.code(d)).join(", ")})
+              </option>
+            ) : null}
             <option value="">None</option>
             {lines.map((l) => (
               <option key={l.driverId} value={l.driverId}>
@@ -110,21 +121,22 @@ export function PositionsChart({ series, totalLaps, names }: { series: PositionS
           <text className="chart-axis-title" x={(BASE.left + width - right) / 2} y={BASE.height - 3} textAnchor="middle">
             lap
           </text>
-          {lines.map((l) => {
+          {drawn.map((l) => {
             const style = styles.get(l.driverId);
-            // team colours only: a car without one is neutral, never a chart-line colour next to team colours
-            const colour = style?.colour ?? "var(--grid)";
-            const chosen = focus === l.driverId;
-            const dim = focus !== "" && !chosen;
+            const chosen = chosenIds.has(l.driverId);
+            const dim = chosenIds.size > 0 && !chosen;
+            // team colours only: a car without one is neutral, never a chart-line colour next to team colours; a
+            // line outside the highlight is thin and grey
+            const colour = dim ? "var(--grid)" : (style?.colour ?? "var(--grid)");
             const d = pathOf(l.points, (p) => x(p.lap), (p) => y(p.position));
             return (
               <g key={l.driverId} className={`chart-line${dim ? " is-dim" : ""}`}>
-                <path d={d} fill="none" stroke="var(--border)" strokeWidth={chosen ? 5.5 : 3.75} strokeLinejoin="round" />
+                {dim ? null : <path d={d} fill="none" stroke="var(--border)" strokeWidth={chosen ? 5.5 : 3.75} strokeLinejoin="round" />}
                 <path
                   d={d}
                   fill="none"
                   stroke={colour}
-                  strokeWidth={chosen ? 3.5 : 2}
+                  strokeWidth={chosen ? 3.5 : dim ? 1.25 : 2}
                   strokeDasharray={style?.dash || undefined}
                   strokeLinejoin="round"
                 />

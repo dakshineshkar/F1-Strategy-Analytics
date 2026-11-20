@@ -115,7 +115,8 @@ describe("InfoTip", () => {
 describe("Legend: How to read this", () => {
   it("is a native, collapsed <details> with every glossary entry, grouped", () => {
     const m = html(createElement(Legend));
-    expect(m.startsWith('<details class="legend panel"><summary>How to read this</summary>')).toBe(true);
+    // the summary holds the legend's own h2, so the group h3s nest under it (Step 5, finding 17)
+    expect(m.startsWith('<details class="legend panel"><summary><h2 class="legend-h">How to read this</h2></summary>')).toBe(true);
     expect(m).not.toContain("<details open");
     for (const e of GLOSSARY) {
       const shown = `${esc(e.term)}</dt><dd>${esc(e.text)}</dd>`;

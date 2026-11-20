@@ -27,7 +27,7 @@ export function PitStopsTable({ stops, names, onLap }: { stops: readonly PitStop
       {stops.length === 0 ? (
         <p className="muted">No pit stops in the lake for this race.</p>
       ) : (
-        <div className="tower-wrap" role="region" aria-label="Pit stops" tabIndex={0}>
+        <div className="tower-wrap" role="region" aria-label="Pit stops by lap (table)" tabIndex={0}>
           <table className="tower analysis-table">
             <caption>Pit stops by lap</caption>
             <thead>

@@ -5,7 +5,7 @@ import { type ReactNode, useEffect, useRef, useState } from "react";
 import { previousLapOf } from "@/lib/call";
 
 import { type EntrantIndex, teamHighlight, teammates, teamTitle } from "@/lib/entrants";
-import { driverCode, driverName, gap, lapTime, probability } from "@/lib/format";
+import { driverCode, driverName, lapTime, probability, towerGap, ZERO_GAP_TEXT } from "@/lib/format";
 import { glossary, tipId } from "@/lib/legend";
 import { useFlip } from "@/lib/useFlip";
 import type { DriverRow } from "@/lib/reducer";
@@ -345,18 +345,22 @@ export function TimingTower({
                   ) : (
                     <>
                       {show.has("int") ? (
-                        <td className={prev === null ? "c-num" : "c-num is-prevlap"} title={measured}>
-                          {r.position === 1 ? "Leader" : gap(r.gapAheadS)}
+                        <td className={prev === null ? "c-num" : "c-num is-prevlap"} title={r.position !== 1 && r.gapAheadS === 0 ? ZERO_GAP_TEXT : measured}>
+                          {towerGap(r.position, r.gapAheadS)}
+                          {r.position !== 1 && r.gapAheadS === 0 ? <span className="visually-hidden">{` (${ZERO_GAP_TEXT})`}</span> : null}
                         </td>
                       ) : null}
                       {show.has("gap") ? (
-                        <td className={prev === null ? "c-num c-gap" : "c-num c-gap is-prevlap"} title={measured}>
+                        <td className={prev === null ? "c-num c-gap" : "c-num c-gap is-prevlap"} title={r.position !== 1 && r.gapLeaderS === 0 ? ZERO_GAP_TEXT : measured}>
                           {r.position === 1 ? (
                             "Leader"
                           ) : down > 0 ? (
                             <span aria-describedby={tipId("lapsDown")}>{`+${down} ${down === 1 ? "lap" : "laps"}`}</span>
                           ) : (
-                            gap(r.gapLeaderS)
+                            <>
+                              {towerGap(r.position, r.gapLeaderS)}
+                              {r.gapLeaderS === 0 ? <span className="visually-hidden">{` (${ZERO_GAP_TEXT})`}</span> : null}
+                            </>
                           )}
                           {prev !== null ? (
                             <span className="gap-lap" aria-describedby={tipId("prevlap")}>

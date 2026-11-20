@@ -56,6 +56,10 @@ export function StatusStrip({
   children: ReactNode;
 }) {
   const kind = raceStatus?.status ?? "unknown";
+  // no status after the replay ended, or for a stored state (the API records the status of laps it replays): a dash
+  // and why, never "status not known yet"
+  const over = raceStatus === null && (mode.tone === "ended" || mode.tone === "stored");
+  const overText = mode.tone === "stored" ? "not replaying" : mode.label === "FINISHED" ? "race finished" : "replay ended";
   const ended = connection === "closed" && sessionEnded;
   const conn = ended ? "Session ended" : CONN_TEXT[connection];
   const connShort = ended ? "Ended" : CONN_SHORT[connection];
@@ -93,10 +97,11 @@ export function StatusStrip({
         <p className={`ss-cell ss-track race-status race-status-${kind}`} title={raceStatus === null ? undefined : SOURCE_TEXT[raceStatus.source]}>
           <span className="ss-k">Track</span>{" "}
           <span className="ss-v race-status-code">
-            {STATUS_LABEL[kind]}
+            {over ? "—" : STATUS_LABEL[kind]}
             {raceStatus?.source === "estimated" ? <span className="race-status-est"> est.</span> : null}
           </span>
-          <span className="visually-hidden">{`: ${STATUS_WORDS[kind]}`}</span>
+          {over ? <span className="ss-detail">{overText}</span> : null}
+          <span className="visually-hidden">{over ? `: no status, ${overText}` : `: ${STATUS_WORDS[kind]}`}</span>
         </p>
         <p className="ss-cell ss-model" title={model === null ? undefined : modelDetail(model)}>
           <span className="ss-k">Model</span>{" "}

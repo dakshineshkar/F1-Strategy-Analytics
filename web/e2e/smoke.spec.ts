@@ -419,7 +419,7 @@ test("post-race archive: open the mode by keyboard and scrub the race", async ({
 
   // A marker jumps to its lap (the sample's laps 21-31 are neutralised, estimated from lap times);
   // the markers are one toolbar: End moves to the last one.
-  const neutral = page.getByRole("button", { name: /^Lap 21: neutralised \(estimated from lap times\)/ });
+  const neutral = page.getByRole("button", { name: /^N, lap 21: neutralised \(estimated from lap times\)/ });
   await expect(neutral).toHaveText("N");
   await neutral.click();
   await expect(slider).toHaveAttribute("aria-valuetext", "Lap 21 of 56");
@@ -430,7 +430,7 @@ test("post-race archive: open the mode by keyboard and scrub the race", async ({
   await expect(page.getByRole("toolbar", { name: "Race events: jump to a lap" })).toBeVisible();
   await page.keyboard.press("End");
   await expect(page.locator(".ac-marker").last()).toBeFocused();
-  await page.getByRole("button", { name: /^Lap \d+: \d+ pit stops? / }).first().click();
+  await page.getByRole("button", { name: /^P, lap \d+: \d+ pit stops? / }).first().click();
   const pitLap = Number(await page.locator(".lc-now").textContent());
   expect(pitLap).toBeGreaterThan(0);
 

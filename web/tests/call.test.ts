@@ -12,7 +12,6 @@ import { type Health, type Replay, toHealth, toHealthModel } from "@/lib/api";
 import {
   alertIsNew,
   alertKind,
-  BASE_RATE_2025,
   callLayout,
   closestPair,
   closestReason,
@@ -88,7 +87,8 @@ describe("model identity and the SMOKE TEST rule", () => {
   it("names the model and stamps the sample deployment model as a smoke test", () => {
     const full = modelIdentity(health("deploy_real_G3.5_k2") ?? null);
     expect(full).toEqual({ version: "deploy_real_G3.5_k2", featureSet: "real", g: 3.5, k: 2, smoke: false });
-    expect(modelDetail(full!)).toBe("real features, G 3.5 s, k 2");
+    // no-break spaces inside each part, so "k 2" never wraps (Step 5, finding 13)
+    expect(modelDetail(full!)).toBe("real\u00a0features, G\u00a03.5\u00a0s, k\u00a02");
     expect(modelIdentity(health("sample_deploy_real_G3.5_k2") ?? null)?.smoke).toBe(true);
     expect(isSmokeModel("sample_x")).toBe(true);
     expect(isSmokeModel("deploy_sample")).toBe(false);
@@ -262,13 +262,14 @@ describe("the call's markup", () => {
       }),
     );
 
-  it("names the pair, labels the probability as a model estimate with the model id and the base rate", () => {
+  it("names the pair, labels the probability as a model estimate with the model id (no base-rate line)", () => {
     const m = html();
     expect(m).toContain('<span class="call-code">LEC</span>');
     expect(m).toContain('<span class="call-code">NOR</span>');
     expect(m).toContain('<span class="call-prob-num num">66%</span>');
     expect(m).toContain("model estimate that pitting next lap brings LEC out ahead");
-    expect(m).toContain(`<span class="num">${Math.round(BASE_RATE_2025 * 100)}%</span> of attempts`);
+    // Step 5, finding 4: the "2025 base rate" line is removed (2025 is the sealed test season)
+    expect(m).not.toContain("base rate");
     expect(m).toContain('<span class="num">deploy_real_G3.5_k2</span>');
     expect(m).toContain('role="img" aria-label="Gap now 1.5 s to the car ahead, inside the 3.5 s rule window; pit loss unknown."');
     expect(m).toContain(">Simulate this pair</button>");

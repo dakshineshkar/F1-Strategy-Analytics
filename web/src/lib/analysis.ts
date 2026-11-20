@@ -788,9 +788,25 @@ export function lapTimesSummary(series: readonly { driverId: string; points: rea
 
 /** The winner and the biggest gain and loss from the grid among the cars running at the end (a car that stopped
  * early has no finishing place to compare). A pit-lane start counts from the back of the field. */
-export function positionsSummary(series: readonly PositionSeries[], code: (id: string) => string): string {
+interface PositionMove {
+  id: string;
+  grid: number;
+  end: number;
+  change: number;
+}
+
+interface PositionsKey {
+  lastLap: number;
+  running: { id: string; grid: number | null; end: number }[];
+  winner: { id: string; grid: number | null; end: number } | null;
+  gain: PositionMove | null;
+  loss: PositionMove | null;
+  startText: (g: number) => string;
+}
+
+function positionsKey(series: readonly PositionSeries[]): PositionsKey | null {
   const withLaps = series.filter((s) => s.positions.length > 0);
-  if (withLaps.length === 0) return "No positions in the lake for this race.";
+  if (withLaps.length === 0) return null;
   const lastLap = Math.max(...withLaps.map((s) => (s.positions[s.positions.length - 1] as { lap: number }).lap));
   const field = Math.max(series.length, ...withLaps.flatMap((s) => s.positions.map((p) => p.position)));
   const startOf = (g: number) => (g > 0 ? g : field);
@@ -798,14 +814,29 @@ export function positionsSummary(series: readonly PositionSeries[], code: (id: s
   const running = withLaps
     .filter((s) => (s.positions[s.positions.length - 1] as { lap: number }).lap === lastLap)
     .map((s) => ({ id: s.driver_id, grid: s.grid, end: (s.positions[s.positions.length - 1] as { position: number }).position }));
-  const parts: string[] = [];
-  const winner = running.find((r) => r.end === 1);
-  if (winner) parts.push(`${code(winner.id)} won${winner.grid === null ? "" : ` from ${startText(winner.grid)}`}.`);
+  const winner = running.find((r) => r.end === 1) ?? null;
   const moves = running
     .filter((r): r is { id: string; grid: number; end: number } => r.grid !== null)
     .map((r) => ({ ...r, change: startOf(r.grid) - r.end }));
-  const gain = moves.reduce<(typeof moves)[number] | null>((b, m) => (m.change > 0 && (b === null || m.change > b.change) ? m : b), null);
-  const loss = moves.reduce<(typeof moves)[number] | null>((b, m) => (m.change < 0 && (b === null || m.change < b.change) ? m : b), null);
+  const gain = moves.reduce<PositionMove | null>((b, m) => (m.change > 0 && (b === null || m.change > b.change) ? m : b), null);
+  const loss = moves.reduce<PositionMove | null>((b, m) => (m.change < 0 && (b === null || m.change < b.change) ? m : b), null);
+  return { lastLap, running, winner, gain, loss, startText };
+}
+
+/** The drivers the positions summary names, in its order (winner, biggest gain, biggest loss), without repeats:
+ * the chart's default highlight (Step 5, finding 14). Empty when the lake has no positions. */
+export function positionsKeyDrivers(series: readonly PositionSeries[]): string[] {
+  const k = positionsKey(series);
+  if (k === null) return [];
+  return [k.winner?.id, k.gain?.id, k.loss?.id].filter((id, i, a): id is string => id !== undefined && a.indexOf(id) === i);
+}
+
+export function positionsSummary(series: readonly PositionSeries[], code: (id: string) => string): string {
+  const k = positionsKey(series);
+  if (k === null) return "No positions in the lake for this race.";
+  const { lastLap, running, winner, gain, loss, startText } = k;
+  const parts: string[] = [];
+  if (winner) parts.push(`${code(winner.id)} won${winner.grid === null ? "" : ` from ${startText(winner.grid)}`}.`);
   if (gain) parts.push(`Biggest gain: ${code(gain.id)}, ${startText(gain.grid)} to P${gain.end} (${gain.change} places).`);
   if (loss) parts.push(`Biggest loss: ${code(loss.id)}, ${startText(loss.grid)} to P${loss.end} (${-loss.change} places).`);
   const out = series.length - running.length;

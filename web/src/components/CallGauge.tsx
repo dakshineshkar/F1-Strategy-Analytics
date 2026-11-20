@@ -12,7 +12,8 @@ const s1 = (x: number) => `${x.toFixed(1)} s`;
  * printed, so nothing is read from position or colour alone. Positions are transforms of full-width layers,
  * so a new lap repaints without moving any layout box.
  *
- * ``muted``: the closest pair when there is no call (neutral marker and window, no signal colour). */
+ * ``muted``: the closest pair when there is no call, or a call whose order changed since the decision (neutral
+ * marker and window, no signal colour). ``gapLabel`` names the gap when it is not the gap now (the decision gap). */
 export function CallGauge({
   gapS,
   pitLossS,
@@ -21,6 +22,7 @@ export function CallGauge({
   trendLaps,
   g = RULE_GAP_S,
   muted = false,
+  gapLabel = "gap now",
 }: {
   gapS: number;
   pitLossS: number | null;
@@ -30,19 +32,22 @@ export function CallGauge({
   trendLaps: number | null;
   g?: number;
   muted?: boolean;
+  gapLabel?: string;
 }) {
   const geo = gaugeGeometry(gapS, trend, g);
+  // a decision gap (the call's order changed since): its label takes its own width, and no trend is shown for it
+  const decision = gapLabel !== "gap now";
   const t = trendOf(trend);
   const inside = gapS <= g;
   const next = t !== null && t.dir !== "steady" && geo.nextS !== null && geo.nextPct !== null ? { s: geo.nextS, pct: geo.nextPct } : null;
   const sentence =
-    `Gap now ${s1(gapS)} to the car ahead, ${inside ? "inside" : "outside"} the ${g} s rule window` +
+    `${gapLabel.charAt(0).toUpperCase()}${gapLabel.slice(1)} ${s1(gapS)}${gapLabel === "gap now" ? " to the car ahead" : ""}, ${inside ? "inside" : "outside"} the ${g} s rule window` +
     (t !== null ? `; ${t.text}${trendLaps ? ` over ${trendLaps} laps` : ""}${next !== null ? `, about ${s1(next.s)} next lap` : ""}` : "") +
     (pitLossS !== null ? `; the race's pit loss is ${s1(pitLossS)}.` : "; pit loss unknown.");
   const lo = next === null ? geo.gapPct : Math.min(geo.gapPct, next.pct);
   const span = next === null ? 0 : Math.abs(next.pct - geo.gapPct);
   return (
-    <figure className={`gauge${muted ? " is-muted" : ""}`} role="img" aria-label={sentence}>
+    <div className={`gauge${muted ? " is-muted" : ""}`} role="img" aria-label={sentence}>
       <div className="gauge-track" aria-hidden="true">
         <span className="gauge-layer gauge-window" style={{ transform: `scaleX(${geo.windowPct / 100})` }} />
         <span className="gauge-layer" style={{ transform: `translateX(${geo.windowPct}%)` }}>
@@ -67,11 +72,11 @@ export function CallGauge({
         </span>
         <span className="gauge-axis-end">{s1(geo.maxS)}</span>
       </div>
-      <figcaption className="gauge-read" aria-hidden="true">
-        <span className="gauge-gap">
-          <span className="gauge-label">gap now</span> <span className="num">{s1(gapS)}</span>
+      <div className="gauge-read" aria-hidden="true">
+        <span className={`gauge-gap${decision ? " is-decision" : ""}`}>
+          <span className="gauge-label">{gapLabel}</span> <span className="num">{s1(gapS)}</span>
         </span>
-        {t !== null ? (
+        {decision ? null : t !== null ? (
           <span className={`gauge-trend is-${t.dir}`}>
             <TrendMark dir={t.dir} />
             <span className="num">{t.text}</span>
@@ -84,7 +89,7 @@ export function CallGauge({
           pit loss {pitLossS !== null ? <span className="num">{s1(pitLossS)}</span> : "unknown"}
           {pitLossText !== null ? ` from ${pitLossText}` : ""}
         </span>
-      </figcaption>
-    </figure>
+      </div>
+    </div>
   );
 }

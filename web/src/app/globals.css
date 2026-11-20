@@ -49,6 +49,8 @@ a:hover { text-decoration-color: var(--text); text-decoration-thickness: 2px; }
 
 h1, h2, h3 { margin: 0; font-family: var(--font-ui); font-weight: 600; }
 h2 { font-size: var(--fs-lg); line-height: 1.2; color: var(--text); }
+/* one h3 size on every screen (it was 12, 13 or 14 px: Step 5, finding 17) */
+h3 { font-size: var(--fs-md); line-height: 1.3; color: var(--text); }
 
 input, select, button { font: inherit; }
 ::placeholder { color: var(--faint); opacity: 1; }
@@ -120,7 +122,9 @@ input[type="search"], select {
 .data-banner.is-synthetic { background: var(--raised); color: var(--text); }
 .data-banner strong { font: 700 var(--fs-xs)/1 var(--font-ui); padding: 2px var(--sp-1); border: 1px dashed var(--text); border-radius: var(--radius-sm); }
 
-main { padding: var(--sp-3) var(--sp-4) var(--sp-4); max-width: 90rem; margin: 0 auto; }
+/* at least the viewport below the top bar and the data notice, so the footer starts below the fold and a page whose
+   "Loading…" line is replaced by its content never shifts it (load CLS; Step 5, finding 15) */
+main { padding: var(--sp-3) var(--sp-4) var(--sp-4); max-width: 90rem; margin: 0 auto; min-height: calc(100vh - 4rem); }
 main:focus { outline: none; }
 
 /* Honesty stamps (SMOKE TEST, Synthetic tyres): a dashed outline and words, never a colour alone. */
@@ -148,7 +152,7 @@ main:focus { outline: none; }
   max-width: 44rem; min-height: 9.5rem; margin-bottom: var(--sp-5); padding: var(--sp-4);
   border-color: var(--border); box-shadow: inset 0 2px 0 var(--text);
 }
-.start-here h2 { margin-bottom: var(--sp-2); font-size: var(--fs-md); color: var(--muted); }
+.start-here h2 { margin-bottom: var(--sp-2); color: var(--muted); }
 .start-race { margin: 0; display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--sp-1) var(--sp-2); font: 600 var(--fs-xl)/1.2 var(--font-ui); }
 .start-race .race-season { font-weight: 500; }
 .start-meta { display: inline-flex; flex-wrap: wrap; align-items: baseline; gap: 0 var(--sp-3); font: 500 var(--fs-sm)/1.2 var(--font-num); color: var(--muted); }
@@ -211,6 +215,7 @@ main:focus { outline: none; }
 .ss-mode.tone-paused { border-style: dashed; }
 .ss-mode.tone-ended { border-style: double; border-width: 3px; }
 .ss-mode.tone-idle { color: var(--muted); border-style: dotted; }
+.ss-mode.tone-stored { color: var(--muted); border-style: dotted; }
 /* the post-race archive: a stored race, over (the same double border as a finished replay) */
 .ss-mode.tone-archive { border-style: double; border-width: 3px; }
 /* the archive strip's own line: the latest key race-control message, its lap and the status source, as text */
@@ -227,7 +232,7 @@ main:focus { outline: none; }
 .ss-k { color: var(--muted); font-size: var(--fs-xs); }
 .ss-v { font-weight: 600; }
 .ss-lap .ss-v { font: 600 var(--fs-lg)/1 var(--font-num); }
-.lc-now { display: inline-block; min-width: 2ch; }
+.lc-now { display: inline-block; min-width: 2ch; text-align: right; }
 .ss-of { color: var(--muted); font-size: var(--fs-sm); }
 .ss-model .ss-v { font: 500 var(--fs-sm)/1 var(--font-num); }
 .ss-detail { color: var(--muted); font-size: var(--fs-xs); }
@@ -368,6 +373,7 @@ main:focus { outline: none; }
 .gauge-axis-end { right: 0; text-align: right; }
 .gauge-read { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-1) var(--sp-3); font: 500 var(--fs-sm)/1.3 var(--font-ui); }
 .gauge-gap { width: 6.25rem; flex: none; }
+.gauge-gap.is-decision { width: auto; }
 .gauge-gap .num { font-weight: 600; }
 .gauge-label { color: var(--muted); font-size: var(--fs-xs); }
 .gauge-trend { display: inline-flex; align-items: center; gap: var(--sp-1); }
@@ -656,9 +662,10 @@ main:focus { outline: none; }
 .pipeline-how p { margin: var(--sp-2) 0 0; font: 400 var(--fs-sm)/1.5 var(--font-body); color: var(--muted); max-width: 72ch; }
 
 .legend { padding: var(--sp-2) var(--sp-3); }
+.legend-h { display: inline; font: inherit; color: inherit; }
 .legend[open] > summary { margin-bottom: var(--sp-2); }
 .legend-body { display: grid; grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); gap: var(--sp-3) var(--sp-6); }
-.legend-group h3 { margin: var(--sp-1) 0 var(--sp-2); padding-bottom: var(--sp-1); border-bottom: 1px solid var(--rule); font: 600 var(--fs-xs)/1.2 var(--font-ui); color: var(--muted); }
+.legend-group h3 { margin: var(--sp-1) 0 var(--sp-2); padding-bottom: var(--sp-1); border-bottom: 1px solid var(--rule); color: var(--muted); }
 .legend dl { margin: 0; display: grid; gap: var(--sp-2); }
 .legend-item dt { font: 600 var(--fs-sm)/1.3 var(--font-ui); color: var(--text); }
 .legend-item dd { margin: 2px 0 0; max-width: 72ch; font: 400 var(--fs-xs)/1.45 var(--font-body); color: var(--muted); }
@@ -687,10 +694,21 @@ main:focus { outline: none; }
 .ss-track.race-status { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--sp-1) var(--sp-3); margin: 0; padding: 0; background: none; border: 0; border-radius: var(--radius-md); }
 
 /* ------------------------------------------------------------------ responsive */
-/* Below 1440 px the tower keeps Undercut next to the driver and scrolls inside its own region. */
+/* Below 1440 px the tower keeps Undercut next to the driver and scrolls inside its own region. The driver column
+   has a fixed width there (it was ``auto`` in a fixed-layout table whose other columns already fill 52.25rem, so it
+   collapsed to 0 px from about 1400 px down: Step 5, finding 1); the table grows to its columns' sum and the
+   identity columns (Pos, pin, Driver, Undercut) stay put while the rest scrolls, as on a phone. */
 @media (max-width: 1360px) {
   .dash { grid-template-columns: minmax(0, 1fr) 26rem; }
-  .tower { min-width: 52rem; }
+}
+@media (max-width: 1439px) {
+  .tower:not(.drivers-table, .analysis-table, .telemetry-readout) .c-drv { width: 7.25rem; }
+  .tower:not(.drivers-table, .analysis-table, .telemetry-readout) :is(.c-pos, .c-pin, .c-drv, .c-uc) { position: sticky; z-index: 1; background: inherit; }
+  .tower:not(.drivers-table, .analysis-table, .telemetry-readout) tbody tr > * { background-color: inherit; }
+  .tower:not(.drivers-table, .analysis-table, .telemetry-readout) .c-pos { left: 0; }
+  .tower:not(.drivers-table, .analysis-table, .telemetry-readout) .c-pin { left: 2rem; }
+  .tower:not(.drivers-table, .analysis-table, .telemetry-readout) .c-drv { left: 3.75rem; }
+  .tower:not(.drivers-table, .analysis-table, .telemetry-readout) .c-uc { left: 11rem; box-shadow: 1px 0 0 var(--border); }
 }
 @media (max-width: 1080px) {
   .dash { grid-template-columns: minmax(0, 1fr); grid-template-areas: "call" "tower" "more"; }
@@ -796,7 +814,7 @@ main:focus { outline: none; }
 ul.chart-summary { display: grid; gap: 2px; }
 .chart-summary li { overflow-wrap: anywhere; }
 .chart-legend-list li { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-1) var(--sp-2); }
-.chart-h { margin: var(--sp-4) 0 var(--sp-1); font: 600 var(--fs-sm)/1.3 var(--font-ui); color: var(--text); }
+.chart-h { margin: var(--sp-4) 0 var(--sp-1); }
 /* the legend: one row above the plot, a line (or bar) key and the name in text ink */
 .chart-legend { margin: 0 0 var(--sp-2); padding: 0; list-style: none; display: flex; flex-wrap: wrap; gap: var(--sp-1) var(--sp-4); font: 600 var(--fs-xs)/1.4 var(--font-ui); color: var(--text); }
 .chart-legend li { display: inline-flex; align-items: center; gap: var(--sp-1); white-space: nowrap; }
@@ -874,8 +892,8 @@ ul.chart-summary { display: grid; gap: 2px; }
 .rc-msg { min-width: 0; overflow-wrap: anywhere; }
 .rc-key-tag { margin-left: var(--sp-2); vertical-align: 1px; }
 .rc-kind { display: inline-flex; align-items: center; min-height: 1.25rem; padding: 0 var(--sp-1); font: 600 var(--fs-xs)/1 var(--font-ui); color: var(--text); border: 1px solid var(--border); border-radius: var(--radius-sm); white-space: nowrap; }
-.rc-sc_deployed, .rc-sc_ending { border-color: var(--loss); border-width: 2px; }
-.rc-vsc_deployed, .rc-vsc_ending { border-color: var(--loss); border-style: dashed; border-width: 2px; }
+.rc-sc_deployed, .rc-sc_ending { border-color: var(--text); border-width: 2px; }
+.rc-vsc_deployed, .rc-vsc_ending { border-color: var(--text); border-style: dashed; border-width: 2px; }
 .rc-red_flag { border-color: var(--danger); border-style: double; border-width: 3px; color: var(--danger); }
 .rc-penalty { border-width: 2px; font-weight: 700; }
 .rc-investigation, .rc-track_limits, .rc-other { border-style: dotted; color: var(--muted); }
@@ -895,7 +913,7 @@ ul.chart-summary { display: grid; gap: 2px; }
  * under the code and the team wraps, so nothing scrolls sideways or is cut. */
 .drivers-wrap { min-height: 0; }
 /* (.tower.… so the tower's own phone min-width, later in the file, does not apply to these tables) */
-.tower.drivers-table { min-width: 0; }
+.tower.drivers-table { min-width: 0; max-width: 56rem; } /* capped: a wide screen left a 600 px gap after the names (Step 5, finding 12) */
 .drivers-table td, .drivers-table th { white-space: normal; text-overflow: clip; overflow: visible; }
 .drivers-table .c-grid { width: 4.5rem; text-align: right; font-family: var(--font-num); }
 .drivers-table .c-drv { width: auto; text-align: left; }
@@ -919,7 +937,7 @@ ul.chart-summary { display: grid; gap: 2px; }
  * cars are columns of one panel split by hairlines (no panel inside a panel); the focus column is marked by a 2px
  * text-ink top rule and its heading, never by the signal colour. Tokens only. */
 .engineer { margin-bottom: var(--sp-4); }
-.engineer h3 { margin: 0 0 var(--sp-2); display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-1) var(--sp-2); font: 600 var(--fs-md)/1.3 var(--font-ui); color: var(--text); }
+.engineer h3 { margin: 0 0 var(--sp-2); display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-1) var(--sp-2); }
 .engineer .panel-head label > span { color: var(--muted); }
 .eng-status { margin: 0 0 var(--sp-3); display: flex; flex-wrap: wrap; gap: var(--sp-1) var(--sp-5); font: 500 var(--fs-sm)/1.4 var(--font-ui); }
 .eng-cell { display: inline-flex; flex-wrap: wrap; align-items: baseline; gap: 0 var(--sp-1); }
@@ -1046,8 +1064,10 @@ ul.chart-summary { display: grid; gap: 2px; }
 .ac-marker:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; z-index: 1; }
 /* Kinds differ by their letters and by the border style; the colour only repeats it. The alert marker is neutral
  * (a 2px outline and bold letter): the signal amber stays with the alerts of the scrubbed lap. */
-.ac-sc { border-color: var(--loss); border-width: 2px; }
-.ac-vsc { border-color: var(--loss); border-style: dashed; border-width: 2px; }
+/* SC and VSC are neutral ink in the markers and every list; the border style carries the status (only the strip's
+   track chip keeps the loss colour: Step 5, user decision) */
+.ac-sc { border-color: var(--text); border-width: 2px; }
+.ac-vsc { border-color: var(--text); border-style: dashed; border-width: 2px; }
 .ac-red { border-color: var(--danger); border-style: double; border-width: 3px; }
 .ac-neutral { border-style: dotted; border-width: 2px; }
 .ac-alert { border-width: 2px; border-color: var(--text); font-weight: 700; }
@@ -1073,6 +1093,9 @@ ul.chart-summary { display: grid; gap: 2px; }
   .arc-side { grid-template-rows: 26rem auto; }
   /* the race-control line ends the strip on a phone (after the lap, track and model cells) */
   .arc-strip .ss-rc { order: 7; }
+  /* the transport's two button rows sit 4 px apart, so a SMOKE TEST stamp in the strip (sample bundle) still leaves the
+     event markers in the first viewport at 390×844 (Step 5) */
+  .ac-buttons { row-gap: var(--sp-1); margin-bottom: var(--sp-1); }
 }
 
 

@@ -279,8 +279,9 @@ describe("markers", () => {
       [3, "alert", "A"],
       [4, "vsc", "VSC"],
     ]);
-    expect(m[1]?.label).toBe("Lap 2: 1 pit stop (LAN). Jump to lap 2");
-    expect(m[2]?.label).toBe("Lap 3: 1 undercut attempt and 1 probability crossing. Jump to lap 3");
+    // the name starts with the visible code (WCAG 2.5.3; Step 5, finding 9)
+    expect(m[1]?.label).toBe("P, lap 2: 1 pit stop (LAN). Jump to lap 2");
+    expect(m[2]?.label).toBe("A, lap 3: 1 undercut attempt and 1 probability crossing. Jump to lap 3");
     expect(m[2]?.count).toBe(2); // the new_candidate alert is not announced, so not marked
   });
 
@@ -372,10 +373,11 @@ describe("ArchiveControls", () => {
     expect(html).toContain('<label for="archive-lap"');
     expect(html).toMatch(/type="range"[^>]*min="1"[^>]*max="4"/);
     expect(html).toContain('aria-valuetext="Lap 2 of 4"');
-    expect(html).toContain('aria-label="Previous lap"');
+    expect(html).toContain('aria-label="−1 lap (previous lap)">−1 lap</button>');
+    expect(html).toContain('aria-label="+1 lap (next lap)">+1 lap</button>');
     expect(html).toContain(">Play</button>");
     expect(html).toContain('role="toolbar" aria-label="Race events: jump to a lap"');
-    expect(html).toContain('aria-label="Lap 2: safety car. Jump to lap 2"');
+    expect(html).toContain('aria-label="SC, lap 2: safety car. Jump to lap 2"');
     expect(html).toContain('aria-current="true"');
     expect((html.match(/tabindex="0"/g) ?? []).length).toBe(1); // one tab stop for the markers
     expect(html).toContain('checked="" value="10"');

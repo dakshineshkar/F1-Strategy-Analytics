@@ -2,7 +2,6 @@
 
 import type { Compound } from "@/lib/api";
 import {
-  BASE_RATE_2025,
   type CallLayout,
   type CallPair,
   closestPair,
@@ -12,6 +11,7 @@ import {
   type ModelIdentity,
   modelDetail,
   noCallReason,
+  orderChangedText,
   RULE_GAP_S,
   staleFlaggedCount,
 } from "@/lib/call";
@@ -110,13 +110,16 @@ function PairGauge({
 }
 
 /** The live undercut call (critique F03): the best pair flagged now (cars with no timing for 2 or more leader
- * laps excluded), with the calibrated probability as a model estimate with its model id and the 2025 base rate,
- * the gap gauge ("gap now"), the reasons (tyres, the rule and the gap at decision), and "Simulate this pair".
+ * laps excluded), with the calibrated probability as a model estimate with its model id, the gap gauge ("gap
+ * now"), the reasons (tyres, the rule and the gap at decision), and "Simulate this pair". When the order changed
+ * after the decision, the pair keeps the alert's defender: "flagged at lap N against D; order changed since", with
+ * the gauge muted at the decision gap and the rule checks not presented as passing (never relabelled).
  * The only panel in the signal colour.
  *
  * Without a call it keeps its reserved height while a replay streams and shows the closest pair instead (muted,
  * with why it is not a call); while nothing streams it shrinks to one line (``layout="compact"``). After the
- * finish it says the race ended, gives no pit instruction and offers the post-race archive. */
+ * finish it says the race ended, gives no pit instruction and offers the post-race archive. With ``stored`` (an
+ * earlier run's state and nothing streaming, ``storedLap``) it is one line that says so: no pair, no probability. */
 export function TheCall({
   state,
   entrants,
@@ -126,6 +129,7 @@ export function TheCall({
   onSimulate,
   replayIdle,
   onOpenReplay,
+  stored = null,
   layout = "full",
   ended = false,
   onArchive = null,
@@ -141,6 +145,8 @@ export function TheCall({
   /** no replay is running and the tower is empty: the call explains how to start one */
   replayIdle: boolean;
   onOpenReplay: () => void;
+  /** the stored leader lap when the page shows an earlier run's state and nothing streams (``storedLap``) */
+  stored?: number | null;
   layout?: CallLayout;
   /** the race has finished (``raceEnded``) */
   ended?: boolean;
@@ -149,7 +155,7 @@ export function TheCall({
 }) {
   const stale = staleIds(state);
   const pairs = flaggedPairs(state, stale);
-  const call = ended ? null : (pairs[0] ?? null);
+  const call = ended || stored !== null ? null : (pairs[0] ?? null);
   const lapNow = leaderLap(state);
   const lap = lapNow > 0 ? lapNow : null;
   const g = model?.g ?? RULE_GAP_S;
@@ -172,6 +178,8 @@ export function TheCall({
 
       {ended ? (
         <Ended lap={lap} onArchive={onArchive} />
+      ) : stored !== null ? (
+        <Stored lap={stored} onOpenReplay={onOpenReplay} />
       ) : call !== null ? (
         <FullCall call={call} state={state} entrants={entrants} model={model} context={context} pitLoss={pitLoss} g={g} onSimulate={onSimulate} />
       ) : layout === "compact" || state.order.length === 0 ? (
@@ -212,7 +220,7 @@ function FullCall({
           <PairArrow size={16} />
           <span className="visually-hidden">undercutting</span>
         </span>
-        <Car id={call.defenderId} entrants={entrants} role="defender, the car directly ahead" />
+        <Car id={call.defenderId} entrants={entrants} role={call.orderChanged ? "defender at the decision lap" : "defender, the car directly ahead"} />
       </p>
 
       <div className="call-estimate">
@@ -221,9 +229,6 @@ function FullCall({
           <span className="call-prob-label">model estimate that pitting next lap brings {driverCode(call.attackerId)} out ahead</span>
         </p>
         <p className="call-context">
-          <span>
-            2025 base rate <span className="num">{probability(BASE_RATE_2025)}</span> of attempts
-          </span>
           <span className="call-model">
             {model === null ? (
               "model id unavailable (health check)"
@@ -237,7 +242,20 @@ function FullCall({
         </p>
       </div>
 
-      <PairGauge pair={call} context={context} pitLoss={pitLoss} g={g} muted={false} />
+      {call.orderChanged && call.alert !== null ? (
+        <CallGauge
+          gapS={call.alert.gapS}
+          gapLabel={`gap at decision (lap ${call.alert.decisionLap})`}
+          pitLossS={pitLoss?.s ?? null}
+          pitLossText={pitLoss === null ? null : pitLossSourceText(pitLoss.source)}
+          trend={null}
+          trendLaps={null}
+          g={g}
+          muted
+        />
+      ) : (
+        <PairGauge pair={call} context={context} pitLoss={pitLoss} g={g} muted={false} />
+      )}
 
       <dl className="call-reasons">
         <div>
@@ -260,7 +278,11 @@ function FullCall({
                 </>
               )}
             </span>
-            <span className="call-rule-checks">within {g} s, not teammates, nobody between, green lap</span>
+            {call.orderChanged && call.alert !== null ? (
+              <OrderChanged call={call} code={(id) => entrants[id]?.code ?? driverCode(id)} />
+            ) : (
+              <span className="call-rule-checks">within {g} s, not teammates, nobody between, green lap</span>
+            )}
           </dd>
         </div>
       </dl>
@@ -272,6 +294,19 @@ function FullCall({
         <span className="call-hint">pit now, next lap or stay out, from this lap</span>
       </div>
     </div>
+  );
+}
+
+/** "flagged at lap N against D; order changed since", with the car directly ahead now for screen readers (the visible
+ * line keeps the length of the rule checks it replaces, so the call's fixed blocks never overflow). */
+function OrderChanged({ call, code }: { call: CallPair; code: (id: string) => string }) {
+  const t = orderChangedText(call, code);
+  if (t === null) return null;
+  return (
+    <span className="call-rule-checks call-order-changed">
+      {t.text}
+      <span className="visually-hidden">{` (${t.aheadNow})`}</span>
+    </span>
   );
 }
 
@@ -377,6 +412,24 @@ function Compact({
           <span className="call-line-text">{noCallReason(state, entrants, g)}</span>
         )}
       </p>
+    </div>
+  );
+}
+
+/** An earlier run's state with nothing streaming (``storedLap``): one line, no pair and no probability, because
+ * the stored flags were scored by that run's model, which this page cannot name. */
+function Stored({ lap, onOpenReplay }: { lap: number; onOpenReplay: () => void }) {
+  return (
+    <div className="call-body call-empty">
+      <p className="call-line">
+        <span className="call-none">No replay of this race is running.</span>
+        <span className="call-line-text">
+          The tower shows the state an earlier run left (lap {lap}); its flags are not a live call.
+        </span>
+      </p>
+      <button type="button" className="btn btn-small" onClick={onOpenReplay}>
+        Open replay controls
+      </button>
     </div>
   );
 }

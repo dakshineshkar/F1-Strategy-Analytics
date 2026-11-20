@@ -12,9 +12,6 @@ import { leaderLap, staleIds } from "./stale";
 export const RULE_GAP_S = 3.5;
 /** The model's decision threshold (``ALERT_THRESHOLD`` in streaming/alerts.py). */
 export const DECISION_THRESHOLD = 0.5;
-/** Share of the 2025 labelled undercut attempts that succeeded (17 of 49; docs/model_results.md, the sealed
- * test set): the context a probability is read against. */
-export const BASE_RATE_2025 = 0.347;
 /** 2025 ECE (10 bins) of the what-if simulator and of the calibrated model, from results/whatif_consistency.csv. */
 export const SIM_ECE_2025 = 0.207;
 export const MODEL_ECE_2025 = 0.107;
@@ -43,42 +40,96 @@ export function modelIdentity(health: Health | null): ModelIdentity | null {
   return { version: m.model_version, featureSet: m.feature_set, g: m.g, k: m.k, smoke };
 }
 
-/** "real features, G 3.5 s, k 2" (whatever of it is known). */
+/** No-break space: a value never wraps away from its label ("k" and "2" stay on one line). */
+const NBSP = "\u00a0";
+
+/** "real features, G 3.5 s, k 2" (whatever of it is known). Each part is joined inside by no-break spaces, so
+ * a line breaks only between parts, never inside "k 2" or "G 3.5 s". */
 export function modelDetail(m: ModelIdentity): string {
   const parts: string[] = [];
-  if (m.featureSet !== null) parts.push(`${m.featureSet} features`);
-  if (m.g !== null) parts.push(`G ${m.g} s`);
-  if (m.k !== null) parts.push(`k ${m.k}`);
+  if (m.featureSet !== null) parts.push(`${m.featureSet}${NBSP}features`);
+  if (m.g !== null) parts.push(`G${NBSP}${m.g}${NBSP}s`);
+  if (m.k !== null) parts.push(`k${NBSP}${m.k}`);
   return parts.join(", ");
 }
 
 // ------------------------------------------------------------------ pairs
 export interface CallPair {
   attackerId: string;
-  /** The car directly ahead now (``order``), which is the car the flag was evaluated against unless the
-   * order changed after the decision lap. */
+  /** The car the flag was evaluated against: the defender of the attacker's latest alert on this page, else
+   * the car directly ahead now (``order``). Never relabelled to a different car after the order changes. */
   defenderId: string;
+  /** The car directly ahead of the attacker now (``order``). */
+  aheadNowId: string;
+  /** The attacker's latest alert names a defender that is no longer directly ahead: the call says "flagged at
+   * lap N against D; order changed since", mutes its gauge and does not present the rule checks as passing. */
+  orderChanged: boolean;
+  /** The probability of this pair: the alert's when the order changed (the hash's value is the attacker's latest
+   * decision, which may be against another car), else the driver hash's. */
   prob: number | null;
+  /** The gap to the car directly ahead now (null when the order changed: there is no "gap now" to the defender). */
   gapS: number | null;
   /** The attacker's latest lap. */
   lap: number | null;
-  /** This page's alert group for the same pair, when one arrived since the page opened. */
+  /** This page's alert group for the pair (live or from the connect snapshot's history), when it holds one. */
   alert: AlertGroup | null;
 }
 
-function pairAt(state: RaceState, i: number): CallPair | null {
+/** The attacker's newest alert group on this page (any defender), or null. */
+export function latestAlertOf(state: Pick<RaceState, "alerts">, attackerId: string): AlertGroup | null {
+  let best: AlertGroup | null = null;
+  for (const g of Object.values(state.alerts)) {
+    if (g.attackerId === attackerId && (best === null || g.seq > best.seq)) best = g;
+  }
+  return best;
+}
+
+/** The pair of the car at ``order[i]`` and the car directly ahead. With ``fromAlert`` (flagged pairs), the
+ * defender is the one the attacker's latest alert names: when that car is no longer directly ahead the pair keeps
+ * it and is marked ``orderChanged`` (the hash's flag and probability belong to that decision, not to whichever car
+ * the order puts ahead now). */
+function pairAt(state: RaceState, i: number, fromAlert = false): CallPair | null {
   const attackerId = state.order[i];
-  const defenderId = state.order[i - 1];
-  if (attackerId === undefined || defenderId === undefined) return null;
+  const aheadNowId = state.order[i - 1];
+  if (attackerId === undefined || aheadNowId === undefined) return null;
   const row = state.drivers[attackerId];
   if (row === undefined) return null;
+  const latest = fromAlert ? latestAlertOf(state, attackerId) : null;
+  if (latest !== null && latest.defenderId !== aheadNowId) {
+    return {
+      attackerId,
+      defenderId: latest.defenderId,
+      aheadNowId,
+      orderChanged: true,
+      prob: latest.prob,
+      gapS: null,
+      lap: row.lap,
+      alert: latest,
+    };
+  }
   return {
     attackerId,
-    defenderId,
+    defenderId: aheadNowId,
+    aheadNowId,
+    orderChanged: false,
     prob: row.undercutProb,
     gapS: row.gapAheadS,
     lap: row.lap,
-    alert: state.alerts[alertKey(attackerId, defenderId)] ?? null,
+    alert: state.alerts[alertKey(attackerId, aheadNowId)] ?? null,
+  };
+}
+
+/** The call's rule line when the order changed since the attacker's latest alert: the visible text ("flagged at lap 16
+ * against SAI; order changed since") and the car directly ahead now, for screen readers ("LEC is directly ahead
+ * now"). Null when the order did not change. */
+export function orderChangedText(
+  call: Pick<CallPair, "orderChanged" | "alert" | "defenderId" | "aheadNowId">,
+  code: (id: string) => string,
+): { text: string; aheadNow: string } | null {
+  if (!call.orderChanged || call.alert === null) return null;
+  return {
+    text: `flagged at lap ${call.alert.decisionLap} against ${code(call.defenderId)}; order changed since`,
+    aheadNow: `${code(call.aheadNowId)} is directly ahead now`,
   };
 }
 
@@ -92,7 +143,7 @@ export function flaggedPairs(state: RaceState, stale: ReadonlySet<string> = stal
   for (let i = 1; i < state.order.length; i += 1) {
     const id = state.order[i];
     if (id !== undefined && state.drivers[id]?.undercutFlag) {
-      const p = pairAt(state, i);
+      const p = pairAt(state, i, true);
       if (p !== null && !stale.has(p.attackerId) && !stale.has(p.defenderId)) out.push(p);
     }
   }
@@ -304,7 +355,7 @@ export function previousLapOf(row: Pick<DriverRow, "lap">, leaderLap: number | n
 }
 
 // ------------------------------------------------------------------ the status strip's mode
-export type ModeTone = "live" | "replay" | "paused" | "ended" | "idle";
+export type ModeTone = "live" | "replay" | "paused" | "ended" | "idle" | "stored";
 
 export interface Mode {
   label: string;
@@ -313,10 +364,27 @@ export interface Mode {
   description: string;
 }
 
+/** The page holds a race state that nothing is streaming: ``/api/replays`` has been read and lists no run of this
+ * race (running or recent: after an API restart the list is empty), no ``session_end`` arrived, the race store
+ * still has cars, and no lap frame has reached this page since it connected. That state is what an earlier run
+ * left in Redis (its keys keep their TTL), scored by whichever model ran then, so it is never shown as live and
+ * its flags are never a call. A replay run outside the API still sends lap frames, so it reads as live. Returns the
+ * stored leader lap, or null when the state is not a stored one. */
+export function storedLap(
+  replaysKnown: boolean,
+  current: Replay | null,
+  state: RaceState,
+): number | null {
+  if (!replaysKnown || current !== null || state.sessionEnded || state.order.length === 0) return null;
+  if (Object.keys(state.history).length > 0) return null;
+  return leaderLap(state) || null;
+}
+
 /** The replay state the strip shows: REPLAY n× / PAUSED / STOPPED / FINISHED / FAILED from ``/api/replays``
  * (polled), else the stream's own state. A stop sends no ``session_end``, so the stream alone would still
- * say "Live" (inventory: paused and stopped states). */
-export function modeOf(current: Replay | null, sessionEnded: boolean, connection: Connection): Mode {
+ * say "Live" (inventory: paused and stopped states). With ``stored`` (``storedLap``), nothing streams: the page
+ * shows an earlier run's state, never "LIVE". */
+export function modeOf(current: Replay | null, sessionEnded: boolean, connection: Connection, stored: number | null = null): Mode {
   if (current !== null) {
     const speed = `${current.speed}×`;
     switch (current.state) {
@@ -335,6 +403,13 @@ export function modeOf(current: Replay | null, sessionEnded: boolean, connection
     }
   }
   if (sessionEnded) return { label: "FINISHED", tone: "ended", description: "The session ended." };
+  if (stored !== null) {
+    return {
+      label: "NOT REPLAYING",
+      tone: "stored",
+      description: `No replay of this race is running: the page shows the state an earlier run left (lap ${stored}), not a live stream.`,
+    };
+  }
   if (connection === "connected") return { label: "LIVE", tone: "live", description: "Connected to the race stream." };
   return { label: "NO REPLAY", tone: "idle", description: "No replay of this race is running." };
 }

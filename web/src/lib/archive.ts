@@ -312,7 +312,7 @@ export interface Marker {
   lap: number;
   kind: MarkerKind;
   code: string;
-  /** Accessible name, e.g. "Lap 22: safety car. Jump to lap 22". */
+  /** Accessible name, starting with the visible code (WCAG 2.5.3), e.g. "SC, lap 22: safety car. Jump to lap 22". */
   label: string;
   count: number;
 }
@@ -325,7 +325,7 @@ const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one :
 export function markers(b: ArchiveBundle, codeOf: (driverId: string) => string = (d) => d): Marker[] {
   const out: Marker[] = [];
   const add = (lap: number, kind: MarkerKind, what: string, count: number) =>
-    out.push({ lap, kind, code: MARKER_CODE[kind], label: `Lap ${lap}: ${what}. Jump to lap ${lap}`, count });
+    out.push({ lap, kind, code: MARKER_CODE[kind], label: `${MARKER_CODE[kind]}, lap ${lap}: ${what}. Jump to lap ${lap}`, count });
   const flagNames: Record<"sc" | "vsc" | "red" | "neutral", string> = {
     sc: "safety car",
     vsc: "virtual safety car",

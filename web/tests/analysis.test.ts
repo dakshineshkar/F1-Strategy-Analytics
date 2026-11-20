@@ -527,7 +527,11 @@ describe("rendered views", () => {
     expect(m).toContain(" Full name</label>");
     expect(m).toContain("<caption>Positions by driver</caption>");
     expect(m).toContain(">Pit lane<");
-    expect(m).toContain('stroke="#D9142B" stroke-width="2" stroke-dasharray="6 4"'); // bravo: second of the team
+    // Step 5: the highlight starts on the drivers the summary names (here only ALP: winner and biggest gain), the
+    // others thin and grey; "None" stays selectable
+    expect(m).toContain('<option value="__summary" selected="">The summary&#x27;s driver (ALP)</option><option value="">None</option>');
+    expect(m).toContain('stroke="#D9142B" stroke-width="3.5"'); // alpha, highlighted
+    expect(m).toContain('stroke="var(--grid)" stroke-width="1.25" stroke-dasharray="6 4"'); // bravo: grey, still dashed
     // bravo's line and its end-label key (step 4B) are dashed; alpha's are solid
     expect((m.match(/stroke-dasharray/g) ?? []).length).toBe(2);
     expect(m).toContain(">Last pos.<");

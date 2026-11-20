@@ -37,18 +37,21 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         <a className="skip-link" href="#main">
           Skip to main content
         </a>
-        <header className="topbar">
-          <Link href="/" className="brand">
-            <svg className="brand-mark" viewBox="0 0 12 12" width="12" height="12" aria-hidden="true" focusable="false">
-              <rect x="0" y="2" width="4" height="8" />
-              <rect x="6" y="2" width="4" height="8" />
-            </svg>
-            Pit Wall
-            <span className="brand-sub">F1 Strategy Analytics</span>
-          </Link>
-          <ThemeSwitch />
+        {/* the data notice belongs to the banner landmark with the top bar (axe "region"; Step 5, finding 18) */}
+        <header className="site-head">
+          <div className="topbar">
+            <Link href="/" className="brand">
+              <svg className="brand-mark" viewBox="0 0 12 12" width="12" height="12" aria-hidden="true" focusable="false">
+                <rect x="0" y="2" width="4" height="8" />
+                <rect x="6" y="2" width="4" height="8" />
+              </svg>
+              Pit Wall
+              <span className="brand-sub">F1 Strategy Analytics</span>
+            </Link>
+            <ThemeSwitch />
+          </div>
+          <DataBanner />
         </header>
-        <DataBanner />
         <main id="main" tabIndex={-1}>
           {children}
         </main>

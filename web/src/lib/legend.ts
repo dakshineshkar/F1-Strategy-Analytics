@@ -277,13 +277,16 @@ export const GLOSSARY = [
       "more, tyre offset of 8 laps or more, stint past the typical length). They are not model output.",
   },
   {
-    id: "gaptrend",
+    id: "enggaps",
     group: "engineer",
-    term: "Gap trend",
-    label: "the gap trend",
+    term: "Gaps: trend, undercut and threat",
+    label: "the gaps",
     text:
-      "The straight-line slope of a pair's gap over the last 5 laps both cars completed (after either car's latest " +
-      "pit stop), in seconds per lap: closing means the car behind is gaining. It needs at least 3 laps.",
+      "Gap trend: the straight-line slope of a pair's gap over the last 5 laps both cars completed (after either " +
+      "car's latest pit stop), in seconds per lap: closing means the car behind is gaining. It needs at least 3 laps. " +
+      "Undercut and threat: the stream's own probability for the car behind in each pair, as published at that lap: " +
+      "the focus on the car ahead, and the car behind on the focus (the threat). It refers to the car directly ahead " +
+      "at the stream's latest decision lap, which can lag by a lap.",
   },
   {
     id: "rejoin",
@@ -295,16 +298,6 @@ export const GLOSSARY = [
       "races), placed among the other cars' current times. It is marked unreliable under SC, VSC or a red flag. The " +
       "what-if panel additionally adjusts for the driver's expected stop and out-lap, so the two estimates can differ " +
       "slightly.",
-  },
-  {
-    id: "engprob",
-    group: "engineer",
-    term: "Undercut and threat",
-    label: "the undercut and threat probabilities",
-    text:
-      "The stream's own probability for the car behind in each pair, as published at that lap: the focus on the car " +
-      "ahead, and the car behind on the focus (the threat). It refers to the car directly ahead at the stream's latest " +
-      "decision lap, which can lag by a lap.",
   },
   {
     id: "unlisted",

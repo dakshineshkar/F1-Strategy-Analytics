@@ -1,3 +1,4 @@
+import { isSmokeModel } from "@/lib/call";
 import { type RaceStatus, SOURCE_TEXT, STATUS_LABEL, STATUS_WORDS } from "@/lib/raceStatus";
 
 /** The post-race archive's status band (redesign step 4A): the live strip's cells for a stored race, so every race
@@ -5,7 +6,8 @@ import { type RaceStatus, SOURCE_TEXT, STATUS_LABEL, STATUS_WORDS } from "@/lib/
  * code whose chip carries the border style (solid SC, dashed VSC, dotted neutralised, double red flag: the same
  * shapes as the live strip, never a side bar), the scoring model, and on its own line the latest key race-control
  * message with its lap and where the status comes from, as visible text. It has no live region: the archive never
- * speaks while the viewer scrubs. */
+ * speaks while the viewer scrubs. A bundle scored by the sample deployment model (``sample_`` prefix) carries the
+ * SMOKE TEST stamp, as the live strip does (DESIGN.md honesty rule 3; Step 5, finding 8). */
 export function ArchiveStrip({
   status,
   lap,
@@ -32,6 +34,12 @@ export function ArchiveStrip({
           <span className="ss-mode-label">POST-RACE</span>
           <span className="visually-hidden">: replayed from the stored post-race bundle</span>
         </p>
+        {isSmokeModel(modelVersion) ? (
+          <p className="stamp stamp-smoke" title="Scored by the sample deployment model, trained on the two sample races: a smoke test of the pipeline, not a result.">
+            SMOKE TEST
+            <span className="visually-hidden">: the sample model scored this bundle; its probabilities are not results.</span>
+          </p>
+        ) : null}
         <p className="ss-cell ss-lap">
           <span className="ss-k">Lap</span>{" "}
           <span className="num ss-v" aria-label={`Lap ${lap} of ${laps}`}>

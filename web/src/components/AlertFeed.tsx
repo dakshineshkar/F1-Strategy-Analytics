@@ -104,7 +104,9 @@ export function AlertFeed({
       <div className="visually-hidden" aria-live="polite" aria-atomic="true">
         {announcement?.text ?? ""}
       </div>
-      <div className="feed" role="region" aria-label="Undercut alert list" tabIndex={0} ref={box}>
+      {/* The live feed's rows hold Simulate buttons, so focus reaches the list and scrolls it; the archive's rows have
+          no control, so its scrolling list itself is the tab stop (WCAG 2.1.1; Step 5, finding 9). */}
+      <div className="feed" role="region" aria-label="Undercut alert list" tabIndex={onSimulate === undefined ? undefined : 0} ref={box}>
         {groups.length === 0 ? (
           <div className="feed-empty">
             <p className="muted">
@@ -135,6 +137,7 @@ export function AlertFeed({
             <ol
               className="alerts"
               ref={list}
+              {...(onSimulate === undefined ? { tabIndex: 0, "aria-label": "Undercut alerts (scroll with the arrow keys)" } : {})}
               style={height > 0 ? { height: `${listPx}px` } : undefined}
               onScroll={(e) => setScrollPx(e.currentTarget.scrollTop)}
             >

@@ -361,11 +361,8 @@ export function EngineerPanel({
           {/* separate cells, never a dot-joined string; each wraps as a whole */}
           <p className="eng-status">
             <span className="eng-cell">
-              <span className="k">Lap</span>{" "}
-              <span className="num">
-                {shown.lap}
-                {shown.lap !== shown.current_lap ? ` of ${shown.current_lap}` : ""}
-              </span>
+              {/* the last lap with complete data, which can trail the strip's leader lap by one (Step 5, finding 5) */}
+              <span className="k">Data to lap</span> <span className="num">{shown.lap}</span>
             </span>
             <span className="eng-cell">
               <span className="k">Track</span> {NEUTRAL_TEXT[shown.neutralised.status]}
@@ -385,7 +382,7 @@ export function EngineerPanel({
           </div>
           <section className="eng-pairs" aria-label="Gaps">
             <h3>
-              Gaps <InfoTip id="gaptrend" /> <InfoTip id="engprob" />
+              Gaps <InfoTip id="enggaps" />
             </h3>
             {shown.pair_ahead ? <PairLine pair={shown.pair_ahead} names={names} label="To the car ahead" /> : <p className="muted">Leading.</p>}
             {shown.pair_behind ? <PairLine pair={shown.pair_behind} names={names} label="From the car behind" /> : <p className="muted">No car behind.</p>}

@@ -21,6 +21,17 @@ export function gap(seconds: number | null): string {
   return `+${seconds.toFixed(3)}`;
 }
 
+/** A tower gap (interval or gap to the leader): "Leader" only for P1. A car that is not P1 with a gap of 0 (it was
+ * measured on a lap the car led, or not measured: a pit lap) shows a dash, never "Leader" (Step 5, finding 7). */
+export function towerGap(position: number | null, seconds: number | null): string {
+  if (position === 1) return "Leader";
+  if (seconds === null || seconds === 0) return DASH;
+  return `+${seconds.toFixed(3)}`;
+}
+
+/** The tower's gap of 0 on a car that is not P1: shown as a dash, with this reason. */
+export const ZERO_GAP_TEXT = "not measured at this lap";
+
 export function lapTime(seconds: number | null): string {
   if (seconds === null || seconds < 0) return DASH;
   const minutes = Math.floor(seconds / 60);

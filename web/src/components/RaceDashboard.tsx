@@ -6,7 +6,7 @@ import { type CSSProperties, type KeyboardEvent, type ReactNode, useCallback, us
 import { tabKeyTarget } from "@/lib/analysis";
 import { api, type Race } from "@/lib/api";
 import { type RaceMode, raceSearch } from "@/lib/archive";
-import { type CallPair, callLayout, closestPair, flaggedPairs, modelIdentity, modeOf, raceEnded } from "@/lib/call";
+import { type CallPair, callLayout, closestPair, flaggedPairs, modelIdentity, modeOf, raceEnded, storedLap } from "@/lib/call";
 import { useLatencyReporter } from "@/lib/debugLatency";
 import { indexEntrants } from "@/lib/entrants";
 import { unlistedCars } from "@/lib/pipeline";
@@ -183,21 +183,27 @@ function LiveRaceView({
   // cars with no timing for 2 or more leader laps: kept, at the bottom, never in the call (stale.ts)
   const stale = staleIds(state);
   const rows = displayRows(state, stale);
-  const raceStatus = useRaceStatus(season, round, state.maxLap);
+  // keyed on the leader's lap the page holds (also a snapshot-only page: a late join, or a page opened after the
+  // finish, which never gets a lap frame and so showed "UNKNOWN": Step 5, finding 16)
+  const raceStatus = useRaceStatus(season, round, leaderLapOf(state));
   const leaderLap = rows[0]?.lap ?? null;
   const groups = alertGroups(state);
   const announcement = state.announcements[state.announcements.length - 1] ?? null;
   const anyRunning = (replays.status?.running.length ?? 0) > 0;
-  const mode = modeOf(replays.current, state.sessionEnded, state.connection);
+  // an earlier run's state with nothing streaming (after an API restart): never "LIVE", never a call (storedLap)
+  const stored = storedLap(replays.status !== null, replays.current, state);
+  const mode = modeOf(replays.current, state.sessionEnded, state.connection, stored);
   const ended = mode.tone === "ended";
   const finished = raceEnded(replays.current, state.sessionEnded, leaderLap, race?.laps ?? null);
-  const flagged = finished ? [] : flaggedPairs(state, stale);
+  const flagged = finished || stored !== null ? [] : flaggedPairs(state, stale);
   const call = flagged[0] ?? null;
-  const closest = call === null && !finished ? closestPair(state, index, stale) : null;
+  const closest = call === null && !finished && stored === null ? closestPair(state, index, stale) : null;
   const streaming = isActive(replays.current) || mode.tone === "live";
   // the leader's lap also for a page that holds only the snapshot so far (late join, before the next crossing)
   const lapNow = leaderLapOf(state);
-  const layout = callLayout(call !== null, streaming, lapNow, finished);
+  // until /api/replays has answered, the call keeps its full height: a page opened during a replay would otherwise
+  // start compact and grow under the feed on the first poll (load CLS; Step 5, finding 15)
+  const layout = replays.status === null && !finished ? "full" : callLayout(call !== null, streaming, lapNow, finished);
   // the engineer view (trend, tyres) of the pair the call shows: the call, else the closest pair; the race's pit
   // loss from any response. Keyed on the leader's lap, so a late joiner with only the snapshot fetches at once.
   const { context, pitLoss } = useCallContext(season, round, (call ?? closest)?.attackerId ?? null, lapNow);
@@ -307,6 +313,7 @@ function LiveRaceView({
                 onSimulate={(p: CallPair) => simulate(p.attackerId)}
                 replayIdle={!isActive(replays.current)}
                 onOpenReplay={() => setDrawer(true)}
+                stored={stored}
                 layout={layout}
                 ended={finished}
                 onArchive={onArchive}
@@ -329,6 +336,11 @@ function LiveRaceView({
                 lapsDown={(id) => lapsBehind(state, id)}
                 entrants={index}
                 callPair={call}
+                extrasNote={
+                  stored === null
+                    ? null
+                    : `Stored state from an earlier run (lap ${stored}): no replay is running, and the flags and probabilities were scored by that run's model.`
+                }
                 staleLap={(id) => (stale.has(id) ? staleSince(state, id) : null)}
               />
             </div>

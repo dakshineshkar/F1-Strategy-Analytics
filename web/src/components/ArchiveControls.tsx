@@ -66,7 +66,7 @@ export function ArchiveControls({
           className="btn btn-small"
           onClick={() => dispatch({ type: "step", by: -1 })}
           disabled={state.lap <= first}
-          aria-label="Previous lap"
+          aria-label="−1 lap (previous lap)"
         >
           −1 lap
         </button>
@@ -78,7 +78,7 @@ export function ArchiveControls({
           className="btn btn-small"
           onClick={() => dispatch({ type: "step", by: 1 })}
           disabled={state.lap >= last}
-          aria-label="Next lap"
+          aria-label="+1 lap (next lap)"
         >
           +1 lap
         </button>
