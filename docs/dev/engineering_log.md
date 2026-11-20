@@ -2729,6 +2729,27 @@
   - **Tests** (`test_repo_docs.py`): every relative link and heading anchor in every Markdown file resolves (the
     deliberate `web/tests/fixtures/report/report.md` excepted); the AI-tool files are not tracked; the new docs
     are linked and the CHANGELOG, pyproject, package.json and `__version__` versions agree.
+- 2026-11-20: course submission report `docs/report/final_report.md` and `docs/report/final_report.pdf`
+  (`make final-report-pdf`). `docs/report/report.md` and `report.pdf` are unchanged and stay the full report.
+  - **Format:** 8 A4 pages, sections in the course order (Problem, Approach and Methods, Evaluation, Summary,
+    References), 4 figures (architecture, live race view, feature-build scaling, paired ablation), no appendix.
+    A "Real-Time Serving Layer: Redis 8.10 Schema" subsection answers the feedback on the serving layer.
+  - **Renderer:** `web/scripts/report-pdf.mjs` gained `--style course` (exported `STYLES`, `styleOf`,
+    `parseArgs`, `protectIntervals`): `@page` A4 with 25 mm margins, the page size taken from CSS (209.9 x 297.0 mm;
+    Chromium's own A4 format is 210.2 x 297.3 mm), 9 pt tables, page numbers only. The default style's HTML for
+    `report.md` is byte-identical to before. No new npm or Python dependency.
+  - **Fonts (revision, same day):** body and headings in "Times New Roman", "Liberation Serif", serif and code in
+    "Courier New", "Liberation Mono", monospace, as in the course proposal. Times New Roman is not installed on the
+    dev host, so the PDF embeds Liberation Serif/Mono 2.1.5 (SIL OFL 1.1), committed as report-only files in
+    `web/scripts/fonts/liberation/` (3 TTFs, about 1.1 MB, source and sha256 in its README). Redis keys never wrap;
+    bracketed intervals never break; tables of up to 6 rows stay on one page.
+  - **Wording (revision):** no statement about the proposal itself (1.5 opening, 4.1 opening removed, "Goal" column,
+    4.2 "Changes and Additions"); 4.2 says LR and GBT were evaluated and the calibrated LR deployed.
+  - **Checks:** pypdf (temporary `uv run --with`, no pyproject change): 8 pages, body text 10.0 pt in an embedded
+    Liberation Serif subset, content within the 25 mm margins. Every number of the report (210
+    distinct) appears in `report.md`, `results.md`, `architecture.md`, `experiments.md`, `model_results.md` or
+    `traceability.md`; `test_repo_docs.py` now checks that, the course section order, the four figures and the
+    committed PDF; `test_makefile_web.py` checks the target; `web/tests/reportPdf.test.ts` covers the style.
 ## Next
 - S18B: the demo rehearsal with `docs/demo_script.md` (full lake, then the sample-mode fallback); fill in section 16
   (team contributions) of the report and run `make report-pdf` again. The report and demo script already describe

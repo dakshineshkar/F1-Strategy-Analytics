@@ -25,6 +25,8 @@ Every document in the repository. Start with the [README](../README.md), then
 | [traceability.md](traceability.md) | Every requirement of the project proposal mapped to code, tests and proof (checked in CI) |
 | [report/report.md](report/report.md) | The project report |
 | [report/report.pdf](report/report.pdf) | The report as a PDF (`make report-pdf`) |
+| [report/final_report.md](report/final_report.md) | The course submission report (8 pages; the full report above stays the technical reference) |
+| [report/final_report.pdf](report/final_report.pdf) | The course submission report as a PDF (`make final-report-pdf`: A4, 2.5 cm margins, 10 pt) |
 | [demo_script.md](demo_script.md) | The 10-minute and 5-minute live demo, a fallback plan and likely questions |
 | [design/DESIGN.md](design/DESIGN.md) | The dashboard design system (Pit Wall) |
 | [assets/architecture.mmd](assets/architecture.mmd) | Source of the README architecture image (`architecture-{dark,light}.{svg,png}`, redrawn by `make readme-assets`) |

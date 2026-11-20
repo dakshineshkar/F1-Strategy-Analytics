@@ -226,6 +226,135 @@ def test_report_pdf_is_committed_next_to_the_report() -> None:
     assert pdf.read_bytes()[:5] == b"%PDF-"
 
 
+# ---------------------------------------------------------------- the course submission report
+FINAL = "docs/report/final_report.md"
+FINAL_TITLE = (
+    "F1 Strategy Analytics at Scale: "
+    "Event-Driven Undercut Detection and What-If Race Strategy Simulation"
+)
+FINAL_SECTIONS = (
+    "## 1. Problem",
+    "### 1.1 Definition",
+    "### 1.2 Motivation",
+    "### 1.3 Design Goals",
+    "### 1.4 Features Required",
+    "### 1.5 Scalability and Performance Goals",
+    "## 2. Approach and Methods",
+    "### 2.1 High-Level Design",
+    "### 2.2 Architecture and Data Model",
+    "#### Real-Time Serving Layer: Redis 8.10 Schema",
+    "### 2.3 Big Data Platforms Used",
+    "### 2.4 ML Methods Used",
+    "## 3. Evaluation",
+    "### 3.1 Experiment Design",
+    "### 3.2 Challenges and Changes",
+    "### 3.3 Scalability and Performance Metrics",
+    "### 3.4 Feature Metrics",
+    "### 3.5 Analysis",
+    "## 4. Summary",
+    "### 4.1 Achievement of Design Goals",
+    "### 4.2 Changes and Additions",
+    "### 4.3 Future Extensions",
+    "## References",
+)
+FINAL_FIGURES = (
+    "../assets/architecture-light.svg",
+    "../design/after/d-light-mid.png",
+    "figures/scalability_build.png",
+    "figures/ablation_lr_primary.png",
+)
+# Every number of the course report is copied from these documents.
+FINAL_NUMBER_SOURCES = (
+    "docs/report/report.md",
+    "docs/results.md",
+    "docs/architecture.md",
+    "docs/experiments.md",
+    "docs/model_results.md",
+    "docs/traceability.md",
+)
+
+
+def _final_body() -> str:
+    """The report after the title and byline."""
+    return _text(FINAL).split("## 1. Problem", 1)[1]
+
+
+def _numbers_missing_from(text: str, sources: dict[str, str]) -> list[str]:
+    """Numbers of ``text`` that appear, digit-bounded, in none of ``sources``.
+
+    Section numbers in headings, Figure/Section references, URLs and list-item numbers are not
+    data and are skipped.
+    """
+    text = re.sub(r"^#{2,4} [\d.]+ ?", "", text, flags=re.M)
+    text = re.sub(r"\b(Figure|Section) \d+(\.\d+)?", "", text)
+    text = re.sub(r"https?://\S+", "", text)
+    text = re.sub(r"^\d+\. ", "", text, flags=re.M)
+    missing = []
+    for number in sorted(set(re.findall(r"\d+(?:[.,]\d+)*", text))):
+        pattern = re.compile(r"(?<![\d.,])" + re.escape(number) + r"(?![\d]|[.,]\d)")
+        if not any(pattern.search(source) for source in sources.values()):
+            missing.append(number)
+    return missing
+
+
+def test_numbers_missing_from_finds_only_numbers_absent_from_every_source() -> None:
+    sources = {"a": "PR-AUC 0.670 [0.421, 0.898] on 49 attempts", "b": "12.71 messages/s"}
+    text = (
+        "## 3.4 Metrics\nFigure 4 shows 0.670 and 12.71 at 49; "
+        "0.67 and 2.71 and 1,252 are not there.\n1. item"
+    )
+    assert _numbers_missing_from(text, sources) == ["0.67", "1,252", "2.71"]
+
+
+def test_final_report_heading_byline_and_sections_in_the_course_order() -> None:
+    text = _text(FINAL)
+    assert text.startswith(f"# {FINAL_TITLE}\n")
+    byline = text.split("## 1. Problem", 1)[0]
+    for name, email in (
+        ("Parinith D.", "parinithd@iisc.ac.in"),
+        ("Dakshinesh K.", "dakshineshk1@iisc.ac.in"),
+        ("Rohan Deore", "rohandeore@iisc.ac.in"),
+        ("Kaushal V.", "kaushalvadn1@iisc.ac.in"),
+    ):
+        assert f"{name} ({email})" in byline, name
+    assert "DA231o, Indian Institute of Science, Bengaluru" in byline
+    headings = re.findall(r"^#{2,4} .+$", text, re.MULTILINE)
+    assert headings == list(FINAL_SECTIONS)
+    assert "<!-- toc -->" not in text and APPENDIX_MARKER not in text
+
+
+def test_final_report_has_four_figures_that_resolve_and_no_file_paths_in_the_body() -> None:
+    text = _text(FINAL)
+    images = [link for link in _report_links(text) if link.endswith((".png", ".svg"))]
+    assert sorted(images) == sorted(FINAL_FIGURES)
+    for link in images:
+        assert (REPO / "docs" / "report" / link).resolve().is_file(), link
+    captions = re.findall(r"(?:!\[|<figcaption>)(Figure \d+)\.", text)
+    assert captions == ["Figure 1", "Figure 2", "Figure 3", "Figure 4"]
+    # Image targets are links, not body text.
+    body = re.sub(r'(?:\]\(|src=")[^)"]+[)"]', "", _final_body())
+    for needle in ("results/", "docs/", "src/", "tests/", ".py", ".csv", "Source:"):
+        assert needle not in body, needle
+    assert re.search(r"\bmake (?:up|demo|[a-z0-9]+-[a-z0-9-]+)\b", body) is None  # no make targets
+
+
+def test_final_report_numbers_appear_in_the_full_report_or_the_cited_docs() -> None:
+    sources = {rel: _collapse(_text(rel)) for rel in FINAL_NUMBER_SOURCES}
+    assert _numbers_missing_from(_final_body(), sources) == []
+
+
+def test_final_report_makes_no_statement_about_the_proposal_itself() -> None:
+    text = _text(FINAL)
+    for word in ("proposal", "requirement"):
+        assert word not in text.lower(), word
+    assert "| Goal | Achieved |" in text
+
+
+def test_final_report_pdf_is_committed_next_to_the_final_report() -> None:
+    pdf = REPO / "docs" / "report" / "final_report.pdf"
+    assert pdf.read_bytes()[:5] == b"%PDF-"
+
+
 # ---------------------------------------------------------------- repository layout and links
 # A deliberately broken image link: the input of the report-pdf "missing image" test.
 LINK_FIXTURES = ("web/tests/fixtures/report/report.md",)

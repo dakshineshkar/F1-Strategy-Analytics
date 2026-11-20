@@ -94,6 +94,18 @@ def test_make_report_pdf() -> None:
     assert f"cd web && {render}" in out
 
 
+def test_make_final_report_pdf() -> None:
+    """The course submission report: the same renderer in its course style."""
+    out = _make("final-report-pdf")
+    assert "cd web && npx playwright install chromium" in out
+    render = (
+        "node scripts/report-pdf.mjs --style course "
+        "../docs/report/final_report.md ../docs/report/final_report.pdf"
+    )
+    assert f"cd web && {render}" in out
+    assert "report.md ../docs/report/report.pdf" not in out
+
+
 def test_make_web_targets() -> None:
     dev = _make("web")
     assert "node web/scripts/check-port.mjs 127.0.0.1 3000" in dev

@@ -3,8 +3,11 @@
 // which then prints the page (A4, page numbers in the footer, PDF bookmarks from the headings).
 // Both packages are devDependencies only; nothing here is part of the dashboard.
 //
-//   node scripts/report-pdf.mjs <in.md> <out.pdf>     # the PDF; prints total and body page counts and size
-//   node scripts/report-pdf.mjs --html <in.md> <out.html>   # the HTML only (no browser; used by the tests)
+//   node scripts/report-pdf.mjs [--style course] <in.md> <out.pdf>     # the PDF; prints page counts and size
+//   node scripts/report-pdf.mjs --html [--style course] <in.md> <out.html>   # the HTML only (no browser; tests)
+//
+// Styles: `report` (default; docs/report/report.pdf) and `course` (docs/report/final_report.pdf, the course
+// format: A4, 2.5 cm margins on every side, 10 pt body, 9 pt tables, page numbers only in the footer).
 //
 // Markers in the Markdown: `<!-- toc -->` is replaced by a linked table of contents (H2 and H3);
 // `<!-- appendices -->` starts the appendices on a new page, and the body page count stops there.
@@ -19,6 +22,10 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const WEB = path.resolve(HERE, "..");
 const FONTS = path.join(WEB, "src", "fonts");
 const MERMAID = path.join(WEB, "node_modules", "mermaid", "dist", "mermaid.min.js");
+// Report-only fonts of the course style (SIL OFL 1.1; see fonts/liberation/README.md).
+const REPORT_FONTS = path.join(HERE, "fonts", "liberation");
+const SERIF = '"Times New Roman", "Liberation Serif", serif';
+const MONO = '"Courier New", "Liberation Mono", monospace';
 const TOC_MARKER = "<!-- toc -->";
 const APPENDIX_MARKER = "<!-- appendices -->";
 
@@ -44,8 +51,10 @@ export function slug(text) {
     .replace(/ /g, "-");
 }
 
-/** The report's HTML document and its headings. `baseDir` is the folder relative links resolve from. */
-export function renderHtml(markdown, baseDir) {
+/** The report's HTML document and its headings. `baseDir` is the folder relative links resolve from;
+ * `style` is a key of STYLES. */
+export function renderHtml(markdown, baseDir, style = "report") {
+  const look = styleOf(style);
   const headings = [];
   const used = new Map();
   const marked = new Marked({ gfm: true });
@@ -81,6 +90,7 @@ export function renderHtml(markdown, baseDir) {
     },
   });
   let body = marked.parse(markdown);
+  if (look.nowrapIntervals) body = protectIntervals(body);
   const title = headings.find((h) => h.depth === 1)?.html.replace(/<[^>]*>/g, "") ?? "Report";
   const toc = headings
     .filter((h) => h.depth === 2 || h.depth === 3)
@@ -94,7 +104,7 @@ export function renderHtml(markdown, baseDir) {
 <meta charset="utf-8">
 <base href="${pathToFileURL(baseDir + path.sep).href}">
 <title>${escapeHtml(decodeEntities(title))}</title>
-<style>${css()}</style>
+<style>${look.css()}</style>
 </head>
 <body>
 ${body}
@@ -109,7 +119,7 @@ function font(family, file, weight) {
   return `@font-face{font-family:"${family}";src:url("${url}") format("woff2");font-weight:${weight};font-style:normal}`;
 }
 
-function css() {
+function reportCss() {
   return `
 ${font("Barlow Semi Condensed", "barlow-semi-condensed/barlow-semi-condensed-latin-600-normal.woff2", 600)}
 ${font("Barlow Semi Condensed", "barlow-semi-condensed/barlow-semi-condensed-latin-700-normal.woff2", 700)}
@@ -158,10 +168,91 @@ hr { border: 0; border-top: 0.5pt solid #999; margin: 8pt 0; }
 `;
 }
 
+function courseCss() {
+  const ttf = (family, file, weight) => {
+    const url = pathToFileURL(path.join(REPORT_FONTS, file)).href;
+    return `@font-face{font-family:"${family}";src:url("${url}") format("truetype");font-weight:${weight};font-style:normal}`;
+  };
+  return `
+${ttf("Liberation Serif", "LiberationSerif-Regular.ttf", 400)}
+${ttf("Liberation Serif", "LiberationSerif-Bold.ttf", 700)}
+${ttf("Liberation Mono", "LiberationMono-Regular.ttf", 400)}
+@page { size: A4; margin: 25mm; }
+html { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+body { font-family: ${SERIF}; font-size: 10pt; line-height: 1.25; color: #111; background: #fff; margin: 0; }
+strong, b { font-weight: 700; }
+h1, h2, h3, h4 { font-family: ${SERIF}; font-weight: 700; line-height: 1.15; break-after: avoid; page-break-after: avoid; }
+h1 { font-size: 15pt; margin: 0 0 4pt; text-align: center; }
+h2 { font-size: 12pt; margin: 9pt 0 3pt; }
+h3 { font-size: 10.5pt; margin: 6pt 0 2pt; }
+h4 { font-size: 10pt; margin: 5pt 0 2pt; }
+p { margin: 0 0 4pt; orphans: 3; widows: 3; }
+.byline { text-align: center; margin: 0 0 8pt; line-height: 1.3; }
+ul, ol { margin: 0 0 4pt; padding-left: 13pt; }
+li { margin: 0 0 1pt; }
+a { color: inherit; text-decoration: none; }
+code { font-family: ${MONO}; font-size: 8.5pt; }
+table { border-collapse: collapse; width: 100%; margin: 3pt 0 6pt; font-size: 9pt; line-height: 1.2; break-inside: avoid; page-break-inside: avoid; }
+table:has(tbody > tr:nth-child(7)) { break-inside: auto; page-break-inside: auto; }
+thead { display: table-header-group; }
+tr { break-inside: avoid; page-break-inside: avoid; }
+th, td { border: 0.5pt solid #999; padding: 1.5pt 3pt; vertical-align: top; text-align: left; }
+th { background: #ececec; font-weight: 700; }
+td code { font-size: 7.5pt; white-space: nowrap; }
+.nw { white-space: nowrap; }
+figure { margin: 4pt 0 6pt; text-align: center; break-inside: avoid; page-break-inside: avoid; }
+figure img { display: block; width: 100%; height: auto; max-height: 150mm; object-fit: contain; margin: 0 auto; }
+figcaption { font-size: 9pt; color: #222; margin-top: 3pt; text-align: left; }
+`;
+}
+
+/** Wraps every bracketed interval such as `[0.421, 0.898]` or `[−0.126, −0.015]` in a no-wrap span, so a line or
+ * table cell never breaks inside the brackets. Only text between tags is touched. */
+export function protectIntervals(html) {
+  return html
+    .split(/(<[^>]*>)/)
+    .map((part) =>
+      part.startsWith("<") ? part : part.replace(/\[([−+-]?\d[^\][<>\n]{0,40})\]/g, '<span class="nw">[$1]</span>'),
+    )
+    .join("");
+}
+
 const FOOTER = (title) =>
   `<div style="font-family:'DejaVu Sans',sans-serif;font-size:7.5px;color:#555;width:100%;padding:0 14mm;` +
   `display:flex;justify-content:space-between"><span>${escapeHtml(title)}</span>` +
   `<span>Page <span class="pageNumber"></span> of <span class="totalPages"></span></span></div>`;
+
+// The footer is a separate document that cannot load the page's fonts; it falls back to a system serif.
+const COURSE_FOOTER = () =>
+  `<div style="font-family:${SERIF.replace(/"/g, "'")};font-size:8px;color:#444;width:100%;text-align:center">` +
+  `Page <span class="pageNumber"></span> of <span class="totalPages"></span></div>`;
+
+/** Page look per style: CSS, PDF margins (the same as the CSS @page margins) and footer. */
+export const STYLES = {
+  report: {
+    css: reportCss,
+    margin: { top: "14mm", right: "14mm", bottom: "16mm", left: "14mm" },
+    footer: FOOTER,
+    cssPageSize: false,
+    nowrapIntervals: false,
+  },
+  course: {
+    css: courseCss,
+    margin: { top: "25mm", right: "25mm", bottom: "25mm", left: "25mm" },
+    footer: COURSE_FOOTER,
+    // Exactly 210 x 297 mm from the CSS @page rule; Chromium's built-in "A4" format is 210.2 x 297.3 mm.
+    cssPageSize: true,
+    nowrapIntervals: true,
+  },
+};
+
+/** The style named `name`; throws on an unknown name. */
+export function styleOf(name) {
+  if (!Object.hasOwn(STYLES, name)) {
+    throw new Error(`unknown style ${JSON.stringify(name)} (expected one of: ${Object.keys(STYLES).join(", ")})`);
+  }
+  return STYLES[name];
+}
 
 /** Number of pages of a PDF written by Chromium (its page objects are uncompressed). */
 export function pdfPageCount(bytes) {
@@ -169,7 +260,8 @@ export function pdfPageCount(bytes) {
   return (text.match(/\/Type\s*\/Page(?![a-zA-Z])/g) ?? []).length;
 }
 
-async function printPdf(browser, html, title, outPath, tmp) {
+async function printPdf(browser, html, title, outPath, tmp, style = "report") {
+  const look = styleOf(style);
   const htmlPath = path.join(tmp, `page-${Date.now()}-${Math.random().toString(36).slice(2)}.html`);
   writeFileSync(htmlPath, html);
   const page = await browser.newPage();
@@ -208,8 +300,9 @@ async function printPdf(browser, html, title, outPath, tmp) {
       printBackground: true,
       displayHeaderFooter: true,
       headerTemplate: "<span></span>",
-      footerTemplate: FOOTER(title),
-      margin: { top: "14mm", right: "14mm", bottom: "16mm", left: "14mm" },
+      footerTemplate: look.footer(title),
+      margin: look.margin,
+      preferCSSPageSize: look.cssPageSize,
       outline: true,
       tagged: true,
     });
@@ -218,32 +311,53 @@ async function printPdf(browser, html, title, outPath, tmp) {
   }
 }
 
+/** `{ html, style, files }` from the command line: `[--html] [--style <name>] <in> <out>`, flags in any order. */
+export function parseArgs(argv) {
+  let html = false;
+  let style = "report";
+  const files = [];
+  for (let i = 0; i < argv.length; i += 1) {
+    const arg = argv[i];
+    if (arg === "--html") html = true;
+    else if (arg === "--style") {
+      const name = argv[i + 1];
+      if (name === undefined) throw new Error("--style needs a name");
+      styleOf(name);
+      style = name;
+      i += 1;
+    } else files.push(arg);
+  }
+  if (files.length !== 2) {
+    throw new Error("usage: report-pdf.mjs [--html] [--style report|course] <in.md> <out.pdf|out.html>");
+  }
+  return { html, style, files };
+}
+
 async function main(argv) {
-  if (argv[0] === "--html") {
-    const [, input, output] = argv;
-    if (!input || !output) throw new Error("usage: report-pdf.mjs --html <in.md> <out.html>");
-    const { html } = renderHtml(readFileSync(input, "utf8"), path.dirname(path.resolve(input)));
+  const { html: htmlOnly, style, files } = parseArgs(argv);
+  if (htmlOnly) {
+    const [input, output] = files;
+    const { html } = renderHtml(readFileSync(input, "utf8"), path.dirname(path.resolve(input)), style);
     writeFileSync(output, html);
     console.log(`wrote ${output}`);
     return;
   }
-  const [input, output] = argv;
-  if (!input || !output) throw new Error("usage: report-pdf.mjs <in.md> <out.pdf>");
+  const [input, output] = files;
   const markdown = readFileSync(input, "utf8");
   const baseDir = path.dirname(path.resolve(input));
-  const full = renderHtml(markdown, baseDir);
+  const full = renderHtml(markdown, baseDir, style);
   const { chromium } = await import("@playwright/test");
   const tmp = mkdtempSync(path.join(tmpdir(), "report-pdf-"));
   const browser = await chromium.launch();
   try {
-    await printPdf(browser, full.html, full.title, path.resolve(output), tmp);
+    await printPdf(browser, full.html, full.title, path.resolve(output), tmp, style);
     const total = pdfPageCount(readFileSync(output));
     let bodyNote = "";
     const cut = markdown.indexOf(APPENDIX_MARKER);
     if (cut >= 0) {
-      const body = renderHtml(markdown.slice(0, cut), baseDir);
+      const body = renderHtml(markdown.slice(0, cut), baseDir, style);
       const bodyPdf = path.join(tmp, "body.pdf");
-      await printPdf(browser, body.html, body.title, bodyPdf, tmp);
+      await printPdf(browser, body.html, body.title, bodyPdf, tmp, style);
       const pages = pdfPageCount(readFileSync(bodyPdf));
       bodyNote = ` (body ${pages}, appendices ${total - pages})`;
     }

@@ -483,6 +483,13 @@ report-pdf: web/node_modules ## Render docs/report/report.md to docs/report/repo
 	cd web && npx playwright install chromium
 	cd web && node scripts/report-pdf.mjs ../docs/report/report.md ../docs/report/report.pdf
 
+# The course submission report: the same renderer in its `course` style (A4, 2.5 cm margins, 10 pt body, 9 pt tables,
+# page numbers only). docs/report/final_report.pdf is committed; docs/report/report.pdf stays the full report.
+.PHONY: final-report-pdf
+final-report-pdf: web/node_modules ## Render docs/report/final_report.md to docs/report/final_report.pdf (course format: A4, 2.5 cm margins, 10 pt)
+	cd web && npx playwright install chromium
+	cd web && node scripts/report-pdf.mjs --style course ../docs/report/final_report.md ../docs/report/final_report.pdf
+
 # ---------------------------------------------------------------- README assets
 # The README's architecture image: docs/assets/architecture.mmd drawn by mermaid in Playwright's Chromium (the
 # report's devDependencies), rows stacked on stage bands and the links between rows routed by the script. Writes

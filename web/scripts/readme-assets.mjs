@@ -36,7 +36,7 @@ const GUTTER_PAD = 22; // band edge to the first lane
 const LABEL_STRIP = 36; // below the last lane of a gutter: room for a label on a link's last leg
 const CORRIDOR_GAP = 36; // right edge of the widest row a skip link passes to its first corridor
 const CORRIDOR_STEP = 22;
-const LABEL_PAD_X = 6;
+const LABEL_PAD_X = 10;
 const LABEL_PAD_Y = 3;
 
 /** Colours of each theme. Layer hues avoid the amber reserved for the dashboard's call (hue 60-100). */
@@ -437,7 +437,7 @@ export function composeSvg(diagram, rowSvgs, geo, theme, fonts) {
     `<desc id="arch-desc">Three stages. Data in: Jolpica-F1, TracingInsights and optional FastF1 are ingested by rate-limited clients through HttpFS into an HDFS lake (raw, clean, features, archive). Batch: Spark builds clean and feature tables; MLlib trains LR and GBT with Platt calibration; the calibrated LR is deployed as a scorer. Live: one race is replayed through Kafka into Spark Structured Streaming, which writes Redis; FastAPI serves state, SSE, replay control, the what-if simulator and the archive to the Next.js dashboard.</desc>`,
     `<defs><style>${fonts}`,
     `.band-title{font-family:"${FONT_FAMILY}",sans-serif;font-weight:700;font-size:${BAND_FONT_PX}px}`,
-    `.xlabel{font-family:"${FONT_FAMILY}",sans-serif;font-weight:600;font-size:${LABEL_FONT_PX}px;fill:${t.text}}`,
+    `.xlabel{font-family:"${FONT_FAMILY}",sans-serif;font-weight:600;font-size:${LABEL_FONT_PX}px;fill:${t.text};text-rendering:geometricPrecision}`,
     `</style>`,
     `<marker id="xarrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="${t.line}"/></marker>`,
     `</defs>`,
@@ -465,7 +465,9 @@ export function composeSvg(diagram, rowSvgs, geo, theme, fonts) {
     const b = l.labelBox;
     out.push(
       `<rect x="${b.x.toFixed(1)}" y="${b.y.toFixed(1)}" width="${b.w.toFixed(1)}" height="${b.h.toFixed(1)}" rx="4" fill="${t.canvas}" stroke="${mix(t.line, t.canvas, 0.45)}" stroke-width="1"/>`,
-      `<text class="xlabel" x="${(b.x + b.w / 2).toFixed(1)}" y="${(b.y + b.h / 2).toFixed(1)}" text-anchor="middle" dominant-baseline="central">${escapeXml(l.label)}</text>`,
+      // textLength pins the label to its measured width: scaled down (GitHub, the report PDF), hinting would
+      // otherwise widen the glyphs past the box.
+      `<text class="xlabel" x="${(b.x + b.w / 2).toFixed(1)}" y="${(b.y + b.h / 2).toFixed(1)}" text-anchor="middle" dominant-baseline="central"${l.size ? ` textLength="${l.size.w.toFixed(1)}" lengthAdjust="spacingAndGlyphs"` : ""}>${escapeXml(l.label)}</text>`,
     );
   }
   out.push(`</svg>`);
