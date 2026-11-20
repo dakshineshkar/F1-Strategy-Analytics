@@ -35,7 +35,7 @@ and race; distributed feature engineering whose features may use only informatio
 made; a model evaluated strictly in time order with a sealed test season; an event-driven serving path whose delay is
 measured; and benchmarks of how the Spark jobs scale and what partitioning and caching buy.
 
-**Scope of the commitments.** The 44 proposal commitments are tracked in `docs/traceability.md`, and this report
+**Scope of the requirements.** The 44 requirements of the project proposal are tracked in `docs/traceability.md`, and this report
 follows their order. The proposal PDF itself is not in the repository, so the matrix is the reference.
 
 ## 3. System design
@@ -93,7 +93,7 @@ Source: `CLAUDE.md` "Redis contract", `docs/architecture.md` "Redis serving".
 **Why TracingInsights instead of FastF1.** "Since mid-October 2026, FastF1 downloads need an F1 TV Access login,
 which nobody on the team has." Without it FastF1 returns empty sessions, so compounds, tyre life, race control and
 telemetry would have been null or synthetic in full mode. TracingInsights publishes the same FastF1-derived data per
-season. Commitment #4 is therefore **partial**: the data is there, but it does not come through the FastF1 library.
+season. Requirement #4 is therefore **partial**: the data is there, but it does not come through the FastF1 library.
 Source: `docs/data_source_audit.md`, `docs/traceability.md` #4.
 
 ### 4.2 Scope
@@ -442,7 +442,7 @@ The archive is built by the stream's own processor and checked equal to a live r
   opened is shown as "not received", never back-filled.
 - Every empty value says why.
 
-**Final audit** (`docs/dev/engineering_log.md` "UI redesign Step 5"). Every screen was checked at 1440, 1280, 1024, 768 and
+**Final audit** (`docs/dev/engineering_log.md`, final dashboard audit). Every screen was checked at 1440, 1280, 1024, 768 and
 390 px and at 200% zoom, in the dark, light and Auto themes, with a keyboard-only Tab walk and Escape, landmarks and
 headings, reduced motion, layout shift and long tasks. axe runs on every screen in both themes in the end-to-end
 tests (0 serious/critical). The fixes it led to: the tower's Driver column no longer collapses below 1440 px, the
@@ -704,11 +704,11 @@ Read the simulator's probabilities as a comparison between strategies from the s
 | 40 | Useful and consistent what-if comparisons | monotonicity and determinism pass; ordering 17 of 18; 2025 simulator ECE 0.207 | done, with the weakness reported | `docs/results.md` |
 | 41 | Interactive dashboard | live race view, engineer, what-if, archive, analysis; UI paint p50 28 ms | done | `docs/traceability.md` #41 |
 
-Of the 44 commitments in `docs/traceability.md`, #4 (FastF1 data via TracingInsights), #43 (timeline) and #44
+Of the 44 requirements in `docs/traceability.md`, #4 (FastF1 data via TracingInsights), #43 (timeline) and #44
 (report and demo rehearsal) are partial. None is dropped.
 
 **Timeline (#43), planned against actual.** The proposal's own week dates are not in the repository. The planned
-week below is the week tag on each step in `docs/dev/engineering_log.md`. The actual column is the date the work was committed
+week below is the week tag on each entry in `docs/dev/engineering_log.md`. The actual column is the date the work was committed
 (`git log`), so it shows order and slippage, not effort.
 
 | Planned week | Work | Committed |
@@ -786,7 +786,7 @@ Source: `docs/results.md`, `docs/dev/engineering_log.md` "Known issues", `docs/e
 - **Final proofs** (2026-11-20, on the dev host): python 2340 passed, web 563 Vitest, sample e2e 40 passed /
   1 skipped (the latency spec runs only on request). The traceability check prints OK 506, GENERATED 2; the
   archive equivalence check on sample 2024 R5 is EQUIVALENT at laps 5, 22 and 45; `make experiments-sample` gives
-  OK 7, OK (metadata differs) 1, DIFF 0; and `results/` is unchanged (`docs/dev/engineering_log.md` "Step 18 final").
+  OK 7, OK (metadata differs) 1, DIFF 0; and `results/` is unchanged (`docs/dev/engineering_log.md`, final proofs).
 - **This report.** `make report-pdf` renders it to `docs/report/report.pdf`.
 
 Source: `docs/reproduce.md`, `docs/results.md`, `docs/experiments.md`, `docs/dev/engineering_log.md`.
@@ -908,7 +908,7 @@ both, ignoring line breaks). Paths are relative to the repository root.
 | A58 | What-if 2025 simulator mean P | 0.395 | docs/results.md | What-if backtest table, 2025 row |
 | A59 | What-if 2025 simulator Brier | 0.245 | docs/results.md | What-if backtest table, 2025 row |
 | A60 | Clean-clone `make demo` | 193 s | docs/reproduce.md | 4. Timing of a fresh clone |
-| A61 | Final local proofs | python 2340 passed, web 563 Vitest, sample e2e 40 passed / 1 skipped | docs/dev/engineering_log.md | Done, Step 18 final |
+| A61 | Final local proofs | python 2340 passed, web 563 Vitest, sample e2e 40 passed / 1 skipped | docs/dev/engineering_log.md | Done, final proofs |
 | A62 | `make experiments` regeneration result | 66 OK, 2 DIFF | docs/experiments.md | `make experiments` (full lake) |
 | A63 | Majority baseline, 2025 ECE 10 bins (lower than the primary model's) | 0.051 | docs/model_results.md | Results, G=3.5, k=2 table, majority baseline |
 | A64 | LOSO mean PR-AUC of the rule, development, primary setting | 0.559 | docs/model_spec_v2.md | §7 Disclosure |
@@ -931,7 +931,7 @@ both, ignoring line breaks). Paths are relative to the repository root.
 | A81 | `build_s1_x1_local1`, slowest timed run | 82.8875 | results/scalability.csv | cell_id=build_s1_x1_local1, max_s |
 | A82 | `build_s3_x1_local1`, fastest timed run | 56.6513 | results/scalability.csv | cell_id=build_s3_x1_local1, min_s |
 | A83 | `build_s3_x1_local1`, slowest timed run | 64.5230 | results/scalability.csv | cell_id=build_s3_x1_local1, max_s |
-| A84 | Dashboard audit widths | 1440, 1280, 1024, 768 and 390 px and at 200% zoom | docs/dev/engineering_log.md | Done, UI redesign Step 5, Audit |
-| A85 | axe on every screen, both themes | 0 serious/critical | docs/dev/engineering_log.md | Done, UI redesign Step 5, Tests |
-| A86 | Traceability check | OK 506, GENERATED 2 | docs/dev/engineering_log.md | Done, Step 18 final |
-| A87 | `make experiments-sample` result | OK 7, OK (metadata differs) 1, DIFF 0 | docs/dev/engineering_log.md | Done, Step 18 final |
+| A84 | Dashboard audit widths | 1440, 1280, 1024, 768 and 390 px and at 200% zoom | docs/dev/engineering_log.md | Done, final dashboard audit |
+| A85 | axe on every screen, both themes | 0 serious/critical | docs/dev/engineering_log.md | Done, final dashboard audit, tests |
+| A86 | Traceability check | OK 506, GENERATED 2 | docs/dev/engineering_log.md | Done, final proofs |
+| A87 | `make experiments-sample` result | OK 7, OK (metadata differs) 1, DIFF 0 | docs/dev/engineering_log.md | Done, final proofs |

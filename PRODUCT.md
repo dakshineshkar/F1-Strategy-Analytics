@@ -9,7 +9,7 @@
   ## Users
 
   - **Primary: course graders and evaluators** (IISc MTech DA231o instructors and TAs). They watch a demo or run
-    `make demo` themselves and judge whether every proposal commitment (docs/traceability.md) works end to end.
+    `make demo` themselves and judge whether every requirement of the project proposal (docs/traceability.md) works end to end.
     The dashboard is where the pipeline's output becomes visible, so it carries the demo.
   - **Secondary: people who know F1 strategy.** The dashboard must read as credible to someone who understands
     undercuts, tyre age, gaps, pit-lane loss and traffic. Wrong terms or naive framing cost credibility with both

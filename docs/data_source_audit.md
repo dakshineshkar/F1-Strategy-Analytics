@@ -1,6 +1,6 @@
 # Data-source audit: TracingInsights (primary) and OpenF1 (cross-check)
 
-Step 4C, Phase 1. Audit only: no code in `src/`, nothing written to `data/`, no model trained, no 2025 label read.
+The audit that preceded the TracingInsights ingest. Audit only: no code in `src/`, nothing written to `data/`, no model trained, no 2025 label read.
 Measured on 2026-11-11. Every number below was measured unless it is marked *estimate*.
 
 **Why:** since mid-October 2026, FastF1 downloads need an F1 TV Access login, which nobody on the team has. As a
@@ -24,7 +24,7 @@ content. The 2025 files were kept in a separate scratch folder and deleted once 
 
 - All five season repos are live under `TracingInsights`: not archived, last pushed 2026-10-30. Older snapshots
   are under the `TracingInsights-Archive` account (`2018`…`2026`, last pushed April to June 2026). Because the live
-  repos are still being pushed, **Phase 2 must pin a commit SHA per season**.
+  repos are still being pushed, **the ingest must pin a commit SHA per season**.
 - **Correction to the brief:** only 2025 is Apache-2.0. GitHub detects MIT for 2021-2024, and the LICENSE files
   confirm it.
 - The README is a single line ("Public F1 telemetry files"), so there is **no data reference**. The field meanings
@@ -72,7 +72,7 @@ Method:
 The measured per-driver sample confirms the telemetry estimate: one driver's whole race is 7.7-9.8 MB, with
 125-146 KB per lap (median) across the four non-sealed seasons.
 
-**Plan for Phase 2 (to be decided by you):**
+**Options for the ingest:**
 - **A. Tables (≈ 81 MB, about 570 files).** `session_laptimes.json`, `rcm.json`, `session_info.json` and
   `drivers.json` for all 114 races, fetched from `raw.githubusercontent.com/<owner>/<season>/<SHA>/<path>`, with a
   sha256 manifest and resume. This is below the 1 GB limit.
@@ -81,10 +81,10 @@ The measured per-driver sample confirms the telemetry estimate: one driver's who
   - B1: everything, through a sparse partial clone (`git sparse-checkout` of `*/Race/*/*_tel.json`), which fetches
     the blobs in packs. This needs 18.6 GB in the lake (HDFS capacity not checked; that needs a docker command).
   - B2: a subset for the experiments, for example all 2023-2024 races (≈ 7.5 GB) or one season (≈ 3.5-4 GB), for
-    #1/#4 and the S10 scaling runs. The per-lap aggregates for other races stay null with a source flag.
+    #1/#4 and the Spark scaling runs. The per-lap aggregates for other races stay null with a source flag.
   - B3: only the laps the features need (L−1 of the attacker and defender of each candidate pair). This is a few
-    thousand files (≈ 1-2 GB *estimate*). The selection uses decision-time candidates, never labels. It still needs
-    your OK for 2025.
+    thousand files (≈ 1-2 GB *estimate*). The selection uses decision-time candidates, never labels. For 2025 it
+    needs a separate decision.
 - Never: radio mp3s, practice, qualifying or sprint sessions.
 
 ## 3. Field reference (identical for 2021-2025)
@@ -130,7 +130,7 @@ At least 99.95% of messages carry a lap number in every season (2021-2024: 2034/
 | `gear` | 1-8 |
 | `throttle` | % (0-100) |
 | `brake` | 0/1 |
-| `drs` | 0/1, already binarised (FastF1 raw has codes 0-14); always 0 in the 2021 Monaco sample, to be checked in Phase 2 |
+| `drs` | 0/1, already binarised (FastF1 raw has codes 0-14); always 0 in the 2021 Monaco sample, to be checked by the ingest |
 | `distance`, `rel_distance` | m from lap start; fraction of the lap (0-1) |
 | `x` `y` `z` | position (FastF1 units, 1/10 m) |
 | `acc_x` `acc_y` `acc_z` | accelerations derived by TracingInsights (unit not documented) |
@@ -146,13 +146,13 @@ come per lap, the `[lap_start, lap_end)` assignment in `features/telemetry_agg.p
 
 - **Event → round:** the folder name (equal to `session_info.Meeting.Name`) matches the Jolpica `raceName` after
   normalisation (NFKD, letters only) for **114/114** manifest races, with no ambiguity. That includes
-  "São Paulo Grand Prix", "Mexico City Grand Prix" and "Emilia Romagna Grand Prix". Phase 2 also checks the date
+  "São Paulo Grand Prix", "Mexico City Grand Prix" and "Emilia Romagna Grand Prix". The ingest also checks the date
   (`t0_date` against the Jolpica race date).
 - **Driver code → `driverId`:** TI `drv` equals the Jolpica `Driver.code` for **2,272/2,272** TI driver-races
   (2021-2025). The fallback `dNum` → Jolpica `number` was never needed, but stays, as in `etl/clean.py`. Every
   Jolpica driver with laps > 0 is present in TI.
 - **Lap universe:** TI has 476 driver-laps more than Jolpica's `results.laps` (all seasons). 221 of them have a
-  null lap time (the lap in progress at retirement or the flag). Phase 2 joins on Jolpica `(driverId, lap)` and
+  null lap time (the lap in progress at retirement or the flag). The ingest joins on Jolpica `(driverId, lap)` and
   reports TI-only rows, so the v1 lap universe is unchanged.
 
 ## 5. Completeness per season (all 114 Race sessions)
@@ -224,7 +224,7 @@ Requests: `GET /v1/sessions?year=Y&session_name=Race` (3), then `/v1/stints?sess
   FastF1-generated laps 0.1-0.2%).
 - Telemetry volume (18.6 GB) against HDFS capacity and the time to download it; see options B1-B3.
 - Two GitHub API limits apply: the unauthenticated limit is 60 requests per hour (30 used in this audit), and
-  recursive trees fail for the large repos. Phase 2 therefore needs no GitHub API at all: paths come from a
+  recursive trees fail for the large repos. The ingest therefore needs no GitHub API at all: paths come from a
   blob-free clone, and the files come from raw.githubusercontent or a sparse checkout.
 
 ## 9. Recommendation: **GO** (tables), **GO with a decision** (telemetry)
@@ -237,10 +237,10 @@ Requests: `GET /v1/sessions?year=Y&session_name=Race` (3), then `/v1/stints?sess
 - **Telemetry: GO, but choose B1 / B2 / B3** (section 2). My suggestion is **B2 (2023-2024, ≈ 7.5 GB, through a
   sparse partial clone)** for #1/#4/#28, and per-lap aggregates computed in the clean zone. For #30 (the telemetry
   ablation) all seasons would be needed, so B1 is the option if HDFS has room for it.
-- Fallback options if you decide against TI for some seasons: OpenF1 stints for 2023+ only (no 2021-2022), or keep
+- Fallback options if TI is rejected for some seasons: OpenF1 stints for 2023+ only (no 2021-2022), or keep
   2021-2022 on inferred stints and restrict real-compound features to 2023+.
 
-## 10. Notes for Phase 2 (constraints carried forward)
+## 10. Notes for the ingest (constraints carried forward)
 
 - **Additive only.** New clean tables (`stints_ti`, `telemetry_lap_ti`, `race_control`, `track_status_ti`, names to
   be confirmed) get `is_synthetic = false` and `source = 'tracinginsights'`.
@@ -259,5 +259,5 @@ Requests: `GET /v1/sessions?year=Y&session_name=Race` (3), then `/v1/stints?sess
 | raw.githubusercontent.com | about 500 | 228 lap-time + rcm files (all 114 races), session info and drivers for 5 samples, one driver's full-race telemetry for 2021-2024 R5 (one lap file for 2025, schema only), 9 README/LICENSE/PitStops files |
 | api.openf1.org | 9 | sessions, stints and drivers for 3 races |
 
-Total downloaded ≈ 89 MB (73 MB of data files plus 15.5 MB of git trees), all in the session scratchpad and none
+Total downloaded ≈ 89 MB (73 MB of data files plus 15.5 MB of git trees), all in a scratch folder outside the repository and none
 in `data/`. 2025 files were deleted after counting.

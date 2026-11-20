@@ -1,4 +1,4 @@
-# Reproducing the pipeline and the results (Step 17, commitment #42)
+# Reproducing the pipeline and the results
 
 This page takes you from a fresh clone to the demo (sample mode) and to every committed result (full-data mode).
 Run all commands from the repository root in a Linux shell, or in WSL 2 on Windows. Prerequisites and memory needs
@@ -157,7 +157,7 @@ Every file in `results/` is tracked by git (154 files; `git ls-files results`).
 - "Overwrites" means it rewrites the file. Those targets are deterministic, and `make experiments(-sample)`
   checks that a rerun gives the same bytes.
 
-**Escape hatch for a deliberate new recording (Fix C, 2026-11-15): `RECORD=1 OVERWRITE=1`.**
+**Escape hatch for a deliberate new recording: `RECORD=1 OVERWRITE=1`.**
 - The existing output files are first **moved** to `data/results_backup/<UTC stamp>/`, which is gitignored.
   Nothing is ever deleted, and an existing backup folder is refused.
 - `stream-demo` moves them before it starts, because its stream job writes into `results/` while it runs.
@@ -195,7 +195,7 @@ Every file in `results/` is tracked by git (154 files; `git ls-files results`).
 | `make stream-latency-suite RECORD=1` | `streaming_latency_{s10,s60,s1w900}.csv`, `stream_{batches,progress}_{tag}.jsonl`, `streaming_{latency_summary,throughput,resources}.csv` + README sections | **refuses** | yes (backup before copying) | no | skipped (measurement) |
 | `make stream-latency-ui RECORD=1` | `ui_latency.csv`, `ui_latency_summary.csv`, `stream_*_s60ui.*`, `ui_streaming_*.csv` | **refuses** | yes (backup before copying) | no | skipped (measurement) |
 | `make redis-latency RECORD=1` | `redis_latency_quiet.csv` + README section | **refuses** | yes (backup right before the write) | no | skipped (measurement) |
-| `make stream-demo RECORD=1` | `streaming_latency.csv`, `stream_progress.jsonl`, `stream_batches.jsonl` (the Step 12 run) | **refuses** (before any process starts) | yes (backup before the run) | no | skipped (measurement) |
+| `make stream-demo RECORD=1` | `streaming_latency.csv`, `stream_progress.jsonl`, `stream_batches.jsonl` (the recorded streaming run) | **refuses** (before any process starts) | yes (backup before the run) | no | skipped (measurement) |
 | `make experiments-spark RECORD=1` | `scalability.csv`, `scalability_{build,telemetry}.png`, `partitioning.csv`, `partitioning_speedup.png` + README fingerprints | **refuses** (`check-record` over all five files before the grid; each script again at its start) | yes (backup only when complete) | 2025 timing rows for scale only, no labels | skipped (hours) |
 | `make experiments-spark RECORD=1 RESUME=<run_id>` | as above | allowed for the files this run recorded last; others refused | as above | as above | skipped |
 | `make bench-supplement RECORD=1 SUPPLEMENT_OF=… CELLS=…` | appends re-run rows to `scalability.csv`, redraws the plots | own guard: refused if a named cell is `ok` or already re-run | not applicable (a merge) | as above | skipped |
@@ -217,7 +217,7 @@ On the dev host, `make demo` takes about **193 s** (clean clone of 2026-11-19 wi
 entrants, analysis and archive tables. Base images and package caches were warm both times, so a first run on a
 new machine also pays for the downloads (below).
 
-Measured with the clean-clone check of Step 17 (below). The clone ran as its own compose project, so its containers,
+Measured with the clean-clone check (below). The clone ran as its own compose project, so its containers,
 volumes and image tags were separate:
 
 ```bash
@@ -226,8 +226,8 @@ docker compose --profile core build --no-cache
 time (make up && make sample-data && make demo)
 ```
 
-Result (2026-11-14, the dev host: WSL 2, 12 logical CPUs, about 14 GB; a GitHub clone at `df48f66` plus the
-Step 17 changes, no `.env`):
+Result (2026-11-14, the dev host: WSL 2, 12 logical CPUs, about 14 GB; a GitHub clone of `main` plus the
+then uncommitted reproducibility changes, no `.env`):
 
 | Phase | Time |
 |---|---|

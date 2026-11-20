@@ -1,6 +1,6 @@
 /* Hallmark · tokens and theme only (direction pinned by the brief: "Pit wall", a precise, dense, calm
  * engineering instrument; one loud element, the undercut call) · modes: dark+light · shape: app screen.
- * critique: docs/design/critique-2026-11-18.md · system: docs/design/DESIGN.md
+ * critique: docs/dev/design-critique-2026-11-18.md · system: docs/design/DESIGN.md
  *
  * Every colour, size, radius, duration and easing is a token from src/lib/theme.ts (injected in
  * layout.tsx); the three font variables come from next/font/local (app/fonts.ts). No literal colour or

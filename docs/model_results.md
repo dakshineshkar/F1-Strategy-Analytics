@@ -1,4 +1,4 @@
-# Model results: the 2025 test season (Step 9f)
+# Model results: the 2025 test season
 
 This page summarises the single pre-registered 2025 test run (`docs/model_spec.md`, `docs/model_spec_v2.md`).
 Every number is copied from the committed run outputs `results/model_eval{,_real_tyre,_real_ti}_G{3.5_k2,5.0_k3}.csv`
@@ -72,10 +72,10 @@ Against the majority baseline (traceability #17), the primary model's F1 for the
 - Neither ablation changes the primary feature set or the deployed model (`docs/model_spec_v2.md` §4).
 - GBT differences of 0.043 PR-AUC or less come from row order alone and are not interpretable (§5).
 - §4 also requires a **paired race-cluster bootstrap interval for each feature-set difference**. The test runs
-  saved metrics, not per-attempt scores, so these intervals were computed in Step 16 from the saved frozen
-  models. They are in the next section, "Paired ablation intervals (Step 16)".
+  saved metrics, not per-attempt scores, so these intervals were computed afterwards from the saved frozen
+  models. They are in the next section, "Paired ablation intervals".
 
-## Paired ablation intervals (Step 16)
+## Paired ablation intervals
 
 Source: `results/ablation_paired.csv` (and `results/ablation_paired.png`), written by
 `make ablation-full RECORD=1` (`src/f1sa/model/ablation.py`). This section is outside "## Results", so
@@ -89,13 +89,13 @@ Source: `results/ablation_paired.csv` (and `results/ablation_paired.png`), writt
   9,360 values (value, interval, counts, note), all equal to the committed text at its 6 printed decimals.
   The run would have stopped before any interval on a single mismatch.
 - **Same race resamples for every set.** One list of 1000 race-cluster resamples per setting (seed 42, the
-  protocol of the 9f runs) was applied to all three feature sets and both models. Taken per set, the same
+  protocol of the 2025 test runs) was applied to all three feature sets and both models. Taken per set, the same
   draws reproduce every committed per-set race-cluster interval (756 of 756 values), so they are the
-  resamples of the 9f runs.
+  resamples of the 2025 test runs.
 - Each difference is `b − a` on the full split, with the 2.5 and 97.5 percentiles of the per-resample
   differences. All 1000 resamples were valid for every row.
 
-**Disclosure: an earlier run.** An earlier Step 16 session ran the same computation once (2026-11-14 10:18 to
+**Disclosure: an earlier run.** An earlier session ran the same computation once (2026-11-14 10:18 to
 10:21 UTC) and printed the PR-AUC and Brier differences. Its `results/` files were removed at 10:27 UTC
 (the working tree was restored to the last commit), and its per-attempt scores and log stayed in `data/`. The
 removal was a discard by the VS Code Git integration (`git clean -f -q -- results/ablation_paired.csv
@@ -148,7 +148,7 @@ same 24 printed differences and intervals. Nothing was chosen or changed between
 - On this 2025 sample, the telemetry and tyre inputs do not improve the model. The primary feature set
   (`real`) and the deployed model are unchanged, as pre-registered (§4).
 
-## ORACLE variant: development data only (Step 16)
+## ORACLE variant: development data only
 
 **ORACLE: realised out-lap delta, not usable at decision time.**
 - The variant is `real` plus the attacker's realised out-lap delta (`oracle_attacker_realised_outlap_delta_s`),
@@ -199,7 +199,7 @@ value are left out. The rates are identical in the two sets for every feature th
   dropped, excluded or down-weighted (`docs/model_spec_v2.md` §6).
 
 **Miami R6 / Belgium R13.** Two 2025 races have low lap-level compound coverage in TracingInsights, known from
-the Step 4C audit before the spec freeze:
+the TracingInsights audit before the spec freeze:
 - Miami R6: 55.6% of laps have a compound.
 - Belgium R13: 93.5%.
 

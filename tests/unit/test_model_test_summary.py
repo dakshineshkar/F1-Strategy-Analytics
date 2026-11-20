@@ -359,8 +359,8 @@ def test_make_target_runs_the_summary_script() -> None:
 
 # ------------------------------------------------------------------ Step 16 sections
 STEP16_HEADINGS = (
-    "## Paired ablation intervals (Step 16)\n",
-    "## ORACLE variant: development data only (Step 16)\n",
+    "## Paired ablation intervals\n",
+    "## ORACLE variant: development data only\n",
 )
 
 

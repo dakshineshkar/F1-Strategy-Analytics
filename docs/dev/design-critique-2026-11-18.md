@@ -30,7 +30,7 @@ requirement here must be met in the UI, or through API data that already exists.
 
 ### Evidence locations
 
-Seven screenshots are committed in [before/](before/) (`docs/design/before/`): `d-dark-fold.png`,
+Seven screenshots are committed in [before/](../design/before/) (`docs/design/before/`): `d-dark-fold.png`,
 `d-light-fold.png`, `m-dark-fold.png`, `d-dark-whatif.png`, `d-dark-engineer.png`, `d-dark-picker.png` and
 `d-dark-analysis.png`. All other screenshots and raw results stay in this session's scratch folder. They are
 **not committed and may be cleared** by a reboot. Re-capture them with the scripts listed below if they are gone.
@@ -42,27 +42,27 @@ Seven screenshots are committed in [before/](before/) (`docs/design/before/`): `
 - The archived snapshot of the critique: `.impeccable/critique/2026-11-18T17-01-20Z__web-src-app-race-season-round-page-tsx.md`
   (gitignored).
 
-Files marked "committed copy" are copied unchanged into [before/](before/), so they don't depend on the scratch
+Files marked "committed copy" are copied unchanged into [before/](../design/before/), so they don't depend on the scratch
 folder.
 
 | File | Screen, width, theme |
 |---|---|
-| [before/d-dark-fold.png](before/d-dark-fold.png) (committed copy of `A/d-dark-fold.png`) | Live race, 1440×900, dark: first viewport |
+| [before/d-dark-fold.png](../design/before/d-dark-fold.png) (committed copy of `A/d-dark-fold.png`) | Live race, 1440×900, dark: first viewport |
 | `A/d-dark-full.png` | Live race, 1440×900, dark: full page |
-| [before/d-light-fold.png](before/d-light-fold.png) (committed copy of `A/d-light-fold.png`) | Live race, 1440×900, light: first viewport |
+| [before/d-light-fold.png](../design/before/d-light-fold.png) (committed copy of `A/d-light-fold.png`) | Live race, 1440×900, light: first viewport |
 | `A/d-light-full.png` | Live race, 1440×900, light: full page |
-| [before/m-dark-fold.png](before/m-dark-fold.png) (committed copy of `A/m-dark-fold.png`) | Live race, 390×844, dark: first viewport |
+| [before/m-dark-fold.png](../design/before/m-dark-fold.png) (committed copy of `A/m-dark-fold.png`) | Live race, 390×844, dark: first viewport |
 | `A/m-dark-full.png` | Live race, 390×844, dark: full page |
 | `A/m-light-fold.png`, `A/m-light-full.png` | Live race, 390×844, light |
-| [before/d-dark-engineer.png](before/d-dark-engineer.png) (committed copy of `A/d-dark-engineer.png`) | Engineer tab, 1440×1270, dark |
+| [before/d-dark-engineer.png](../design/before/d-dark-engineer.png) (committed copy of `A/d-dark-engineer.png`) | Engineer tab, 1440×1270, dark |
 | `A/d-light-engineer.png` | Engineer tab, 1440×900, light |
-| [before/d-dark-whatif.png](before/d-dark-whatif.png) (committed copy of `A/d-dark-whatif.png`) | What-if after one run with the default pair, 1040×634 crop, dark |
+| [before/d-dark-whatif.png](../design/before/d-dark-whatif.png) (committed copy of `A/d-dark-whatif.png`) | What-if after one run with the default pair, 1040×634 crop, dark |
 | `A/d-dark-side.png` | Sidebar (Replay, alerts, Tyres), 1440×900, dark |
 | `A/d-dark-tip.png` | Alert-key tooltip on hover, 1440×900, dark |
 | `A/d-dark-legend.png`, `A/d-dark-columns.png` | Legend open; Columns panel open |
 | `A/d-dark-focus-skip.png`, `-focus-8`, `-focus-20`, `-focus-40` | Keyboard focus at Tab stops 0, 8, 20, 40 |
-| [before/d-dark-picker.png](before/d-dark-picker.png) (committed copy of `A/d-dark-picker.png`) | Race picker, 1440×900, dark |
-| [before/d-dark-analysis.png](before/d-dark-analysis.png) (committed copy of `A/d-dark-analysis.png`) | Analysis tab, 1440×900, dark |
+| [before/d-dark-picker.png](../design/before/d-dark-picker.png) (committed copy of `A/d-dark-picker.png`) | Race picker, 1440×900, dark |
+| [before/d-dark-analysis.png](../design/before/d-dark-analysis.png) (committed copy of `A/d-dark-analysis.png`) | Analysis tab, 1440×900, dark |
 | `B/live-dark.png`, `B/live-dark-full.png` | Overlay on live race, 1440×900, dark |
 | `B/live-light.png`, `B/live-light-full.png` | Overlay on live race, 1440×900, light |
 | `B/archive-dark.png`, `B/archive-dark-full.png` | Overlay on post-race archive, 1440×900, dark |
@@ -107,7 +107,7 @@ redesign. Line numbers refer to the code at commit `48ee7a2`.
 **F01 · P0 · The Undercut % column is cut off on desktop.**
 - **Screen:** live race, 1440×900, dark and light.
 - **Evidence:**
-  - [before/d-dark-fold.png](before/d-dark-fold.png): TRAP is the last visible column.
+  - [before/d-dark-fold.png](../design/before/d-dark-fold.png): TRAP is the last visible column.
   - `web/src/app/globals.css:489` `.tower { min-width: 76rem }` (1216 px) sits in a column about 1040 px wide.
   - `A/d-dark-focus-20.png`: the column only scrolls into view when keyboard focus reaches its "?".
 - **Requirement:** the undercut probability for every car is visible without horizontal scrolling at 1440 px
@@ -118,7 +118,7 @@ redesign. Line numbers refer to the code at commit `48ee7a2`.
   - live race, 1440×900: the alerts sit under the Replay box in `.dash-side`;
   - live race, 390×844: the alerts start about 2,766 px down, after the tower, gap chart, empty what-if and
     Replay.
-- **Evidence:** [before/d-dark-fold.png](before/d-dark-fold.png), `A/d-dark-side.png`, `A/m-dark-full.png`, `A/notes.json` (layout
+- **Evidence:** [before/d-dark-fold.png](../design/before/d-dark-fold.png), `A/d-dark-side.png`, `A/m-dark-full.png`, `A/notes.json` (layout
   boxes); `RaceDashboard.tsx` LiveRaceView renders `<ReplayControl>` before `<AlertFeed>`.
 - **Requirement:** the live undercut call (the current alerts or flagged pairs) is in the first viewport at
   both widths. On mobile it comes directly after the race status.
@@ -126,7 +126,7 @@ redesign. Line numbers refer to the code at commit `48ee7a2`.
 **F03 · P1 · The attacker→defender pair has no visual form of its own.**
 - **Screen:** live race, all widths.
 - **Evidence:**
-  - [before/d-dark-fold.png](before/d-dark-fold.png): the pair shows only as a 4 px yellow inset bar (`globals.css:151`
+  - [before/d-dark-fold.png](../design/before/d-dark-fold.png): the pair shows only as a 4 px yellow inset bar (`globals.css:151`
     `.tower tr.is-flagged .c-pos`) and as text cards in the sidebar.
   - A grader's first read is "timing screen with an undercut column".
   - There is no first-run hint about where the call lives.
@@ -156,7 +156,7 @@ redesign. Line numbers refer to the code at commit `48ee7a2`.
 
 **F05 · P2 · The accent colour is spent on controls instead of the call.**
 - **Screen:** live race, 1440×900, dark and light.
-- **Evidence:** [before/d-dark-fold.png](before/d-dark-fold.png).
+- **Evidence:** [before/d-dark-fold.png](../design/before/d-dark-fold.png).
   - Solid accent fills: "COLUMNS: FULL" (`TowerColumns` `.btn`), the selected 10× speed, and Run what-if.
   - The undercut flag gets only a 4 px bar.
   - "COLUMNS: FULL" is the loudest element on the page.
@@ -185,7 +185,7 @@ redesign. Line numbers refer to the code at commit `48ee7a2`.
 
 **F08 · P2 · The race page and the analysis page order their navigation differently.**
 - **Screen:** live race against `/race/2024/5/analysis`, 1440×900.
-- **Evidence:** [before/d-dark-fold.png](before/d-dark-fold.png) (Live / Post-race tabs above the breadcrumb); [before/d-dark-analysis.png](before/d-dark-analysis.png)
+- **Evidence:** [before/d-dark-fold.png](../design/before/d-dark-fold.png) (Live / Post-race tabs above the breadcrumb); [before/d-dark-analysis.png](../design/before/d-dark-analysis.png)
   (breadcrumb first).
 - **Requirement:** one navigation structure, used in the same order on every race page.
 - **Archive (Step 4A, 2026-11-19):** the archive head now uses the live order: crumbs, h1, mode tabs, then
@@ -196,7 +196,7 @@ redesign. Line numbers refer to the code at commit `48ee7a2`.
 ### Trust and honesty labels
 
 **F09 · P1 · Fixed (2026-11-19, Step 3) · The alert feed is empty after a late join or a reconnect.**
-- **Screen:** live race, every width. Seen at 390×844 at lap 13 ([before/m-dark-fold.png](before/m-dark-fold.png)): the feed was empty
+- **Screen:** live race, every width. Seen at 390×844 at lap 13 ([before/m-dark-fold.png](../design/before/m-dark-fold.png)): the feed was empty
   while the tower showed ▲ flags.
 - **Evidence:** `web/src/lib/reducer.ts` sets `alerts` only from SSE `undercut_alert` events (line 338). The
   snapshot restores drivers and order but not alerts.
@@ -253,7 +253,7 @@ redesign. Line numbers refer to the code at commit `48ee7a2`.
 **F12 · P2 · Unexplained dashes and raw error text.**
 - **Screen:** live race, what-if and engineer, 1440×900.
 - **Evidence:**
-  - [before/d-dark-whatif.png](before/d-dark-whatif.png): "Model (calibrated LR, from the stream): —" with no reason.
+  - [before/d-dark-whatif.png](../design/before/d-dark-whatif.png): "Model (calibrated LR, from the stream): —" with no reason.
   - The snapshot error appears as raw text (from the code).
   - A 0% / 0% / 0% result gets no guidance.
 - **Requirement:** every empty or missing value says why ("not a candidate at lap N: teammates", "gap above
@@ -262,7 +262,7 @@ redesign. Line numbers refer to the code at commit `48ee7a2`.
 **F13 · P2 · Alert labels and strength are misleading.**
 - **Screen:** live race, alert feed, 1440×900. Archive, 1440×900.
 - **Evidence:**
-  - [before/d-dark-fold.png](before/d-dark-fold.png), `B/archive-dark-full.png`: "Opportunity" labels alerts at 20–32%.
+  - [before/d-dark-fold.png](../design/before/d-dark-fold.png), `B/archive-dark-full.png`: "Opportunity" labels alerts at 20–32%.
   - An 18% Attempt and a 75% Opportunity get the same yellow bar and the same size.
   - No base rate (0.347 on 2025) or uncertainty appears next to the probability.
 - **Requirement:**
@@ -284,7 +284,7 @@ redesign. Line numbers refer to the code at commit `48ee7a2`.
 
 **F15 · P2 · The default what-if pair produces a result that looks broken.**
 - **Screen:** live race, what-if, 1440×900.
-- **Evidence:** [before/d-dark-whatif.png](before/d-dark-whatif.png): the default is P2→P1, PER→VER, teammates 8 s apart, giving
+- **Evidence:** [before/d-dark-whatif.png](../design/before/d-dark-whatif.png): the default is P2→P1, PER→VER, teammates 8 s apart, giving
   0% / 0% / 0% and "Model: —".
 - **Requirement:** never default to a pair the rule excludes. Default to the newest alert pair, or show
   nothing until a pair is chosen.
@@ -303,14 +303,14 @@ redesign. Line numbers refer to the code at commit `48ee7a2`.
 
 **F18 · P2 · The what-if text uses two sign conventions and leaks internal tokens.**
 - **Screen:** live race, what-if, 1440×900.
-- **Evidence:** [before/d-dark-whatif.png](before/d-dark-whatif.png): "10.1 s behind" next to an interval "−14.3 to −6.4 s"; pit-loss
+- **Evidence:** [before/d-dark-whatif.png](../design/before/d-dark-whatif.png): "10.1 s behind" next to an interval "−14.3 to −6.4 s"; pit-loss
   source shown as raw `global_prior`.
 - **Requirement:** one ahead/behind wording for every gap and interval, and plain-language labels for every
   internal value.
 
 **F19 · P2 · The engineer view defaults to the leader.**
 - **Screen:** live race, Engineer tab, 1440×900.
-- **Evidence:** [before/d-dark-engineer.png](before/d-dark-engineer.png): focus is P1, so "Ahead" is empty and the probability is "not
+- **Evidence:** [before/d-dark-engineer.png](../design/before/d-dark-engineer.png): focus is P1, so "Ahead" is empty and the probability is "not
   evaluated".
 - **Requirement:** the engineer focus defaults to a car in a live pair (for example the newest alert's
   attacker), and follows the selection made from the call.
@@ -320,7 +320,7 @@ redesign. Line numbers refer to the code at commit `48ee7a2`.
 
 **F20 · P3 · The engineer rejoin strip labels overlap.**
 - **Screen:** live race, Engineer tab, 1440×900.
-- **Evidence:** [before/d-dark-engineer.png](before/d-dark-engineer.png): "LE|PIA", "SAI/ALO" collide.
+- **Evidence:** [before/d-dark-engineer.png](../design/before/d-dark-engineer.png): "LE|PIA", "SAI/ALO" collide.
 - **Requirement:** rejoin markers never overlap; close cars are offset or grouped.
 - **Fixed (Step 4A, 2026-11-19).** The rejoin bar is a seconds axis:
   - car codes are placed in lanes that never overlap (`rejoinLanes`; e2e checks the label boxes);
@@ -328,14 +328,14 @@ redesign. Line numbers refer to the code at commit `48ee7a2`.
 
 **F21 · P3 · The engineer sparkline floats away from its sentence.**
 - **Screen:** live race, Engineer tab, 1440×900.
-- **Evidence:** [before/d-dark-engineer.png](before/d-dark-engineer.png).
+- **Evidence:** [before/d-dark-engineer.png](../design/before/d-dark-engineer.png).
 - **Requirement:** each small chart sits directly with the statement it supports.
 - **Fixed (Step 4A, 2026-11-19).** Each pair is a two-column row: a sentence capped at a reading measure, then
   the sparkline directly after it, top-aligned. The e2e checks the same row. With no laps it says why.
 
 **F22 · P3 · Alerts show driver codes only.**
 - **Screen:** live race, alert feed, 1440×900.
-- **Evidence:** [before/d-dark-fold.png](before/d-dark-fold.png): "SAI → RUS" with no tyre, age or trend; you have to find both cars in
+- **Evidence:** [before/d-dark-fold.png](../design/before/d-dark-fold.png): "SAI → RUS" with no tyre, age or trend; you have to find both cars in
   the 20-row tower.
 - **Requirement:** the call shows the context it rests on (tyres and age of both cars, gap trend) where the
   call is shown.
@@ -369,24 +369,24 @@ redesign. Line numbers refer to the code at commit `48ee7a2`.
 
 **F26 · P3 · Alert meta text wraps mid-phrase.**
 - **Screen:** live race, alert feed, 1440×900.
-- **Evidence:** [before/d-dark-fold.png](before/d-dark-fold.png): "gap / +0.443" breaks across lines.
+- **Evidence:** [before/d-dark-fold.png](../design/before/d-dark-fold.png): "gap / +0.443" breaks across lines.
 - **Requirement:** a value never breaks from its label.
 
 **F27 · P3 · The "Best so far" line floats.**
 - **Screen:** live race, 1440×900.
-- **Evidence:** [before/d-dark-fold.png](before/d-dark-fold.png): a gap of about 60 px above it, between the Columns button and the tower.
+- **Evidence:** [before/d-dark-fold.png](../design/before/d-dark-fold.png): a gap of about 60 px above it, between the Columns button and the tower.
 - **Requirement:** consistent vertical rhythm; session bests belong to the tower they describe.
 
 **F28 · P3 · The status banner is tall on mobile.**
 - **Screen:** live race, 390×844.
-- **Evidence:** [before/m-dark-fold.png](before/m-dark-fold.png): about 102 px tall, with its "?" orphaned on its own line.
+- **Evidence:** [before/m-dark-fold.png](../design/before/m-dark-fold.png): about 102 px tall, with its "?" orphaned on its own line.
 - **Requirement:** the race status fits a compact single band on mobile.
 
 ### Accessibility and typography
 
 **F29 · P2 · The tower header is broken.**
 - **Screen:** live race, 1440×900, dark and light.
-- **Evidence:** [before/d-dark-fold.png](before/d-dark-fold.png): the header renders "POS ?N ?RIVER ? ?", because
+- **Evidence:** [before/d-dark-fold.png](../design/before/d-dark-fold.png): the header renders "POS ?N ?RIVER ? ?", because
   `globals.css:490` `.tower .c-pin { width: 2.6rem }` cannot fit "Pin" plus its InfoTip.
 - **Requirement:** header labels and their help buttons never overlap at any width.
 
@@ -452,7 +452,7 @@ redesign. Line numbers refer to the code at commit `48ee7a2`.
 
 **F36 · P3 · The race picker has no entry point for the demo.**
 - **Screen:** race picker `/`, 1440×900.
-- **Evidence:** [before/d-dark-picker.png](before/d-dark-picker.png): 90 cards of equal weight.
+- **Evidence:** [before/d-dark-picker.png](../design/before/d-dark-picker.png): 90 cards of equal weight.
 - **Requirement:** the picker offers a clear first choice for a grader (the demo race, or the race currently
   replaying) above the full list.
 - **Fixed (Step 4A, 2026-11-19).** A "Start here" card sits above the search. It offers the race replaying now,

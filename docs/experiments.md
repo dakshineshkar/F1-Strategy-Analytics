@@ -1,4 +1,4 @@
-# Spark experiments: scalability, partitioning and caching (Step 10)
+# Spark experiments: scalability, partitioning and caching
 
 Traceability: #27 (runtime for 1/3/5 seasons), #28 (unpartitioned vs partitioned, with and without
 caching), #33 (runtime and scaling trend), #34 (speed-up vs baseline), #38 (resource usage).
@@ -11,7 +11,7 @@ Code: `src/f1sa/bench/` (entry points `experiments/scalability.py`, `experiments
 |---|---|---|
 | `make bench-smoke` | scalability at 1 season, x1, every master, 0 warm-up + 1 run; partitioning at laps x1, 5 telemetry rounds, 1 run; prints the full-grid estimate and, over 8 h, a reduced grid | `data/bench/<run_id>/` only |
 | `make experiments-spark` | full grid + full partitioning run | `data/bench/<run_id>/` |
-| `make experiments-spark RECORD=1` | the recorded run (overnight, nothing else running). **Refused before the grid starts** while any of its five results files exists (Fix C); `OVERWRITE=1` moves them to `data/results_backup/<stamp>/` right before the complete run writes | `results/scalability.csv`, `scalability_build.png`, `scalability_telemetry.png`, `partitioning.csv`, `partitioning_speedup.png`; fingerprints appended to `results/README.md` |
+| `make experiments-spark RECORD=1` | the recorded run (overnight, nothing else running). **Refused before the grid starts** while any of its five results files exists (the recording guard); `OVERWRITE=1` moves them to `data/results_backup/<stamp>/` right before the complete run writes | `results/scalability.csv`, `scalability_build.png`, `scalability_telemetry.png`, `partitioning.csv`, `partitioning_speedup.png`; fingerprints appended to `results/README.md` |
 | `make experiments-spark RECORD=1 GRID_ARGS="..."` | a reduced grid, e.g. the one `bench-smoke` proposes | as above |
 | `make experiments-spark [RECORD=1 [OVERWRITE=1]] RESUME=<run_id>` | continues an interrupted run (the command is printed at the start of every run, with `OVERWRITE=1` if the recording used it): reuses its prepared data when its marker exists (or prepares it again), skips cells already in its CSV, reruns an interrupted cell from its warm-up. With RECORD=1 it may rewrite only the results files this run recorded last | the same run folders |
 | `make bench-supplement SUPPLEMENT_OF=<run_id> CELLS="<cell ids>" [RECORD=1] [RESUME=<id>]` | re-runs only the named build/telemetry cells of a recorded grid (and their prep cells) with that grid's settings (`data/bench/<run_id>/grid_spec.json`); no partitioning run | `data/bench/<id>_supp/`; with `RECORD=1` appends the re-run rows to `results/scalability.csv` (new columns `rerun_of`, `note`; the original failed rows stay), a fingerprint to `results/README.md`, and redraws the plots. Refused before running if a cell's recorded row is `ok` or already re-run |
@@ -45,7 +45,7 @@ service is started, stopped, rebuilt or recreated. `docker stats` is sampled on 
 ## Data the benchmarks touch
 
 - Read only: `/f1/clean` (clean tables), `/f1/raw/tracinginsights/telemetry/season=2024` (raw
-  telemetry samples, Step 4C). HDFS keeps `/f1/raw` hadoop-owned, and every benchmark writer calls
+  telemetry samples from TracingInsights). HDFS keeps `/f1/raw` hadoop-owned, and every benchmark writer calls
   `bench.paths.check_bench_uri`, which refuses everything outside `hdfs://namenode:8020/f1/bench`
   and `./data/bench` (`/f1/raw`, `/f1/clean`, `/f1/features`, `data/lake`, `results/`, `..`, other
   hosts and schemes, a symlinked `data/bench`).
@@ -59,7 +59,7 @@ service is started, stopped, rebuilt or recreated. `docker stats` is sampled on 
 ## Workloads
 
 ### Feature build (scalability, every cell)
-`features.build.compute_features` unchanged (RDD, DataFrame and SQL jobs of Steps 6-8), over every
+`features.build.compute_features` unchanged (the RDD, DataFrame and SQL feature jobs), over every
 race of the input, each table written with the production writer `etl.io.write_partitioned`
 (partitioned by season/round) to `/f1/bench/<run_id>/scal/<cell>/<run>`, deleted untimed after
 each run. The clean inputs are cached per run as in `run_build`, then released, so every run starts
@@ -81,7 +81,7 @@ Seasons axis: 1 = 2024, 3 = 2022-2024, 5 = 2021-2025.
 **Can show:** how runtime, shuffle volume and memory of the real feature build grow with rows,
 races and partitions on this host, including costs that grow faster than the data: the many small
 season/round partitions (about 23·n·f per table) and the global prior windows that have no
-partition key (single-partition sort; the Known issue noted in Step 6).
+partition key (single-partition sort; a known issue of the feature build).
 
 **Cannot show:** real data diversity. Replicas are exact copies, so skew, join cardinalities,
 compression and history distributions are idealised, and history windows grow across replicas in
@@ -186,7 +186,7 @@ near or over the 90 % guard for local cells: the runtime guard decides, and the 
 - **Trends only.** Read the results as relative trends with their IQR: how a cell scales against
   its neighbours and which choices help (partition pruning, caching). They are not absolute
   throughput figures to compare with other systems. Run-to-run variance on this WSL2/Docker Desktop
-  host is real (see the Step 11 Redis notes); every cell reports its IQR, min and max.
+  host is real (see the Redis latency notes); every cell reports its IQR, min and max.
 
 ## Results
 The recorded run writes `results/scalability.csv`, `results/partitioning.csv` and the three PNGs,
@@ -243,7 +243,7 @@ Replication at 1 and 3 seasons (laps 106,296 at s1 x4 and 297,956 at s3 x4):
   a core count effect.
 - **Growth with rows.** `local[1]` took 1.64x as long for 4x the rows at 1 season (80.5 to 131.8 s) and 4.45x at
   3 seasons (57.9 to 257.8 s): once the fixed cost is paid, it grows at least linearly, with the single-partition
-  prior windows and the many small partitions as the costs that can grow faster (Known issue of Step 6).
+  prior windows and the many small partitions as the costs that can grow faster (a known issue of the feature build).
 - The cells at 1 season x16 and 5 seasons x4 are in the supplement below.
 
 #### Partitioning and caching (`results/partitioning.csv`, `results/partitioning_speedup.png`)
@@ -402,7 +402,7 @@ each median may include recovery time. The IQRs (17.1 s and 5.4 s) do not show i
 The final plot footnote names the four aborted cells and says the first attempt failed with the
 StackOverflowError (fixed). Hollow markers in the plot are the two merged re-runs.
 
-# Step 16: final experiments
+# Final experiments: ablation, streaming and Redis
 
 Traceability: #30 (ablation), #31 (replay one race, event-to-result delay), #35 (streaming latency),
 #36 (event throughput), #37 (Redis latency at streaming rate), #38 (resource usage). Model-side
@@ -412,7 +412,7 @@ results (paired ablation intervals, ORACLE) are read in `docs/model_results.md`.
 
 | Experiment | Command | Runtime (this host) | Outputs | Can show | Cannot show |
 |---|---|---|---|---|---|
-| Paired ablation intervals (#30) | `make ablation-full RECORD=1` (host precheck, then the app container) | 1 min 45 s | `data/ablation/<run>/` (per-attempt scores, `exact_match.csv`, self-check); RECORD: `results/ablation_paired.{csv,png}`, README section | Feature-set differences on 2025 with one shared set of race resamples, from the frozen 9f models; it stops before any interval unless all 720 committed `model_eval` rows reproduce exactly | Significance (none claimed); any change of the primary set or the deployed model; GBT differences ≤ 0.043 PR-AUC (row order alone, spec v2 §5) |
+| Paired ablation intervals (#30) | `make ablation-full RECORD=1` (host precheck, then the app container) | 1 min 45 s | `data/ablation/<run>/` (per-attempt scores, `exact_match.csv`, self-check); RECORD: `results/ablation_paired.{csv,png}`, README section | Feature-set differences on 2025 with one shared set of race resamples, from the frozen 2025 test-run models; it stops before any interval unless all 720 committed `model_eval` rows reproduce exactly | Significance (none claimed); any change of the primary set or the deployed model; GBT differences ≤ 0.043 PR-AUC (row order alone, spec v2 §5) |
 | ORACLE on development data (#30) | `make oracle-dev-full RECORD=1` (app container) | 2 min 49 s | `data/oracle/<run>/`; RECORD: `results/model_dev_{eval,loso}_oracle{,_G5.0_k3}.csv` | How much the realised out-lap delta adds on 2024 validation and 2021-2024 LOSO | Anything about 2025 (never loaded) or a deployable model: the input is **not usable at decision time** |
 | Streaming replay suite (#31, #35, #36, #38) | `make stream-latency-suite RECORD=1` (host, sample lake, core profile only) | 28 min 28 s | `data/demo/<suite>/`; RECORD: `results/streaming_latency_{s10,s60,s1w900}.csv`, `stream_{batches,progress}_{tag}.jsonl`, `streaming_latency_summary.csv`, `streaming_throughput.csv`, `streaming_resources.csv`, README sections | Per-hop delay (Kafka + trigger, batch work, Redis Pub/Sub, API SSE) and its tail at 1x/10x/60x, the first (prior-loading) batch apart, rates and peak resources on this host | Network costs between machines (one host, one clock), real 2025 data, races other than 2024 R5 |
 | UI render segment (#35) | `make api-up DEBUG=1 UI_LATENCY_CSV=data/demo/ui_latency/ui_latency.csv`, web container stopped, then `make stream-latency-ui RECORD=1` | 2 min 9 s (incl. the dashboard build) | `data/demo/<suite>_ui/`; RECORD: `results/ui_latency.csv`, `ui_latency_summary.csv`, `stream_*_s60ui.*`, `ui_streaming_*.csv` | SSE send → browser paint for the events the page sampled | Every event: the page posts at most 50 samples at once and drops ids beyond that (a subset); one browser on the same host |
@@ -442,7 +442,7 @@ rewritten), stamped SAMPLE.
 - The two DIFFs are both what-if outputs, and they are expected. Without RECORD the what-if run has no 2025
   held-out row, and the committed `whatif_consistency.csv` and `.png` have it. With the 2025 rows dropped, the
   committed CSV is byte-identical to the sandbox CSV (OK). The PNG draws the 2025 row, so it differs.
-- `whatif-consistency-full` exited 1 because of the pre-registered ordering check (Step 15 Known issue).
+- `whatif-consistency-full` exited 1 because of the pre-registered ordering check (a known issue of the what-if simulator).
   `make experiments` counts that as a recorded result, not a crash.
 
 ## Streaming latency and throughput on a quiet stack (#31, #35, #36, #38)
@@ -486,9 +486,9 @@ rewritten), stamped SAMPLE.
   60x: faster replay puts more events behind each trigger.
 - **The first race batch costs about 1.3–1.4 s more**, once per race, because it loads the priors. It is the
   whole p99 of the "all" rows at 10x and 60x (2.9 s and 3.3 s against 1.6 s and 1.8 s without it).
-- **Run-to-run comparison.** Step 12's recorded 60x run (other services up) had end-to-end p50 814 / p95 1481 /
+- **Run-to-run comparison.** The first recorded 60x run (other services up) had end-to-end p50 814 / p95 1481 /
   p99 3303 ms. The quiet 60x run has p50 807 / p95 1510.5 / p99 3287.5 ms, so the numbers agree within run-to-run
-  variance. Over the three 60x runs of this step (an unrecorded smoke run, s60 and s60ui), the steady-state
+  variance. Over the three 60x runs of the final experiments (an unrecorded smoke run, s60 and s60ui), the steady-state
   end-to-end p50 was 841, 798 and 813 ms.
 
 **Throughput** (`results/streaming_throughput.csv`): received messages/s, lap messages/s and produced events/s.
@@ -543,7 +543,7 @@ Setup:
   `streaming_runs.resummarise_ui` (no new measurement). `ui_latency.csv` was byte-identical, and the summary
   now shows 1.0.
 
-### Change after Step 16: the per-lap snapshot now precedes its lap frame (Fix D, 2026-11-15)
+### Later change: the per-lap snapshot now precedes its lap frame (2026-11-15)
 The committed latency results above were measured with the old order and are unchanged.
 - **What changed.** `api/sse.py` now reads and sends `snapshot-<lap>` before the first lap frame of that lap
   (it used to send it after that frame). This removes the "1 unknown drivers" artefact on races without keys
@@ -555,7 +555,7 @@ The committed latency results above were measured with the old order and are unc
   - Each run started with no race keys, with a single SSE client (`curl -N`) subscribed before the replay.
   - The metric is the lap frames' `sse_sent_at_ms − payload.redis_written_at_ms` (Redis → API SSE send, one
     host clock).
-  - Recordings are in the session scratchpad, not in `results/`.
+  - Recordings are in a scratch folder outside the repository, not in `results/`.
 
 | Race | Lap frames | Before p50 / p95 / p99 ms | After p50 / p95 / p99 ms |
 |---|---|---|---|
@@ -574,7 +574,7 @@ The committed latency results above were measured with the old order and are unc
 
 ## Redis latency: first run and quiet rerun (#37)
 
-| Rate | Operation | First run (Step 11, 2026-11-12; noisy, other services up) p50 / p95 / p99 ms | Quiet rerun (Step 16, 2026-11-14) p50 / p95 / p99 ms | Achieved rate / late ticks (first → quiet) |
+| Rate | Operation | First run (2026-11-12; noisy, other services up) p50 / p95 / p99 ms | Quiet rerun (2026-11-14) p50 / p95 / p99 ms | Achieved rate / late ticks (first → quiet) |
 |---|---|---|---|---|
 | 1/s | write (20-driver batch) | 1.31 / 2.04 / 2.24 | 1.69 / 2.57 / 2.59 | 1.00/0 → 1.00/0 |
 | 1/s | HGETALL | 0.25 / 0.49 / 0.63 | 0.23 / 0.54 / 0.71 | |
@@ -589,7 +589,7 @@ The committed latency results above were measured with the old order and are unc
 
 - Files: the first run is `results/redis_latency.csv` (kept byte-identical), and the quiet rerun is
   `results/redis_latency_quiet.csv` (`make redis-latency RECORD=1`).
-- **Different hosts.** The Step 11 fingerprint was taken under the old WSL configuration (6 logical CPUs,
+- **Different hosts.** The first run's fingerprint was taken under the old WSL configuration (6 logical CPUs,
   9.7 GiB). The rerun used the current one (12 logical CPUs, about 14 GiB). The two runs differ in host as well
   as in background load, so the comparison is not only "quiet against noisy".
 - On the quiet stack every rate met its schedule (60.00/s, 0 late ticks), and every p99 is below 3.1 ms.
@@ -610,7 +610,7 @@ The committed latency results above were measured with the old order and are unc
     `OK (metadata differs)` with the ignored fields named. Any other difference is still `DIFF`, including
     `git_dirty`.
   - `models/` is not committed, so the comparison is with the local file.
-- The two what-if sample files are `NEW`: Step 15 never committed sample what-if outputs.
+- The two what-if sample files are `NEW`: sample what-if outputs were never committed.
 - The first sample run (`exp_20261114T105801Z_SAMPLE`) showed `model_eval_sample.csv` and
   `calibration_sample.csv` as DIFF.
   - Cause: the committed files dated from 2026-11-11, before the `decision_threshold` column and the

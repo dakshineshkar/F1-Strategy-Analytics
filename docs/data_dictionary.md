@@ -1,9 +1,9 @@
 # Data dictionary
 
-This file grows step by step: the **clean zone** (Step 5, entities #7), the **sample bundle** and its
-**synthetic tables** (Step 4B). S6 adds feature tables.
+Every table of the lake: the **clean zone** (entities, requirement #7), the **sample bundle** and its
+**synthetic tables**, the feature tables, the model outputs and the display-only tables.
 
-## Clean zone (`{DATA_LAKE_URI}/clean/{table}/season=S/round=R/*.parquet`, Step 5)
+## Clean zone (`{DATA_LAKE_URI}/clean/{table}/season=S/round=R/*.parquet`)
 Built by `python -m f1sa.etl.clean`. Schemas are in `f1sa.lake.schemas` (explicit Spark StructTypes). Every table is
 partitioned by `season` (int) and `round` (int), which are also its first key columns. Times are **seconds (double)**,
 and ids are **Jolpica ids** (`driver_id` = Jolpica `driverId`, canonical).
@@ -99,7 +99,7 @@ One row per driver per completed lap, from Jolpica lap timings. Laps split acros
 - `ratio` = median lap time of the field on that lap / the race's median lap time over all such laps.
 - `slow_share` = the share of those cars on that lap that are slower than 1.07 × the race median.
 - `ratio > 1.10` **or** `slow_share ≥ 0.5` means **neutralised** (SC or VSC; lap times alone cannot tell them apart,
-  so `is_sc_lap` and `is_vsc_lap` stay null). Step 8 tightened this from `ratio > 1.25`, which missed SC deployment
+  so `is_sc_lap` and `is_vsc_lap` stay null). The undercut-detection work tightened this from `ratio > 1.25`, which missed SC deployment
   and restart laps whose field median stays low. Green laps in the sample peak at ratio 1.026 and share 0.056.
 - `ratio > 3.0` means **red flag** (the stoppage is included in that lap's time).
 - Lap 1 is never flagged, so incidents on lap 1 are missed.
@@ -166,7 +166,7 @@ One row per driver per lap.
   - stints not tiling the laps.
 - Each check records a count and up to 5 examples.
 
-## Feature zone (`{DATA_LAKE_URI}/features/{table}/season=S/round=R/*.parquet`, Step 6)
+## Feature zone (`{DATA_LAKE_URI}/features/{table}/season=S/round=R/*.parquet`)
 Schemas: `f1sa.features.schemas`. Every table has `season` and `round`. A row about lap L describes the state at the
 **end** of lap L, so the model joins lap L − 1 (see `docs/architecture.md`).
 
@@ -270,7 +270,7 @@ Definitions and parameters: `docs/label_definition.md`, "Out-lap pace features".
 | expected_outlap_source | string | driver_team, team, circuit, global or none |
 | expected_outlap_missing | bool | no history at any level |
 | driver_team_prior_s/_n, team_prior_s/_n, circuit_prior_s/_n, global_prior_s/_n | double/int | the mean and support at each level |
-| stop_duration_s | double | the in-lap's total Jolpica pit-lane time (Step 8) |
+| stop_duration_s | double | the in-lap's total Jolpica pit-lane time |
 | race_median_stop_s, race_median_outlap_delta_s | double | medians over the race's history-eligible stops: typical lane time, and the circuit's stop share on the out-lap |
 | stop_delta_s | double | **ORACLE**: stop_duration_s − race_median_stop_s (pit-crew execution; null for long stops) |
 | outlap_pace_residual_s | double | **ORACLE**: realised − race_median_outlap_delta_s − stop_delta_s (warm-up and tyre effect; eligible stops only) |
@@ -290,7 +290,7 @@ There is one row per (race, attacker, attempt lap L, G, k). The definition, edge
 | identity | season, round, attacker_id, defender_id, lap (L, A's in-lap), decision_lap (L − 1), gap_threshold_s (G), response_window_laps (k), is_default_params (G = 3.5, k = 2) | |
 | label | detector_eligible (passed the shared rule at L − 1), outcome_category (success, fail, defender_stayed_out, excluded_<reason>), label (1/0 for success/fail, else null), exclusion_reasons (array, priority order) | target |
 | decision-time | gap_s, gap_ahead_change_1l/3l, attacker_position, attacker/defender tyre age and compound, tyre_age_delta_laps, compound_is_synthetic, attacker/defender pace_last3_s and deg_slope_s_per_lap and their deltas, laps_remaining, pit_loss_prior_s/_source, rejoin_traffic_cars, rejoin_nearest_ahead_s, attacker/defender expected out-lap pace residual (+ source), attacker/defender expected stop delta | model inputs (`undercut.DECISION_FEATURES`) |
-| legacy | attacker_expected_outlap_delta_s_legacy | S16 comparison only |
+| legacy | attacker_expected_outlap_delta_s_legacy | ablation comparison only |
 | ORACLE | oracle_attacker_realised_outlap_delta_s, oracle_attacker_outlap_pace_residual_s, oracle_attacker_stop_delta_s | ORACLE ablation only |
 | outcome | outcome_defender_pit_lap, outcome_label_lap, outcome_attacker/defender_position, outcome_gap_s (cum_D − cum_A on the label lap), outcome_attacker/defender_stop_s, outcome_*_slow_stop, outcome_*_double_stack | analysis only, never features |
 
@@ -392,7 +392,7 @@ Generating assumptions:
 - Caveat: because speed is derived from the real lap time and the synthetic tyre age, these columns are partly
   redundant with real data and partly random. Any "signal" a model finds in them is an artefact.
 
-## Model outputs (`experiments/model_eval.py`, Step 9)
+## Model outputs (`experiments/model_eval.py`)
 Every file of a `sample` or `rehearsal` run has a `_sample` / `_rehearsal` suffix and a `# SMOKE TEST …` /
 `# REHEARSAL …` first line (CSV) or a title and watermark (PNG). **They are not findings.** The full test run
 (`make model-test-full CONFIRM=yes`, `docs/model_spec.md`) suffixes every file with its setting:
@@ -402,14 +402,14 @@ or saved metadata already exist (the first complete run is the reported one).
 
 | File | Columns / content |
 |---|---|
-| `results/model_eval*.csv` | source, smoke_test, feature_set, g, k, model (`lr`, `lr_calibrated`, `gbt`, `gbt_calibrated`, `majority`, `rule`), split (`validation`, `test`), metric (`f1_positive`, `macro_f1`, `pr_auc`, `roc_auc`, `brier`, `ece`), value, ci_kind (`race_cluster` / `attempt`, test only), ci_low, ci_high (95% percentile), n_valid (usable resamples), n_attempts, n_races, note (why a metric is undefined; ECE bootstrap bias; the rule's fallback count), decision_threshold (0.5 on `f1_positive` / `macro_f1` rows, fixed since Step 9, empty otherwise). The validation and test reports also have the supplementary metric `ece_5bin` |
+| `results/model_eval*.csv` | source, smoke_test, feature_set, g, k, model (`lr`, `lr_calibrated`, `gbt`, `gbt_calibrated`, `majority`, `rule`), split (`validation`, `test`), metric (`f1_positive`, `macro_f1`, `pr_auc`, `roc_auc`, `brier`, `ece`), value, ci_kind (`race_cluster` / `attempt`, test only), ci_low, ci_high (95% percentile), n_valid (usable resamples), n_attempts, n_races, note (why a metric is undefined; ECE bootstrap bias; the rule's fallback count), decision_threshold (0.5 on `f1_positive` / `macro_f1` rows, fixed since the first model run, empty otherwise). The validation and test reports also have the supplementary metric `ece_5bin` |
 | `results/calibration*.csv` | model, split, chosen_method, brier_raw / _isotonic / _platt / _calibrated, ece_raw / _calibrated, n_attempts, reason |
 | `results/feature_importance*.csv` | model, method (`gbt_importance`, `lr_std_coefficient`, `permutation_pr_auc_drop`), feature, value, std, note |
 | `results/reliability*.png` | observed vs predicted (10 bins), raw vs calibrated, for the selected model (test season; validation in sample mode, marked) |
 | `results/confusion_matrix*.png` | the selected calibrated model at 0.5 |
 | `results/feature_importance*.png` | GBT importance and permutation drop (top 15) |
 
-**Development run (Step 9b, `make model-dev-full` = `--source full --no-test`).** It reads only the 2021-2024
+**Development run (`make model-dev-full` = `--source full --no-test`).** It reads only the 2021-2024
 feature partitions; the `season=2025` directories are never listed or opened, and the run has no test split. It
 trains on 2021-2023, selects hyperparameters and fits the calibrator on 2024, and saves no model binaries. Every
 file is named `model_dev_*` and starts with `# DEVELOPMENT: …` (PNG: title and watermark): validation only, not a
@@ -510,7 +510,7 @@ and byte-identical):**
   are in `results/tracinginsights_coverage_full.csv`.
 
 
-## Full-data quality notes (Step 8b)
+## Full-data quality notes
 
 First run of clean and features on the complete 2021-2025 Jolpica raw zone, in HDFS mode
 (`make pipeline-full`). Source: Jolpica only, so there are no FastF1 or synthetic inputs. Two complete
@@ -581,7 +581,7 @@ All 20 table checksums and the labels checksum were identical with and without i
 
 At G = 3.5, k = 2, 35 of 401 neutralised exclusions (9%) are sustained slow running; 2021 has none.
 
-**Early-lap threshold L < 5 (Step 8b, final label change).** Before the change no attempt at L = 4 was labelled in
+**Early-lap threshold L < 5 (final label change).** Before the change no attempt at L = 4 was labelled in
 any season: the 25 candidates at G = 3.5, k = 2 were excluded first as `in_pit` (15), `neutralised` (5),
 `teammates` (3) or `defender_stayed_out` (2). After it, all 213 L = 4 candidates across the 9 (G, k) settings are
 `excluded_early_lap`, every other attempt keeps its category, and the labelled set ((attempt key, label) of
@@ -612,7 +612,7 @@ red flags (2024 R4 and R8) have their stops recorded on lap 1, and lap-1 stops a
 
 ### Neutralisation rule on real races
 
-After the Step 8b red-flag fix, the Jolpica heuristic flags 548 of 6,804 race laps as neutralised (8.1%), and 18 of
+After the red-flag fix, the Jolpica heuristic flags 548 of 6,804 race laps as neutralised (8.1%), and 18 of
 them as red-flag laps.
 
 | Season | Race laps | Neutralised | Share | Red-flag laps |
@@ -628,7 +628,7 @@ are 2022 R7 (28 of 64 laps, 43.8%), 2023 R6 (27 of 78, 34.6%) and 2023 R13 (23 o
 28.6%) is just under the fence. No race falls below the low fence, because it is negative. 31 races have no flagged
 laps (`neutralisation.zero` in `results/full_data_quality.json`).
 
-**Red-flag fix (Step 8b).** Jolpica records a red-flag entry to the pit lane as a pit stop for the whole field, and
+**Red-flag fix.** Jolpica records a red-flag entry to the pit lane as a pit stop for the whole field, and
 the original heuristic removed pit laps before testing for a red flag, so none was ever detected. The field-wide
 test (`docs/label_definition.md`, "Track status") now flags these laps:
 
@@ -669,7 +669,7 @@ Red-flag laps are now flagged in 2022 R7 (lap 30) and 2023 R13 (lap 64). Excludi
 label definition, which excludes wet running (reason 15). In full mode, compounds are null, so reason 15 cannot fire
 and the heuristic is the only thing that excludes them; those attempts are counted as `neutralised`, not `wet`.
 
-## TracingInsights tables (Step 4C)
+## TracingInsights tables
 Source: TracingInsights season repositories, Race sessions, at pinned commits (`docs/data_source_audit.md`). Real
 data: `is_synthetic = false`, `source = 'tracinginsights'`. **Additive.** No v1 table reads these, and
 label-definition-v1 and model-spec-v1 are unchanged. Missing values arrive as the string `"None"`. They are
@@ -701,7 +701,7 @@ converted to nulls explicitly and counted per field in each raw partition's `_ma
   `clean/_quality/tracinginsights.json` hold counts and shares only (2025 included as counts only).
 - **Telemetry coverage thresholds** (`features/telemetry_agg_ti.py`): a lap is `none` with 0 samples, `partial`
   when the samples span less than 90% of the lap window **or** any gap between consecutive samples is greater than
-  **2.0 s**, otherwise `full`. The planned gap threshold was 1.0 s. On the real laps checked in Step 4C Phase 2 it flagged 14 of 56
+  **2.0 s**, otherwise `full`. The planned gap threshold was 1.0 s. On the real laps checked during the TracingInsights ingest it flagged 14 of 56
   laps whose only defect was an ordinary 1.0–1.3 s feed dropout. Those laps keep usable aggregates, so the
   threshold was raised to 2.0 s, which still catches real holes in the data.
 
@@ -760,7 +760,7 @@ Stint counts 2021 / 2022 / 2023 / 2024:
 Key: (season, round, driver_id, lap). Jolpica = v1 clean `laps`; TI = `telemetry_lap_real`. The table shows counts
 only, and 2025 is included as counts only. `telemetry_lap_real` has exactly as many rows as the raw TI laps and the
 raw telemetry aggregates in every season, so the driver mapping drops no rows. The 2025 count is **26,692**, not
-the 26,711 given in the step brief: the brief was 19 rows high, and the table count matches
+the 26,711 given in the build plan: that figure was 19 rows high, and the table count matches
 `results/tracinginsights_coverage_full.csv`.
 
 | Season | Jolpica | TI | TI only | Jolpica only | TI only: driver has no Jolpica lap | TI only: after the driver's last Jolpica lap |
@@ -800,7 +800,7 @@ other status).
 - **Races below 95% compound coverage:** 2021 R12 Belgian GP 0.0, 2022 R11 Austrian GP 0.7742, 2025 R6 Miami GP
   0.5562, 2025 R13 Belgian GP 0.9352.
 
-## Entrants dimension (`clean/entrants`, Feature 1, display only)
+## Entrants dimension (`clean/entrants`, display only)
 Built by `python -m f1sa.etl.entrants` (`make entrants-sample` / `make entrants-full`; `make demo` runs it after the
 clean job). Schema: `f1sa.lake.schemas_entrants` (kept out of `lake/schemas.CLEAN_SCHEMAS`, so no v1 table changes).
 It is read only by `GET /api/races/{s}/{r}/entrants`. No feature, model input, rule, alert, stream or what-if reads
@@ -896,14 +896,14 @@ sweep).
 - the races that use the palette;
 - TI rows that could not be mapped, and TI team-name mismatches.
 
-## Race-analysis tables (`clean/analysis_*`, Feature 2, display only)
+## Race-analysis tables (`clean/analysis_*`, display only)
 Built by `python -m f1sa.etl.analysis --source sample|lake` (`make analysis-sample` / `make analysis-full`;
 `make demo` runs it after the entrants step). Schemas: `f1sa.lake.schemas_analysis` (kept out of
 `lake/schemas.CLEAN_SCHEMAS` and `CLEAN_SCHEMAS_TI`, so no v1 or TracingInsights clean table changes). The job reads
 the v1 clean `laps`, `pitstops`, `drivers`, `stints`, the TI clean `stints_tracinginsights`, `race_control`,
 `race_control_track_status` (cross-check only) and the as-received TI `raw/tracinginsights/laps/.../laps.parquet`
 (17 of its 42 columns, read-only). It writes only the five tables below and `clean/_quality/analysis.json`. Only the
-API reads them: `/api/races/{s}/{r}/analysis/*`, and the engineer view (Feature 3), which reads `analysis_stints` of
+API reads them: `/api/races/{s}/{r}/analysis/*`, and the engineer view, which reads `analysis_stints` of
 strictly earlier races (the typical stint) and the race's `analysis_laps` / `analysis_race_control` for lap N / laps
 <= N only (track status). No feature, model input, rule, alert, stream or what-if does.
 `--source sample` needs a `file://` lake and builds the sample races; `--source lake` builds every race of the clean
@@ -974,7 +974,7 @@ speed traps, the per-lap track-status codes, deleted laps and the real per-lap t
   exclusions by reason, races by tyre and neutralised source, stints by fit status, race control by kind, the
   track-status cross-check, TI rows unmapped and TI-only laps dropped, rows and checksum per table.
 
-## Post-race archive (`archive/race_bundle`, Feature 4, display only)
+## Post-race archive (`archive/race_bundle`, display only)
 Built by `python -m f1sa.archive.build --source sample|lake` (`make archive-sample`, `make archive-full`; `make demo`
 runs it with the sample model after the model step). One partition per race:
 `{DATA_LAKE_URI}/archive/race_bundle/season=S/round=R/` holding `bundle.json.gz` and `_manifest.json`. Nothing else is
@@ -986,7 +986,7 @@ by `GET /api/archive` and `GET /api/archive/{s}/{r}`. No feature, model input, r
 Details and the proof of equivalence are in `docs/architecture.md` ("Post-race archive").
 
 **`bundle.json.gz`**: gzip (`mtime` 0, level 9) of canonical JSON (sorted keys, no spaces, no NaN). Schema version 2
-(Feature 5; the API and the dashboard still read version 1, which lacks `snapshots[].timing` and `status`). Version 1
+(it adds the timing-tower extras; the API and the dashboard still read version 1, which lacks `snapshots[].timing` and `status`). Version 1
 (`f1sa.archive.schema.ArchiveBundle`):
 
 | Field | Content |
@@ -1016,7 +1016,7 @@ Details and the proof of equivalence are in `docs/architecture.md` ("Post-race a
   1,883,740 B JSON → 148,931 B gzip. 2024 R5: 56 laps, 1,252 messages (141 alerts), 409 decisions, 1,700,600 B →
   132,069 B (v1 was 1,417,039 → 139,465 B and 1,257,110 → 123,092 B; the same counts).
 
-## Timing-tower values (Feature 5, display only)
+## Timing-tower values (display only)
 Lap events (`streaming.events.TOWER_FIELDS`), the additive Redis hash `race:{s}:{r}:timing:{driverId}`
 (`serving.keys.TIMING_FIELDS`) and the archive v2 snapshots carry, per car and lap L:
 
@@ -1039,9 +1039,9 @@ Lap events (`streaming.events.TOWER_FIELDS`), the additive Redis hash `race:{s}:
 - Nothing model-related reads any of these values: not the rule, the live features, the scorer, the alert policy,
   the what-if or `results/`.
 
-## Telemetry traces (`clean/telemetry_trace`, Feature 6, display only, 2024 only)
+## Telemetry traces (`clean/telemetry_trace`, display only, 2024 only)
 Built by `python -m f1sa.etl.telemetry_trace --source lake` (`make telemetry-trace-full`, app container, HDFS) from
-the raw telemetry samples the lake keeps for **2024 only** (Step 4C) and `clean/analysis_laps` (both read-only). It
+the raw telemetry samples the lake keeps for **2024 only** and `clean/analysis_laps` (both read-only). It
 writes only `clean/telemetry_trace` and its report `clean/telemetry_trace/_quality.json`. Schema:
 `f1sa.lake.schemas_telemetry_trace` (outside every other table list). Only the API's
 `/api/races/2024/{r}/telemetry/*` routes read it.

@@ -126,7 +126,7 @@ All results, with their intervals and sources (2025 is the held-out test season,
 
 ## Documentation
 
-Every document is indexed in [docs/README.md](docs/README.md); the full write-up is the [project report (PDF)](docs/report/report.pdf).
+Every document is indexed in [docs/README.md](docs/README.md).
 
 ---
 

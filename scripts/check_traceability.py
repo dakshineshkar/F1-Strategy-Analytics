@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Check that every file named in ``docs/traceability.md`` exists (Step 17, commitment #42).
+"""Check that every file named in ``docs/traceability.md`` exists (requirement #42).
 
-Reads every cell after the matrix's Step column (Status, Code, Tests, Proof; each cell on its own)
-and checks each backticked reference:
+Reads every cell after the matrix's Milestone column (Status, Code, Tests, Proof; each cell on its
+own) and checks each backticked reference:
 
 * **paths** (``lake/writer.py``, ``tests/unit/test_keys.py``, ``web/src/components/``,
   ``docker/web/Dockerfile``): tried at the repo root and under ``src/f1sa``, ``tests/unit``,
@@ -17,7 +17,7 @@ Not failed, but printed with the reason (nothing is skipped silently):
 
 * GENERATED: gitignored outputs that a clone does not have (``data/...`` except ``data/sample``,
   ``models/...``); they are written by make targets;
-* PENDING: rows of build steps not done yet (``--pending``, default ``S18``).
+* PENDING: rows whose milestones are all not done yet (``--pending``, default none).
 
 Other backticked text (Redis keys, topic and table names, flags, lake paths such as ``/f1/bench``
 or ``raw/.../season=2024/``) is not a file reference and is not checked. Exit 0 if every
@@ -43,11 +43,10 @@ EXTENSIONS = (
 )  # fmt: skip
 GENERATED_PREFIXES = ("data/", "models/")
 NOT_GENERATED = ("data/sample/",)
-DEFAULT_PENDING = ("S18",)
+DEFAULT_PENDING: tuple[str, ...] = ()
 TICKS = re.compile(r"`([^`]+)`")
 BRACES = re.compile(r"\{([^{}]*)\}")
 PLACEHOLDER = re.compile(r"<[^<>]*>")
-STEP = re.compile(r"\bS\d+[A-Z]?\b")
 DEFINITION = r"^\s*(?:async\s+def|def|class)\s+{name}\b|^\s*{name}\s*(?::[^=]*)?="
 MAKE_TARGET = r"^{name}\s*:(?!=)|^[^#\n:=]*\s{name}\s*:(?!=)"
 
@@ -62,7 +61,7 @@ class Finding:
 
 # ------------------------------------------------------------------ parsing
 def rows(text: str) -> Iterator[tuple[str, str, list[str]]]:
-    """``(number, steps, every cell after the Step column)`` for every data row of the matrix."""
+    """``(number, milestones, every cell after the Milestone column)`` for every data row."""
     for line in text.splitlines():
         if not line.startswith("|"):
             continue
@@ -240,13 +239,13 @@ def check_cell(repo: Path, row: str, cell: str, targets: set[str], pending: bool
     return findings
 
 
-def check(repo: Path, matrix: Path, pending_steps: Sequence[str]) -> list[Finding]:
+def check(repo: Path, matrix: Path, pending_milestones: Sequence[str]) -> list[Finding]:
     text = (repo / matrix).read_text(encoding="utf-8")
     targets = make_targets(repo)
     findings: list[Finding] = []
-    for number, steps, cells in rows(text):
-        row_steps = set(STEP.findall(steps))
-        pending = bool(row_steps) and row_steps <= set(pending_steps)
+    for number, milestones, cells in rows(text):
+        row_milestones = {m.strip() for m in milestones.split(",") if m.strip()}
+        pending = bool(row_milestones) and row_milestones <= set(pending_milestones)
         for cell in cells:
             findings.extend(check_cell(repo, number, cell, targets, pending))
     return findings
@@ -275,7 +274,7 @@ def main(argv: Iterable[str] | None = None) -> int:
         "--pending",
         nargs="*",
         default=list(DEFAULT_PENDING),
-        help="build steps not done yet; rows only of these steps are reported as PENDING",
+        help="milestones not done yet; rows only of these milestones are reported as PENDING",
     )
     p.add_argument("-v", "--verbose", action="store_true", help="also list every OK reference")
     args = p.parse_args(list(argv) if argv is not None else None)

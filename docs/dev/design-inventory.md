@@ -1,7 +1,7 @@
 # UI inventory: every screen and state, 2026-11-18
 
 Step 2 of the UI redesign, Part A. A read-only survey of `web/` at commit `5e50881`, before any redesign code.
-The finding numbers (F01–F38) refer to [critique-2026-11-18.md](critique-2026-11-18.md).
+The finding numbers (F01–F38) refer to [critique-2026-11-18.md](design-critique-2026-11-18.md).
 
 **Server/API change?**
 - **no**: the finding can be fixed in the web client from data it already receives.

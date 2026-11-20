@@ -1,4 +1,4 @@
-"""``scripts/check_traceability.py`` (Step 17) on a tiny invented repository and on the real one."""
+"""``scripts/check_traceability.py`` on a tiny invented repository and on the real one."""
 
 from __future__ import annotations
 
@@ -62,7 +62,8 @@ def _repo(tmp_path: Path, rows: list[str]) -> Path:
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text(text)
     (tmp_path / "Makefile").write_text(MAKEFILE)
-    table = ["# M", "", "| # | Commitment | Step | File or module |", "|---|---|---|---|", *rows]
+    header = "| # | Requirement | Milestone | File or module |"
+    table = ["# M", "", header, "|---|---|---|---|", *rows]
     (tmp_path / "docs").mkdir()
     (tmp_path / "docs" / "traceability.md").write_text("\n".join(table) + "\n")
     return tmp_path
@@ -165,8 +166,9 @@ def test_generated_outputs_and_pending_rows_are_reported_not_failed(tmp_path: Pa
 
 
 def test_every_cell_after_step_is_checked(tmp_path: Path) -> None:
-    # | # | Commitment | Step | Status | Code | Tests | Proof |: a missing file in a middle column
-    # fails; the Status text has no references; a bare name resolves only next to its own cell.
+    # | # | Requirement | Milestone | Status | Code | Tests | Proof |: a missing file in a middle
+    # column fails; the Status text has no references; a bare name resolves only next to its
+    # own cell.
     repo = _repo(
         tmp_path,
         [

@@ -1,9 +1,9 @@
 # Pit Wall design system
 
-The design system of the Pit Wall dashboard (Step 2 of the UI redesign, 2026-11-18). Product truth is in
+The design system of the Pit Wall dashboard (redesigned 2026-11-18). Product truth is in
 [PRODUCT.md](../../PRODUCT.md); the problems this system answers are in
-[critique-2026-11-18.md](critique-2026-11-18.md); the screens and states it covers are in
-[inventory.md](inventory.md).
+[the design critique](../dev/design-critique-2026-11-18.md); the screens and states it covers are in
+[the UI inventory](../dev/design-inventory.md).
 
 **One source of truth:** every colour, size, radius, duration and easing below is defined once, in
 [`web/src/lib/theme.ts`](../../web/src/lib/theme.ts). That module emits the CSS custom properties (`themeCss`,
@@ -44,8 +44,8 @@ Font License is beside its files (`OFL.txt`); see `web/src/fonts/README.md`.
 - Labels and table heads are sentence case, untracked; the only capitals are the product's honesty stamps
   (SMOKE TEST, SYNTHETIC DEMO DATA) and standard racing abbreviations (SC, VSC, PB, OB).
 
-**Scale** (fixed, not fluid; ratio about 1.15). 11 px is the floor for any text (critique F33). Headings: h1 20 px,
-h2 `--fs-lg` (16 px) and h3 `--fs-md` (14 px) on every screen (Step 5: h3 was 12, 13 or 14 px). The legend's
+**Scale** (fixed, not fluid; ratio about 1.15). 11 px is the floor for any text. Headings: h1 20 px,
+h2 `--fs-lg` (16 px) and h3 `--fs-md` (14 px) on every screen (an earlier layout had h3 at 12, 13 or 14 px). The legend's
 "How to read this" is its own h2, so its group h3s nest under it.
 
 | Token | Size | Use |
@@ -73,14 +73,14 @@ blue and loss is orange: a colourblind-safe pair, never red/green, and always wi
   declares both (`--x:#hex;--x:oklch(…);`), so a browser without OKLCH keeps the hex. Every colour is inside
   the sRGB gamut (tested), so the two are the same colour.
 - **The amber is reserved.** It appears only on the call (its solid fill only on "Simulate this pair"), the
-  call's two rows in the tower, and alerts from the leader's lap or the one before (2026-11-19: other flagged rows
+  call's two rows in the tower, and alerts from the leader's lap or the one before (other flagged rows
   and older alerts are neutral). In the post-race archive, "the leader's lap" is the scrubbed lap: the
   archive feed marks alerts from that lap or the one before, and none after the finish. The archive's slider and
-  event markers, the engineer view and the race picker never use it (Step 4A). Focus rings, buttons, selected controls, links and chart series never use it
-  (critique F05). No chart line has an amber hue (60–100°, tested).
+  event markers, the engineer view and the race picker never use it. Focus rings, buttons, selected controls, links and chart series never use it.
+  No chart line has an amber hue (60–100°, tested).
 - **Team colours are data only:** a small swatch with the team's text code, never a background, a border
   theme or a brand treatment.
-- **No legacy names** (Step 4B, 2026-11-19). The old aliases (`--accent`, `--accent-ink`, `--accent-bg`, `--ok`,
+- **No legacy names.** The old aliases (`--accent`, `--accent-ink`, `--accent-bg`, `--ok`,
   `--warn`, `--info`, `--banner-bg`, `--banner-ink`, `--bar`) and the `--radius` / `--gap` shorthands are removed
   from `theme.ts` and `globals.css`. The race analysis, telemetry, drivers views and the data banner were the last
   readers. The test `web/tests/legacy-tokens.test.ts` fails if any source file reads one again or the theme
@@ -117,7 +117,7 @@ blue and loss is orange: a colourblind-safe pair, never red/green, and always wi
 | `--line-2` | `oklch(54% 0.15 40)` `#b4481e` | `oklch(60% 0.15 295)` `#886acf` |
 | `--line-3` | `oklch(54% 0.15 320)` `#944da4` | `oklch(48% 0.15 15)` `#a02d41` |
 
-**Four line colours, never cycled** (decision 2026-11-19). Four is the largest set that passes the dataviz
+**Four line colours, never cycled.** Four is the largest set that passes the dataviz
 validator on *all* pairs in each theme: a lap-times chart can hold any of the drivers, so any two colours can
 meet. The earlier ten-colour set passed only on adjacent pairs; on all pairs it failed in both themes (two
 greens ΔE 3.9 apart, violet against blue ΔE 2.0 under deuteranopia), and no swap of its three violets
@@ -129,7 +129,7 @@ cleared it.
   - the gap chart is neutral in both the live view and the archive (the highlighted car in the text colour,
     the live call's pair in signal and text);
   - the telemetry overlay is team colours only. A car without one is drawn in neutral **text ink**, never
-    `--line-0` or `--line-1` (fixed in Step 4B). A is solid and B dashed whatever the colours. The legend says
+    `--line-0` or `--line-1`. A is solid and B dashed whatever the colours. The legend says
     "similar colours: tell them apart by the line style" when the two strokes are under ΔE 15 with normal vision
     or under ΔE 8 with protanopia or deuteranopia, in either theme (`strokesClose` in `lib/telemetry.ts`,
     `deltaE` in `lib/theme.ts`). See [the validator run](#palette-validator-dataviz-validate_palettejs).
@@ -138,7 +138,7 @@ cleared it.
 - **OB has no hue.** The OB tag was violet (`--best`). No colour clears, in the dark theme, all of these at
   once: PB blue, the compounds and every 2021–2024 team colour (ΔE 15 normal vision, 6 colour-blind with its
   letters). The best found was ΔE 10.9. The tag is now text ink with a 2px outline and bold letters. PB is now
-  the quiet tag: gain-blue letters, no outline, normal weight (2026-11-19). OB against PB is now ΔE 21.7 normal and 18.0 colour-blind in dark (it was 12.1 and
+  the quiet tag: gain-blue letters, no outline, normal weight. OB against PB is now ΔE 21.7 normal and 18.0 colour-blind in dark (it was 12.1 and
   2.1), and 28.6 and 27.5 in light (it was 14.4 and 0.7). An outlined two-letter tag does not read as a team
   badge, which is a filled swatch with a three-letter code.
 
@@ -187,7 +187,7 @@ Motion conveys state, never decoration.
   capped at 8 rows (a longer move jumps).
 - **The call keeps its height while a replay streams.** A call appearing or disappearing never moves the feed:
   without a call the panel holds the closest pair. It shrinks to one line only when nothing streams (no replay,
-  no lap yet) or after the finish (decision 2026-11-19).
+  no lap yet) or after the finish.
 - **Values never move their neighbours.** The gauge marker, tick and window move by `transform`; changing
   values sit in fixed, left-aligned slots (the status strip's cells, the call's blocks, the alert fields).
   Measured over 20 s of a 10× replay (`web/e2e/race-layout.spec.ts`): no layout-shift entry outside the
@@ -202,15 +202,15 @@ Motion conveys state, never decoration.
 | Component | Rules |
 |---|---|
 | **Theme switch** | Dark / Light / Auto in the top bar: a native radio group named "Theme" (arrow keys), no animation. |
-| **Status strip** | One band under the top bar, always visible on race pages. Mode chip (REPLAY 10×, PAUSED, STOPPED, FINISHED, LIVE, or NOT REPLAYING: nothing streams and the page holds the state an earlier run left in Redis, for example after an API restart; Step 5), SMOKE TEST and SYNTHETIC DEMO DATA stamps when they apply, race, lap n / N, the leader's lap progress ("2 of 20 crossed": running cars that crossed the line on the leader's lap), track status, the scoring model's id, the connection state and the Replay control. Values are separate cells, never a dot-joined string. On a phone (2026-11-19 screenshot review) the race head and the strip wrap onto two lines each and never scroll sideways or cut a value: the head is the race's name and the page links, then the mode and view tabs; the strip is the race state (mode, lap, track) with the Replay button, then the progress, the model id and the connection. Some labels take a short form on a phone ("Analysis", "Replay", "Connected"; the "Model" key word is visually hidden), and the full text stays the accessible name. The call starts within 200 px while a replay streams (188 px at 390×844 on the full lake). The sample deployment's stamps (SMOKE TEST in the strip, the SYNTHETIC DEMO DATA notice, which wraps rather than being cut) add a line each, so there the budget is 240 px (user decision 2026-11-19). After a stop or the finish the strip's "Open the post-race archive" button takes a third line (220 px). |
-| **The call** | The one loud element. Four states. **Call:** the current best pair: attacker → defender with team swatches, the calibrated probability labelled "model estimate" with the model id, the gauge ("gap now"), the tyres, the rule line ("gap at decision (lap N)" from this page's alert, or "not received" after a late join) and the rule checks, plus "Simulate this pair" (the only solid signal button). The defender is the one the attacker's latest alert names; when that car is no longer directly ahead, the call keeps it (never relabelled), says "flagged at lap N against D; order changed since" in place of the rule checks (the car directly ahead now is in the accessible text, so the line keeps the checks' length), shows the alert's probability, mutes the gauge at the decision gap ("gap at decision (lap N)", no trend) and does not present the rule checks as passing (Step 5). **No call while a replay streams:** the panel keeps its height and shows the closest pair, why it is not a call ("gap 4.1 s, outside the 3.5 s rule window"), its gauge in a muted style, "N cars flagged, none qualifies" when the only flags belong to cars with no timing, and a neutral "Simulate closest pair". **Idle or before lap 1:** one line. **Stored state (NOT REPLAYING):** one line, "No replay of this race is running. The tower shows the state an earlier run left (lap N); its flags are not a live call.", with no pair, no probability and no model id; the tower's note says the flags were scored by that run's model. **After the finish** (replay finished, `session_end`, or the leader on the last lap): "Race ended at lap N", no pit instruction, no Simulate, "Open the post-race archive". A car with no timing for 2 or more leader laps is never part of the call. |
+| **Status strip** | One band under the top bar, always visible on race pages. Mode chip (REPLAY 10×, PAUSED, STOPPED, FINISHED, LIVE, or NOT REPLAYING: nothing streams and the page holds the state an earlier run left in Redis, for example after an API restart), SMOKE TEST and SYNTHETIC DEMO DATA stamps when they apply, race, lap n / N, the leader's lap progress ("2 of 20 crossed": running cars that crossed the line on the leader's lap), track status, the scoring model's id, the connection state and the Replay control. Values are separate cells, never a dot-joined string. On a phone the race head and the strip wrap onto two lines each and never scroll sideways or cut a value: the head is the race's name and the page links, then the mode and view tabs; the strip is the race state (mode, lap, track) with the Replay button, then the progress, the model id and the connection. Some labels take a short form on a phone ("Analysis", "Replay", "Connected"; the "Model" key word is visually hidden), and the full text stays the accessible name. The call starts within 200 px while a replay streams (188 px at 390×844 on the full lake). The sample deployment's stamps (SMOKE TEST in the strip, the SYNTHETIC DEMO DATA notice, which wraps rather than being cut) add a line each, so there the budget is 240 px. After a stop or the finish the strip's "Open the post-race archive" button takes a third line (220 px). |
+| **The call** | The one loud element. Four states. **Call:** the current best pair: attacker → defender with team swatches, the calibrated probability labelled "model estimate" with the model id, the gauge ("gap now"), the tyres, the rule line ("gap at decision (lap N)" from this page's alert, or "not received" after a late join) and the rule checks, plus "Simulate this pair" (the only solid signal button). The defender is the one the attacker's latest alert names; when that car is no longer directly ahead, the call keeps it (never relabelled), says "flagged at lap N against D; order changed since" in place of the rule checks (the car directly ahead now is in the accessible text, so the line keeps the checks' length), shows the alert's probability, mutes the gauge at the decision gap ("gap at decision (lap N)", no trend) and does not present the rule checks as passing. **No call while a replay streams:** the panel keeps its height and shows the closest pair, why it is not a call ("gap 4.1 s, outside the 3.5 s rule window"), its gauge in a muted style, "N cars flagged, none qualifies" when the only flags belong to cars with no timing, and a neutral "Simulate closest pair". **Idle or before lap 1:** one line. **Stored state (NOT REPLAYING):** one line, "No replay of this race is running. The tower shows the state an earlier run left (lap N); its flags are not a live call.", with no pair, no probability and no model id; the tower's note says the flags were scored by that run's model. **After the finish** (replay finished, `session_end`, or the leader on the last lap): "Race ended at lap N", no pit instruction, no Simulate, "Open the post-race archive". A car with no timing for 2 or more leader laps is never part of the call. |
 | **Gauge** (signature move) | A horizontal bullet scale from 0 s to max(5 s, gap × 1.5): the rule window (0 to 3.5 s) shaded and labelled "rule window 3.5 s", a tick at its edge, the gap now as a signal-coloured marker, and the gap trend as an arrow from the gap now to next lap's gap if the trend holds, in gain blue (closing) or loss orange (opening), with its s/lap value and next lap's gap in text. The pit loss is a different quantity, so it is text in the caption, never on the axis. It is the race's pit loss (one value per race from the engineer API, kept whichever pair the call shows), fetched as soon as the page knows the leader's lap, so a late joiner sees it before the next crossing, at any width. No abbreviation ("G") on the gauge. `role="img"` with a title and a text description; every value is also written out. |
-| **Alert feed** | Directly under the call, in reserved space. Type and strength are distinct: the type is a word in a neutral outline (Attempt 2 px, Opportunity solid, Candidate dotted), the strength a short bar plus the percentage (semibold from 50%). Only an alert from the leader's lap or the one before is in the signal colour, with the word "new"; after the finish no alert is new, so the finished feed has no signal colour (decision 2026-11-19). A pair's counter ("4×") has a title and the accessible text "4 alerts for this pair". Each row carries both cars' compound and tyre age; the meta wraps onto a second line rather than clipping, and a value never breaks from its label. The list ends on a whole row with "N more below". A late joiner sees "No alerts since you opened this page (lap N)" and the pairs flagged now. |
-| **Timing tower** | Every column visible at 1440 px with no cell cut off, Undercut % next to the driver. Below 1440 px the Driver column is a fixed 7.25rem and Pos, pin, Driver and Undercut stay put while the other columns scroll inside the tower (it collapsed to 0 px at 768 and 1100–1366 px before Step 5). Only P1 says "Leader"; another car with a gap of 0 shows "—" ("not measured at this lap"). Only the call's pair is on the signal band, the attacker with a solid left rule and the word "attacker", the defender with a dashed rule and "defender"; other flagged rows keep the flag mark and the percentage in normal weight (semibold from 50%). A car still on the previous lap shows a small muted lap number in its Gap cell ("L9", no box); a lapped car shows "+1 lap" in Gap. A car with no timing for 2 or more leader laps (after allowing for laps down; the stream sends no retirement) keeps its row, in faint text at the bottom, with "no timing since L19" across Int and Gap and its flag faint. PB / OB tags start on lap 2. Header help lives in one key, not one "?" per header. |
+| **Alert feed** | Directly under the call, in reserved space. Type and strength are distinct: the type is a word in a neutral outline (Attempt 2 px, Opportunity solid, Candidate dotted), the strength a short bar plus the percentage (semibold from 50%). Only an alert from the leader's lap or the one before is in the signal colour, with the word "new"; after the finish no alert is new, so the finished feed has no signal colour. A pair's counter ("4×") has a title and the accessible text "4 alerts for this pair". Each row carries both cars' compound and tyre age; the meta wraps onto a second line rather than clipping, and a value never breaks from its label. The list ends on a whole row with "N more below". A late joiner sees "No alerts since you opened this page (lap N)" and the pairs flagged now. |
+| **Timing tower** | Every column visible at 1440 px with no cell cut off, Undercut % next to the driver. Below 1440 px the Driver column is a fixed 7.25rem and Pos, pin, Driver and Undercut stay put while the other columns scroll inside the tower (an earlier layout collapsed it to 0 px at 768 and 1100–1366 px). Only P1 says "Leader"; another car with a gap of 0 shows "—" ("not measured at this lap"). Only the call's pair is on the signal band, the attacker with a solid left rule and the word "attacker", the defender with a dashed rule and "defender"; other flagged rows keep the flag mark and the percentage in normal weight (semibold from 50%). A car still on the previous lap shows a small muted lap number in its Gap cell ("L9", no box); a lapped car shows "+1 lap" in Gap. A car with no timing for 2 or more leader laps (after allowing for laps down; the stream sends no retirement) keeps its row, in faint text at the bottom, with "no timing since L19" across Int and Gap and its flag faint. PB / OB tags start on lap 2. Header help lives in one key, not one "?" per header. |
 | **What-if** | Results are a modelled comparison of pit now / pit next lap / stay out from the same state: "share of sim runs ahead", the expected gap and its 80% range as a bar. A one-line caveat sits next to the numbers and the full explanation is behind "How to read this". The attacker is preselected from the call (it follows the call until the viewer picks) but nothing runs until Run; before a run there is no table, only a one-line state, and the panel's height follows its content (one status line reserved, no empty error line). The defender is the car directly ahead; a teammate pair is named before the run. |
 | **Gap chart** | Highlight starts on "The call (A → D)" and follows the call until the viewer picks another car or None. End-of-line labels for the highlighted cars and the top 5 running cars, placed so they never overlap; every other line is thin, grey and unlabelled. The first lap sits clear of the y-axis labels, and lap labels thin out on a narrow chart. Before the page has received a lap frame (a late join holds only the snapshot) the live chart is one line, "First lap arrives at the next crossing.", not an empty 0–1 s axis. |
 
-## Components of the engineer view, the post-race archive and the race picker (Step 4A)
+## Components of the engineer view, the post-race archive and the race picker
 
 All three are Operate screens. Each has at most one loud element: the archive's alerts at the scrubbed lap. The
 engineer and the picker have none.
@@ -223,36 +223,36 @@ engineer and the picker have none.
 | **Rejoin bar** | A seconds axis behind the focus, from −5 s to pit loss + 10 s:<ul><li>every car is a 2 px tick (dashed and muted when projected);</li><li>car codes sit in label lanes above the axis (`rejoinLanes`; 3 lanes are reserved) with a leader line, and never overlap;</li><li>0 s ("now") is a dashed tick, and the scale ends are written out;</li><li>the rejoin slot is a double tick on the axis plus an authored SVG triangle and the word "rejoin" in its own row (no `▼` glyph; the Latin subset lacks it).</li></ul>The bar is `aria-hidden`; the sentence carries it. Nothing animates. |
 | **Strategy calls** | Rows with hairline dividers. The kind is a chip that differs by word and outline: Watch is 2 px solid and bold; Info is 1 px dotted and muted. Never a side bar. Only new calls are announced. |
 | **Archive head and strip** | The live head's order: crumbs, h1, the Live / Post-race tabs, then Race analysis and Drivers. It is rendered once above the loading and loaded states, so keyboard focus stays on the tab. A skip link leads to the lap controls. The strip reuses the live strip's cells:<ul><li>the POST-RACE chip (double border);</li><li>Lap n/N;</li><li>Track as a code chip whose border style is the status (solid SC, dashed VSC, dotted neutralised, double red flag), the same as live;</li><li>Model, with the scorer as detail;</li><li>on its own line, as visible text: the latest key race-control message, its lap and the status source.</li></ul>It has no live region (scrubbing never speaks). The archive has no side-bar banner. |
-| **Archive transport** | A native range slider with `accent-color: var(--text)`, ±1 lap, Play/Pause and the 1×/10×/60× radios. The Flags, Pits and Alerts lanes hold 24 px markers in one toolbar (one tab stop; arrows, Home and End). Kinds differ by letter and border style: SC 2 px solid, VSC dashed, red double, neutralised dotted, alert 2 px text ink. SC and VSC are text ink, like every marker and list (only the status strip's track chip keeps the loss colour; Step 5). None is amber. Each marker's accessible name starts with its visible code ("SC, lap 22: …"), and the ±1 lap buttons' names start with their text. The tracks are inset 12 px, so a marker at the first or last lap stays inside its lane. |
+| **Archive transport** | A native range slider with `accent-color: var(--text)`, ±1 lap, Play/Pause and the 1×/10×/60× radios. The Flags, Pits and Alerts lanes hold 24 px markers in one toolbar (one tab stop; arrows, Home and End). Kinds differ by letter and border style: SC 2 px solid, VSC dashed, red double, neutralised dotted, alert 2 px text ink. SC and VSC are text ink, like every marker and list (only the status strip's track chip keeps the loss colour). None is amber. Each marker's accessible name starts with its visible code ("SC, lap 22: …"), and the ±1 lap buttons' names start with their text. The tracks are inset 12 px, so a marker at the first or last lap stays inside its lane. |
 | **Archive layout** | The transport spans the page. Below it, the tower (left) and a side column (right) as tall as the tower block: the alert feed with both cars' tyres, then race control (key rows have semibold text and a "Key" chip). The gap chart and the key come last. One column at 1080 px and below. No Tyres panel: the tower and the alert rows carry the tyres. |
 | **Race picker** | A "Start here" card above the search: the race replaying now, else the `make demo` race (2024 R5), else the newest race. It shows name, season, round and laps, why it is offered, "Open the race" (a 2 px text-ink outline) and, when a bundle exists, "Open the post-race archive". It is neutral (a 2 px text-ink top rule) and reserves its height while loading. Below are the search and the season lists of race cards (R## and laps in Plex Mono, a "synthetic tyres" tag). Arrow keys, Home and End move within the list. Hover and focus change the border instantly (no transition: arrow keys move focus). |
 
-## Components of the race analysis, telemetry and drivers views (Step 4B)
+## Components of the race analysis, telemetry and drivers views
 
 These are Operate screens with no loud element. The amber stays with the live call: the analysis tab bar, "Show
 table", the hover readouts and the drivers table never use it.
 
 | Component | Rules |
 |---|---|
-| **Race sub-head** | `RaceSubHead` is shared by `/analysis` and `/drivers`. It follows the live head's order: crumbs ("All races"), h1 (season, name, R#), then the race's views ("Live race", "Race analysis", "Drivers"). The current page has `aria-current` and a 2 px text-ink underline. On a phone the views take short labels, and the head wraps like the archive's (critique F08). |
+| **Race sub-head** | `RaceSubHead` is shared by `/analysis` and `/drivers`. It follows the live head's order: crumbs ("All races"), h1 (season, name, R#), then the race's views ("Live race", "Race analysis", "Drivers"). The current page has `aria-current` and a 2 px text-ink underline. On a phone the views take short labels, and the head wraps like the archive's. |
 | **Analysis tabs** | WAI-ARIA tabs (arrows, Home, End). Muted `--fs-sm` text; the selected tab is text ink with a 2 px text-ink underline (a shape). The bar **wraps** on a narrow screen, so all 8 tabs are visible at 390 px and none scrolls out of view. |
 | **Coverage notes** | Neutral text. A SYNTHETIC note leads with the dashed honesty stamp, never a colour alone; the same goes for the synthetic note inside strategy and degradation. |
 | **Every chart** | Each chart has, in this order: a visible text summary, the legend (two or more series), the plot with `<title>` and `<desc>`, then "Show table" (a neutral disclosure with a chevron and the table's caption as hidden text). Lap ticks are whole laps; a lap-time axis drops a zero fraction ("1:52"). Series names are text ink, and colour appears only on the line key next to the name. SVG text is 11 px or larger. |
 | **Hover readout** | `ChartHover` is transparent over the plot and snaps to the nearest mark. The mark is a 1 px text-ink hairline (a lap) or a 2 px text-ink box (a stint, a quick lap). The tooltip lists every series at that mark, value first (Plex Mono) and name after (muted). It flips to the side with more room and is placed by `transform`, with no animation. The same readout comes from the keyboard: the layer is a slider (arrows one mark, Page Up and Page Down ten, Home, End) with the readout as `aria-valuetext`. Tooltips never gate: every value is also in the table. |
 | **Lap times** | The four line colours (2 px), then neutral `--grid` (1.5 px) with a dash, never cycled. End labels are spread so they never overlap and carry a short key. Summary: best lap and median racing lap per driver (`lapTimesSummary`). |
 | **Tyre degradation** | It stays labelled "(lap-time proxy)" and "A lap-time proxy, not tyre wear". The fit lines are text ink with a dash per stint. Their legend is the stint list (line key, compound, slope); there are no end labels, so nothing can overlap or run off a narrow chart. |
-| **Positions** | Team colours only (a car without one is `--grid`). The second teammate is dashed, and end labels carry a team-colour key. Full-name labels need a chart at least 560 px wide; below that the radio is disabled and says why. Summary: the winner and start slot, the biggest gain and loss, and the cars that stopped early (`positionsSummary`). The Highlight starts on the drivers the summary names ("The summary's 3 (VER, HAM, STR)", `positionsKeyDrivers`); the others are thin (1.25 px) and grey, drawn under them. "None" and any single driver stay selectable (Step 5). |
+| **Positions** | Team colours only (a car without one is `--grid`). The second teammate is dashed, and end labels carry a team-colour key. Full-name labels need a chart at least 560 px wide; below that the radio is disabled and says why. Summary: the winner and start slot, the biggest gain and loss, and the cars that stopped early (`positionsSummary`). The Highlight starts on the drivers the summary names ("The summary's 3 (VER, HAM, STR)", `positionsKeyDrivers`); the others are thin (1.25 px) and grey, drawn under them. "None" and any single driver stay selectable. |
 | **Compare** | Delta bars are gain blue below the line (A faster) and loss orange above (A slower); pit and SC/VSC laps are hollow. The side carries the meaning, colour repeats it, and a legend names all three. The gap line is `--line-0`. Both charts have a `<desc>`. Table heads read "Delta" (the font subset has no "Δ"). |
 | **Pit stops** | A summary sentence (`pitStopsSummary`). "from → to" uses the authored `PairArrow`, read as "to". |
-| **Race control** | The kind is a code chip whose border style is the track status, as in the status strip: SC solid 2 px, VSC dashed (both in text ink; Step 5), red flag double `--danger`, penalty 2 px bold, others dotted and muted. Sentence case, untracked. Key rows have semibold text and a "Key" chip, with no side bar (F35). |
+| **Race control** | The kind is a code chip whose border style is the track status, as in the status strip: SC solid 2 px, VSC dashed (both in text ink), red flag double `--danger`, penalty 2 px bold, others dotted and muted. Sentence case, untracked. Key rows have semibold text and a "Key" chip, with no side bar. |
 | **Telemetry** | Team colours, with neutral text ink for a car without one (see [Colour](#colour)). A is solid and B dashed. Picks, legend and readout use tokens only. |
-| **Drivers** | One panel: h2, count, a note, then the table (badge swatch, code, name, nationality code, team, car number). Team colour appears only as the badge swatch. The table is capped at 56rem, so a wide screen leaves no gap between the name and the nationality (Step 5). At 390 px the table fits with no sideways scroll: the name drops under the code, the team wraps, and none of the tower's sticky phone columns apply. |
+| **Drivers** | One panel: h2, count, a note, then the table (badge swatch, code, name, nationality code, team, car number). Team colour appears only as the badge swatch. The table is capped at 56rem, so a wide screen leaves no gap between the name and the nationality. At 390 px the table fits with no sideways scroll: the name drops under the code, the team wraps, and none of the tower's sticky phone columns apply. |
 | **Pipeline panel, "How to read this", footer** | Restyled on tokens only; their markup and their place on the race page are unchanged. The disclosures share the chevron and the 24 px summary target, reading text is capped at 72ch, and counters are Plex Mono. The footer is the disclaimer under a `--rule` hairline. |
 
 ## Honesty rules
 
 1. **Calibrated probabilities are labelled as model estimates, with the model id** (`model_version`, feature
-   set, G, k from `/api/health`). There is no base-rate line (Step 5, user decision 2026-11-19): 2025 is the sealed
+   set, G, k from `/api/health`). There is no base-rate line: 2025 is the sealed
    test season, and the health check does not serve the training seasons' base rate. A probability is shown only for
    the pair it was computed for: after the order changes the call keeps the alert's defender ("flagged at lap N
    against D; order changed since"), and a stored state from an earlier run is never shown as a call.
@@ -261,12 +261,12 @@ table", the hover readouts and the drivers table never use it.
    numbers are.
 3. **SMOKE TEST and the replay state are always visible.** The status strip shows the replay mode and speed on
    every race page; when the sample deployment model (`sample_` prefix) is scoring, a SMOKE TEST stamp shows
-   in the strip and in the call, and in the post-race archive's strip when the bundle was scored by it (Step 5).
+   in the strip and in the call, and in the post-race archive's strip when the bundle was scored by it.
    SYNTHETIC DEMO DATA shows whenever the lake is the sample.
 4. **Decision-time truth.** Nothing in the live view uses a lap the stream has not reached. History the page
    did not receive is never back-filled from full-race data. The gap chart says "History from when you opened
    the page (from lap N)", and the window's laps before that keep their place on the axis as a hatched band
-   labelled "Before you opened the page, not received" (critique F24, decision 2026-11-19).
+   labelled "Before you opened the page, not received".
 5. **Every empty or missing value says why** ("not a candidate: teammates", "gap above 3.5 s", "no alerts
    since you opened this page").
 6. **No F1 marks:** no Formula 1 or team logos, no official F1 typeface, no photographs of people. Team colours
@@ -295,9 +295,9 @@ banded row) and `gain`/`loss` marks on `signal-wash` (the gauge's trend arrow ov
 
 ### impeccable detect
 
-`impeccable detect --json web/src/app web/src/components` reports **0 findings and no suppressions** (Step 4B,
-2026-11-19, re-run after the race analysis, telemetry, drivers and shared-part changes; Step 4A had the same
-result). No colour token was added in Step 4A or 4B, so the contrast table below is unchanged: 92 of 92 pairs pass
+`impeccable detect --json web/src/app web/src/components` reports **0 findings and no suppressions** (2026-11-19,
+re-run after the race analysis, telemetry, drivers and shared-part changes; the earlier run on the engineer view,
+archive and picker had the same result). No colour token was added for these screens, so the contrast table below is unchanged: 92 of 92 pairs pass
 in each theme.
 
 ### Palette validator (dataviz `validate_palette.js`)
@@ -328,7 +328,7 @@ Run against our own surfaces (`--surface` = `--surface` of each theme).
   - **After:** OB carries no hue. The one remaining violet line appears only in the lap-times chart, where no
     team colour is shown, so no violet shares a view with a team colour.
 
-- **Telemetry neutral against team colours** (Step 4B). The neutral stroke of a car without a team colour was
+- **Telemetry neutral against team colours.** The neutral stroke of a car without a team colour was
   checked against the same 35 team colours. Each pair was run as `validate_palette.js "<ink>,<team>" --mode <m>
   --surface <surface> --pairs all` in both themes (70 runs).
   - **Text ink** (`#ebedf0` dark, `#171b20` light): 68 of 70 pass both checks.

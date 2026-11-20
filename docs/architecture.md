@@ -1,7 +1,7 @@
 # Architecture
 
-How the pipeline is built, layer by layer. Each section was written by the step that built that layer (see
-[traceability.md](traceability.md) for the commitment of each file). To run it, see the [README](../README.md) and
+How the pipeline is built, layer by layer (see
+[traceability.md](traceability.md) for the proposal requirement each file serves). To run it, see the [README](../README.md) and
 [reproduce.md](reproduce.md). All documents: [docs/README.md](README.md).
 
 ```mermaid
@@ -39,7 +39,7 @@ lap. The project uses that question to exercise the whole big-data stack:
 | Ingestion (rate-limited, cached, resumable) | `src/f1sa/ingest/` | [Ingestion](#ingestion-srcf1saingest) |
 | Lake, clean zone, Spark ETL and features | `src/f1sa/{lake,etl,features}/` | this page, [data_dictionary.md](data_dictionary.md) |
 | Undercut label and model | `src/f1sa/model/` | [label_definition.md](label_definition.md), [model_spec.md](model_spec.md), [model_spec_v2.md](model_spec_v2.md) |
-| Kafka + Structured Streaming | `src/f1sa/streaming/` | [Streaming](#streaming-streaming-step-12) |
+| Kafka + Structured Streaming | `src/f1sa/streaming/` | [Streaming](#streaming-streaming) |
 | Redis serving contract | `src/f1sa/serving/` | 9-field hash, order zset, events channel, TTL (tested in `tests/unit/test_keys.py`) |
 | API and dashboard | `src/f1sa/api/`, `web/` | FastAPI docs at `/api/docs` |
 | What-if simulator | `src/f1sa/sim/` | [sim_spec.md](sim_spec.md) (pre-registered) |
@@ -57,9 +57,9 @@ lap. The project uses that question to exercise the whole big-data stack:
 | `serving` | Redis key contract and store (TTL on session end) |
 | `sim` | What-if race simulation (pit now / pit next lap / stay out) |
 | `api` | FastAPI routes and the SSE stream for the dashboard |
-| `archive` | Post-race replay bundles built with the frozen stream path, and the proof that they equal a live replay (Feature 4, display only) |
-| `bench` | Step 10 Spark benchmarks: replication, timing, resource sampling, scalability grid, partitioning/caching (docs/experiments.md); Step 16 streaming runs and `make experiments` |
-| top level | `config.py` (the only source of paths and endpoints), `demo_runs.py` (demo output folders), `demo_replay.py` (`make demo`'s headless replay check, Step 17) |
+| `archive` | Post-race replay bundles built with the frozen stream path, and the proof that they equal a live replay (display only) |
+| `bench` | Spark benchmarks: replication, timing, resource sampling, scalability grid, partitioning/caching (docs/experiments.md); the streaming latency runs and `make experiments` |
+| top level | `config.py` (the only source of paths and endpoints), `demo_runs.py` (demo output folders), `demo_replay.py` (`make demo`'s headless replay check) |
 
 ## Rules
 - Storage root comes **only** from `f1sa.config.Settings.data_lake_uri`. No other module hardcodes paths or endpoints.
@@ -75,8 +75,8 @@ Defined in `docker-compose.yml`, project name `f1sa`. `make up` starts `core`; `
 | core | kafka-init (one-shot: creates `f1.race.events`, 3 partitions) | `apache/kafka:4.3.2` | n/a | n/a |
 | core | redis (no persistence, `maxmemory 256mb`, `volatile-ttl`) | `redis:8.10.3` | 6379 | `redis:6379` |
 | core | app (Python 3.12 + locked deps + Spark Kafka connector) | `f1sa-app:dev` (from `docker/spark/Dockerfile`) | n/a | n/a |
-| core | api (FastAPI, `python -m f1sa.api`, Step 13) | `f1sa-app:dev` | 127.0.0.1:8000 only (`API_HOST_PORT`) | `api:8000` |
-| core | web (Next.js dashboard, Step 14; non-root, read-only root fs) | `f1sa-web:dev` (from `docker/web/Dockerfile`) | 127.0.0.1:3000 only (`WEB_HOST_PORT`) | `web:3000` |
+| core | api (FastAPI, `python -m f1sa.api`) | `f1sa-app:dev` | 127.0.0.1:8000 only (`API_HOST_PORT`) | `api:8000` |
+| core | web (Next.js dashboard; non-root, read-only root fs) | `f1sa-web:dev` (from `docker/web/Dockerfile`) | 127.0.0.1:3000 only (`WEB_HOST_PORT`) | `web:3000` |
 | hdfs | namenode | `f1sa-hadoop:3.4.3` (from `apache/hadoop:3.4.3`) | 9870 (web UI) | `hdfs://namenode:8020` |
 | hdfs | datanode | `f1sa-hadoop:3.4.3` | n/a | `datanode:9864` |
 | hdfs | httpfs (HDFS REST gateway that proxies bytes, used by the HDFS sink) | `f1sa-hadoop:3.4.3` | 14000 | `http://httpfs:14000/webhdfs/v1` |
@@ -86,19 +86,19 @@ Defined in `docker-compose.yml`, project name `f1sa`. `make up` starts `core`; `
 - The web app publishes 3000 and the API 8000, both on the host's 127.0.0.1 only. Every host port can be overridden in `.env` (see `.env.example`). If you change `KAFKA_HOST_PORT` or `REDIS_HOST_PORT`, update `KAFKA_BOOTSTRAP` and `REDIS_URL` to match.
 - The app image installs `spark-sql-kafka-0-10_2.13:4.2.1` (plus `kafka-clients`, `spark-token-provider-kafka` and `commons-pool2`) into `$SPARK_HOME/jars` at build time, so Structured Streaming needs no network at runtime. Inside containers, Kafka is `kafka:29092`. From the host, it is `localhost:9092`.
 - HDFS is a single-node dev setup: `dfs.replication=1` and permissions disabled (`docker/hadoop/`). The NameNode is formatted on first start only.
-- The app container mounts the repo read-only at `/workspace`, with `data/`, `results/` and `models/` (Step 9c) mounted read-write over it.
-- Images are tagged `${F1SA_IMAGE_TAG:-dev}` (Step 17), so a second checkout can build its own images (`F1SA_IMAGE_TAG=clone`, with `COMPOSE_PROJECT_NAME` for separate containers and volumes). Without a project `.env`, the Makefile exports `APP_UID=$(id -u)` so the container user can write the bind mounts on any host (CI runners use UID 1001). With a `.env`, its `APP_UID` is used.
+- The app container mounts the repo read-only at `/workspace`, with `data/`, `results/` and `models/` mounted read-write over it.
+- Images are tagged `${F1SA_IMAGE_TAG:-dev}`, so a second checkout can build its own images (`F1SA_IMAGE_TAG=clone`, with `COMPOSE_PROJECT_NAME` for separate containers and volumes). Without a project `.env`, the Makefile exports `APP_UID=$(id -u)` so the container user can write the bind mounts on any host (CI runners use UID 1001). With a `.env`, its `APP_UID` is used.
 - The api container mounts the repo and `data/` read-only, with `data/demo` and `data/checkpoints` read-write on top (a replay's outputs and stream-job state), `results/` read-write (`ui_latency.csv`) and `models/` read-only. `make up`, `up-full` and `api-up` create the host folders of the bind mounts first (`data/demo`, `data/checkpoints`, `models/undercut`, `models/sim`), because Docker would otherwise create them owned by root (a fresh clone has no `models/`). A write anywhere else under `/workspace/data` fails with EROFS (checked: `manifest.json`).
 
 ### Memory budget
-The Docker Desktop WSL 2 VM is capped by `memory=` in the Windows file `%UserProfile%\.wslconfig`. On the dev machine the VM now has 14 GB and 12 CPUs (`free -g`, `nproc`; it had about 9 GiB and 6 CPUs before Step 10). Each container has a hard `mem_limit`:
+The Docker Desktop WSL 2 VM is capped by `memory=` in the Windows file `%UserProfile%\.wslconfig`. On the dev machine the VM now has 14 GB and 12 CPUs (`free -g`, `nproc`; it had about 9 GiB and 6 CPUs before the Spark benchmarks). Each container has a hard `mem_limit`:
 
 | Container | Limit | Notes |
 |---|---|---|
 | kafka | 768 MiB | JVM heap 512 MiB |
 | kafka-init | 512 MiB | exits after creating the topic |
 | redis | 384 MiB | dataset capped at 256 MiB (`maxmemory`) |
-| app | 6 GiB | driver for local Spark jobs; Step 10 benchmark cells run a 2g driver heap (`local[N]`) plus PySpark Python workers: 3.1-3.6 GiB measured at 1 season x1/x4, which hit the 90 % guard of the earlier 4 GiB limit |
+| app | 6 GiB | driver for local Spark jobs; Spark benchmark cells run a 2g driver heap (`local[N]`) plus PySpark Python workers: 3.1-3.6 GiB measured at 1 season x1/x4, which hit the 90 % guard of the earlier 4 GiB limit |
 | api | 2 GiB | uvicorn (≈ 100 MiB) + one replay: stream job JVM + producer JVM (measured peaks 1.33 and 1.49 GiB) |
 | web | 512 MiB | Next.js standalone server (`node server.js`) |
 | namenode | 768 MiB | heap ≤ 512 MiB |
@@ -106,7 +106,7 @@ The Docker Desktop WSL 2 VM is capped by `memory=` in the Windows file `%UserPro
 | httpfs | 384 MiB | heap ≤ 256 MiB |
 | spark-master | 512 MiB | daemon heap 256 MiB |
 | spark-worker-1, -2 | 1.5 GiB each | `SPARK_WORKER_MEMORY=1g` for executors + 256 MiB daemon |
-| **core total** | **≈ 9.6 GiB** | ≈ 2.6 GiB before the api (Step 13) and web (Step 14) services; app 1.5 → 4 → 6 GiB in Step 10 |
+| **core total** | **≈ 9.6 GiB** | ≈ 2.6 GiB before the api and web services; app 1.5 → 4 → 6 GiB for the Spark benchmarks |
 | **full total** | **≈ 15 GiB** (limits) | above the 14 GB WSL VM (12 CPUs) as ceilings; measured idle use is ≈ 1.6 GiB (before httpfs and api). **During the overnight `make experiments-spark` run, api (2 GiB) and web (0.5 GiB) are stopped (`docker compose stop api web`), leaving ≈ 12.5 GiB of limits**; start them again afterwards (`docker compose start api web`) |
 
 These are ceilings, not reservations. If the full profile runs into memory pressure, lower `SPARK_WORKER_MEMORY` and `SPARK_WORKER_CONTAINER_MEM` in `.env`, or raise `memory=` in `.wslconfig` and run `wsl --shutdown`.
@@ -134,7 +134,7 @@ raw/fastf1/position/season=S/round=R/driver=VER/position.parquet
 - Jolpica files are the JSON pages exactly as received (`[page, page, ...]`). The `parse_*` functions in
   `jolpica_client.py` turn them into typed DataFrames.
 - Every partition has a `_manifest.json` with the files, rows, sha256, source URL, licence and `is_synthetic=false`.
-- Each table is its own partitioned dataset, so Spark (S5/S6) can read `raw/<source>/<table>/` directly.
+- Each table is its own partitioned dataset, so the Spark clean and feature jobs can read `raw/<source>/<table>/` directly.
 
 ### Sinks (`ingest/sinks.py`)
 Both sinks have the same interface (`write_bytes/json/parquet`, `write_manifest`, `exists`, `cleanup_temp`) and the
@@ -189,7 +189,7 @@ same guarantees:
   - **Per hour:** a sliding-window log gives at most `JOLPICA_MAX_PER_HOUR` (default 450) in *any* rolling hour. It is
     persisted to `JOLPICA_CACHE_DIR/requests.log`, so resumed and back-to-back runs share one hourly budget.
   - Why not plain token buckets: a bucket of capacity C refilled at R admits C + R·T requests in a window T. The
-    Step 3 buckets (4 + 4/s and 450 + 450/h) allowed 8 requests in one second and about 900 in the first hour. The
+    first token buckets (4 + 4/s and 450 + 450/h) allowed 8 requests in one second and about 900 in the first hour. The
     real 2021 run hit 63 HTTP 429s from the per-second case before this was fixed.
   - A 429 without `Retry-After` backs off 5, 10, 20, 40 s (capped at 60 s). 5xx and connection errors back off from
     1 s. `Retry-After` is honoured when sent.
@@ -213,7 +213,7 @@ same guarantees:
 - Races are loaded and written one at a time, one driver partition after another. The session is dropped and
   `gc.collect()` runs before the next race, so at most one race is in memory.
 
-## TracingInsights source (`ingest/tracinginsights_*.py`, `etl/clean_tracinginsights.py`, Step 4C)
+## TracingInsights source (`ingest/tracinginsights_*.py`, `etl/clean_tracinginsights.py`)
 FastF1 needs an F1 TV login since Oct 2026, so tyres, race control, exact track status and telemetry come from the
 TracingInsights season repositories (audit: `docs/data_source_audit.md`). FastF1 stays as an optional path.
 
@@ -252,7 +252,7 @@ was under-replicated, while HttpFS (which reads `hdfs-site.xml`, replication 1) 
 `HdfsSink` sends `replication` on CREATE explicitly. Existing files keep their factor until
 `hdfs dfs -setrep -R 1 /f1` is run, which changes metadata only and leaves contents and checksums alone.
 
-## Sample mode (`data/sample/`, Step 4B)
+## Sample mode (`data/sample/`)
 - `make sample-data` validates the bundle **offline**, or builds it if it is missing (`REBUILD=1` to force).
 - The bundle is a mini raw lake with the raw-zone layout: real Jolpica pages for 2023 R5 and 2024 R5 plus
   **SYNTHETIC** `raw/synthetic/{tyre_stints,lap_telemetry}` (`is_synthetic=true`, seeded, deterministic). It contains
@@ -265,7 +265,7 @@ was under-replicated, while HttpFS (which reads `hdfs-site.xml`, replication 1) 
 - Consumers read the bundle read-only and write elsewhere. For example, the clean job's `--source sample` writes to
   `{DATA_LAKE_URI}/clean`, so derived output never lands in the tracked `data/sample/`.
 
-## Clean zone (`etl/clean.py`, `lake/schemas.py`, `lake/quality.py`, Step 5)
+## Clean zone (`etl/clean.py`, `lake/schemas.py`, `lake/quality.py`)
 ```
 raw (Jolpica JSON pages, FastF1 Parquet, synthetic Parquet)
   --Spark: explicit schemas, explode, normalise ids, times -> seconds, gaps, track flags-->
@@ -296,9 +296,11 @@ clean/{races,drivers,constructors,results,qualifying,laps,pitstops,stints,teleme
     ```
     `PYTHONPATH` points at the mounted repo (`/workspace`, read-only), so the current code runs without rebuilding
     the image. Spark runs `local[2]` inside the 1.5 GiB app limit. `--master spark://spark-master:7077` switches to
-    the standalone cluster (planned for S10). *Not verified yet: waiting for the bulk HDFS ingest to finish.*
+    the standalone cluster (for the Spark benchmarks). *Verified on the full data: the bulk HDFS ingest finished,
+    and this run (`make etl-full`) cleaned all 114 races of 2021–2025 with the quality checks passing (no hard-check
+    failure; `results/full_data_quality.json`).*
 
-## Feature jobs (`etl/rdd_jobs.py`, `etl/df_jobs.py`, `etl/sql/*.sql`, `etl/sql_jobs.py`, `features/`, Step 6)
+## Feature jobs (`etl/rdd_jobs.py`, `etl/df_jobs.py`, `etl/sql/*.sql`, `etl/sql_jobs.py`, `features/`)
 ```
 clean/{races,drivers,constructors,results,laps,pitstops,stints}   (one directory per table; _quality/ is never read)
   --RDD / DataFrame / Spark SQL-->
@@ -360,7 +362,7 @@ begins. Lights out is usually about 2.5 to 4 minutes later, so 180 s is a fixed 
   timestamps are null in that case, as they are when the cumulative time is unknown.
 - **Precision:** inherited from the 1 ms lap times. Errors from missing laps add up, which is why the cumulative time
   is null after a missing lap.
-- **Intended use:** ordering and replay pacing (S12). They are not wall-clock truth. FastF1's `LapStartTime` is exact
+- **Intended use:** ordering and replay pacing (streaming). They are not wall-clock truth. FastF1's `LapStartTime` is exact
   when it is available.
 
 ### Leakage-safe history (pit loss, team out-lap delta)
@@ -400,13 +402,13 @@ begins. Lights out is usually about 2.5 to 4 minutes later, so 180 s is a fixed 
 - Tests: a 4-race fixture with known medians. The data of the target race and every later race is scaled ×100, and
   the target's history is asserted unchanged.
 
-### Time semantics for the model (S8)
+### Time semantics for the model
 A feature row for lap L describes the state **at the end of lap L**. The undercut model must use the information
 available at the end of lap L − 1, so it joins the lap L − 1 row (gaps, tyre age, laps remaining). Pit-loss and
 out-lap history rows are known before the race starts. `race_summary` and `lap_time_distribution` describe the whole
 race, so they are reporting tables and must never be joined as features of the same race.
 
-## Telemetry, out-lap pace and team lineage (`features/telemetry_agg.py`, `outlap.py`, `lineage.py`, Step 7)
+## Telemetry, out-lap pace and team lineage (`features/telemetry_agg.py`, `outlap.py`, `lineage.py`)
 - **Telemetry is batch only.** `telemetry_agg` is a DataFrame `groupBy(season, round, driver_id, lap)` job.
   - There is one definition, at full throttle ≥ 98%. The clean zone's FastF1 path calls it too, so the clean and
     feature tables cannot disagree.
@@ -420,7 +422,7 @@ race, so they are reporting tables and must never be joined as features of the s
   - `expected_outlap_delta_s` is the decision-time feature: the mean over strictly earlier races, computed with
     `rangeBetween(unboundedPreceding, -1)` on `race_seq`.
   - Fallback order: driver+team → team → circuit → global → null, with a flag column.
-  - Like Step 6, history is computed over all clean races and then filtered to the targets.
+  - Like the feature jobs, history is computed over all clean races and then filtered to the targets.
 - **Lineage:** `features/lineage.py` holds `LINEAGE` (alphatauri → rb, alfa → sauber) and `STABLE_CONSTRUCTORS`.
   - Team history (the SQL `team_outlap_history` through a `constructor_lineage` view, and `outlap_features` through
     `with_history_key`) is keyed by the lineage key.
@@ -428,7 +430,7 @@ race, so they are reporting tables and must never be joined as features of the s
     team's history.
   - The list is verified on the sample only. It is to be checked against the full 2021–2025 data.
 
-## Undercut attempts and the real-time detector (`features/undercut_rule.py`, `undercut.py`, `streaming/detector.py`, Step 8)
+## Undercut attempts and the real-time detector (`features/undercut_rule.py`, `undercut.py`, `streaming/detector.py`)
 - **One rule, two callers.** `features/undercut_rule.py` is pure Python, with no Spark, pandas or py4j import (a
   subprocess test enforces this). `candidate_pairs(LapSnapshot, RuleParams)` returns every candidate pair at the end of
   a lap, with the reasons it fails:
@@ -449,7 +451,7 @@ race, so they are reporting tables and must never be joined as features of the s
 - **Out-lap plan size.** `outlap_features` reuses the realised out-lap table four times. A `localCheckpoint()` cuts
   its lineage; without it the optimised plan grew to about 13 MB and the test JVM ran out of heap.
 
-## Undercut model (`model/`, `experiments/model_eval.py`, Step 9)
+## Undercut model (`model/`, `experiments/model_eval.py`)
 ```
 undercut_attempts + stints + telemetry_lap_features --dataset.load_attempts--> one (G, k), labelled rows
   --build_dataset--> train 2021-23 | validation 2024 | SealedSplit(test 2025)
@@ -477,7 +479,7 @@ undercut_attempts + stints + telemetry_lap_features --dataset.load_attempts--> o
   `models/undercut/{source}_{feature_set}_G{g}_k{k}/{lr,gbt}` (gitignored) with `metadata.json`: features, versions,
   seed, split counts, class weights, the grid and calibrators.
 
-### Deployment model (`model/deploy.py`, `model/lr_scorer.py`, `experiments/model_save.py`, Step 9c)
+### Deployment model (`model/deploy.py`, `model/lr_scorer.py`, `experiments/model_save.py`)
 - `make model-save-full` runs the frozen specification (`docs/model_spec.md`) once, in the app container, on the
   primary setting G=3.5, k=2. It reuses the development path unchanged: `pipeline.load_frame` in no-test mode
   (only the `season=2021..2024` partitions are listed and read), `DEV_SPLIT`, `train.tune` with the frozen grids
@@ -508,17 +510,17 @@ undercut_attempts + stints + telemetry_lap_features --dataset.load_attempts--> o
   - one-hot plus `unknown` for categorical inputs, and NaN/inf rejected as `VectorAssembler(handleInvalid="error")`
     does;
   - the scaler `(x - mean) / std` (0 where std = 0), then the LR sigmoid, then Platt.
-- **Streaming (S12) deploys the calibrated LR only**, the pre-registered primary model, via the scorer
+- **Streaming deploys the calibrated LR only**, the pre-registered primary model, via the scorer
   (microseconds per pair, no JVM round trip). GBT is saved and loadable for batch and dashboard comparison; a Spark
   `transform` per micro-batch would add a Spark job (tens to hundreds of ms) for a non-primary model.
 - **How containers reach `models/`.** The app service mounts `./models:/workspace/models` read-write (the repo
-  itself stays `:ro`). The API container (S13) mounts `./models:/workspace/models:ro` and loads
+  itself stays `:ro`). The API container mounts `./models:/workspace/models:ro` and loads
   `lr/scorer.json` of `API_MODEL_DIR` (default `models/undercut/deploy_real_G3.5_k2`) without Spark; its replays
   pass the same folder to the stream job (`--model-dir`), so `/api/health` reports the model the replay scores with. The container has no git, so the Makefile passes `F1SA_GIT_SHA` /
   `F1SA_GIT_DIRTY`; without a sha the run refuses.
 
 
-## Redis serving (`serving/keys.py`, `serving/redis_store.py`, Step 11)
+## Redis serving (`serving/keys.py`, `serving/redis_store.py`)
 The key contract in CLAUDE.md is the only key layout. `keys.py` builds the names and checks every part (season
 1950-2100, round 1-30, driverId `[a-z0-9_]+`, ints only), so a malformed key never reaches Redis.
 
@@ -527,7 +529,7 @@ The key contract in CLAUDE.md is the only key layout. `keys.py` builds the names
   with milliseconds (`2024-05-05T20:14:03.125Z`, set by the store). A missing value is `""` (for example,
   the leader's `gap_ahead_s`, or `undercut_prob` before the car is scored). `tyre_compound` is one of
   SOFT/MEDIUM/HARD/INTERMEDIATE/WET/UNKNOWN, never `""`. `decode_state` is the exact inverse.
-- **Tyre hash (additive, display only; approved 2026-11-15)** `race:{s}:{r}:tyre:{driverId}`. It is an extension
+- **Tyre hash (additive, display only)** `race:{s}:{r}:tyre:{driverId}`. It is an extension
   next to the contract: the 9-field driver hash, the order zset and the channel are unchanged. It holds 4 string
   fields, `keys.TYRE_FIELDS`:
   - `tyre_life_laps`: the real TracingInsights tyre life, int ≥ 1;
@@ -539,7 +541,7 @@ The key contract in CLAUDE.md is the only key layout. `keys.py` builds the names
   the batch. The key matches `race:{s}:{r}:*`, so it gets the same safety TTL and the same `session_end`
   EXPIRE. Nothing model-related reads it (the stream job never reads Redis, and the what-if uses the driver
   hashes only).
-- **Timing hash (additive, display only; Feature 5, approved 2026-11-18)** `race:{s}:{r}:timing:{driverId}`.
+- **Timing hash (additive, display only; timing-tower extras)** `race:{s}:{r}:timing:{driverId}`.
   The 9-field driver hash, the order zset, the channel and the tyre hash are unchanged. It holds 11 string
   fields, `keys.TIMING_FIELDS`: `lap` (the car's latest received lap), `sector1_s` .. `sector3_s` and
   `speed_trap_kph` of that lap, the driver's best so far over its own laps <= `lap` (`pb_sector1_s` ..
@@ -548,7 +550,7 @@ The key contract in CLAUDE.md is the only key layout. `keys.py` builds the names
   inverse. It is written from the lap event alone (the producer computes the running values), in the batch's one
   pipeline; it matches `race:{s}:{r}:*`, so it gets the safety TTL and the `session_end` EXPIRE. Nothing
   model-related reads it.
-- **Entrants cache (additive, display only; Feature 1)** `meta:entrants:{s}:{r}`.
+- **Entrants cache (additive, display only)** `meta:entrants:{s}:{r}`.
   - It is a STRING holding `{"lake": <fingerprint>, "entrants": <response>}`. The fingerprint is the first 16 hex
     digits of sha256(`DATA_LAKE_URI`); the URI itself is never stored.
   - An entry written for another lake (the api switched between the sample and the full lake) is a miss and is
@@ -558,7 +560,7 @@ The key contract in CLAUDE.md is the only key layout. `keys.py` builds the names
     `expire_race` never see it.
   - The 9-field driver hash is never touched. Redis is only a cache: a Redis error is logged and the lake is read
     directly. Negative results (404) are not cached.
-- **Analysis cache (additive, display only; Feature 2)** `meta:analysis:{s}:{r}:{view}` for the views `laps`,
+- **Analysis cache (additive, display only)** `meta:analysis:{s}:{r}:{view}` for the views `laps`,
   `stints`, `pitstops`, `race_control` and `positions` (`serving/keys.ANALYSIS_VIEWS`).
   - It is a STRING holding `{"lake": <fingerprint>, "data": <response>}` with the same lake fingerprint as the
     entrants cache; an entry of another lake is a miss and is overwritten.
@@ -566,7 +568,7 @@ The key contract in CLAUDE.md is the only key layout. `keys.py` builds the names
     from the cached `laps` document and has no key of its own.
   - Outside `race:*` for the same reasons as the entrants key; the 9-field driver hash is never touched; a Redis
     error falls back to the lake; negative results are not cached.
-- **Telemetry cache (additive, display only; Feature 6)** `meta:telemetry:{s}:{r}:laps:{CODE}` (a driver's laps
+- **Telemetry cache (additive, display only)** `meta:telemetry:{s}:{r}:laps:{CODE}` (a driver's laps
   with a trace) and `meta:telemetry:{s}:{r}:trace:{CODE}:{lap}` (one lap's resampled trace, about 60-80 KB).
   - The same `{"lake": <fingerprint>, "data": <response>}` STRING, written by `api/telemetry.py` with
     `SET … EX API_TELEMETRY_CACHE_S` (default 3600 s). The compare is computed from two cached traces and has no
@@ -584,8 +586,8 @@ The key contract in CLAUDE.md is the only key layout. `keys.py` builds the names
   `session_end` still expires. `end_session` publishes `session_end`, then `expire_race` SCANs
   `race:{s}:{r}:*` (COUNT 500, never KEYS) and sets `EXPIRE REDIS_TTL_AFTER_SESSION_S` on every key, the sorted
   set included. A write after `session_end` would refresh the safety TTL, so the stream job must stop writing a
-  race after its `session_end` (S12). Channels are not keys and have no TTL.
-- **Lifecycle rule: fresh replay start (Feature 7, approved 2026-11-18).** When the API starts a replay of a
+  race after its `session_end`. Channels are not keys and have no TTL.
+- **Lifecycle rule: fresh replay start.** When the API starts a replay of a
   race, it first deletes every `race:{s}:{r}:*` key of that race (`RaceStore.delete_race` / `AsyncRaceStore.delete_race`:
   the same SCAN as `expire_race`, then DEL in chunks of 500 in one pipeline). It does so only after the slot checks,
   so only while no replay of that race runs, and before anything is launched. A Redis error refuses the start (503)
@@ -593,8 +595,8 @@ The key contract in CLAUDE.md is the only key layout. `keys.py` builds the names
   fields are unchanged; the rule only guarantees that a new run never shows an earlier run's keys (a stopped run
   keeps its safety TTL, a finished one its 1 h). Tested in `test_redis_store.py` (other rounds and seasons and the
   entrants / analysis / telemetry caches untouched) and `test_api_replay_controls.py`.
-- The sync store serves the Spark `foreachBatch` sink (S12) and the benchmark. The async store (`redis.asyncio`)
-  serves FastAPI (S13). Both queue the same commands through the same code and differ only in `await
+- The sync store serves the Spark `foreachBatch` sink and the benchmark. The async store (`redis.asyncio`)
+  serves FastAPI. Both queue the same commands through the same code and differ only in `await
   execute()`. The URL comes only from `Settings.redis_url`.
 - **Latency benchmark** (`serving/latency_bench.py`, `experiments/redis_latency.py`, #37): 20 drivers at 1, 10 and
   60 micro-batches/s for 60 s each. Each run times the pipelined batch write, 20 HGETALL and 1 ZRANGE. The
@@ -602,7 +604,7 @@ The key contract in CLAUDE.md is the only key layout. `keys.py` builds the names
   one 1 s summary. Results go to `results/redis_latency.csv`, and the environment fingerprint is appended to
   `results/README.md`.
 
-## Streaming (`streaming/`, Step 12)
+## Streaming (`streaming/`)
 ```
 clean zone (one race) --producer: race order x SPEED, key=driver_id, acks=all, idempotent--> Kafka f1.race.events (3 partitions)
   --Structured Streaming: startingOffsets=latest, maxOffsetsPerTrigger, trigger 500 ms, header test=infra dropped-->
@@ -639,7 +641,7 @@ clean zone (one race) --producer: race order x SPEED, key=driver_id, acks=all, i
   (`compound: … tracinginsights, … v1_stints, … unknown of N laps`). No rule, live feature, scorer input or alert
   reads the compound (`test_tracinginsights_compound_changes_no_model_input`), and `stream-parity-full` replays
   this path.
-- **Lap-event tower values** (Feature 5, display only; `events.TOWER_FIELDS`, the last nine `RaceEvent`
+- **Lap-event tower values** (timing-tower extras, display only; `events.TOWER_FIELDS`, the last nine `RaceEvent`
   fields). The lap's `sector1_s` .. `sector3_s` and `speed_trap_kph` come from the additive
   `clean/analysis_laps` (TracingInsights; optional: without the table, e.g. a lake without `make analysis-*`,
   the producer warns and they are null; the sample has none). `producer.running_timing` adds, per driver in lap
@@ -693,7 +695,7 @@ The rule also needs the following:
 - the pit flags, from the pit events;
 - track green and the restart lap: the replayed flags, through the ported 1-lap / 3-lap red-flag rule.
 
-**Hindsight disclosure (user decision).** Two inputs cannot be reproduced live from events up to L-1:
+**Hindsight disclosure.** Two inputs cannot be reproduced live from events up to L-1:
 - **Track status.** The Jolpica heuristic divides each lap by the whole race's green median, so a lap's flag can
   depend on later laps.
 - **`race_laps`.** This is the winner's lap count from the post-race results.
@@ -725,14 +727,14 @@ or feature tables apart from the earlier-race priors and the entry list.
     - commands per batch: 50 → 63;
     - `write_ms` p50: 1.19 → 1.32 ms; p95: 1.57 → 1.87 ms;
     - `end_to_end_ms` p50: 705–712 → 703–710 ms, i.e. unchanged within noise;
-  - the additive timing hash (Feature 5) of the same cars, from the same lap event (null values written, an
+  - the additive timing hash (timing-tower extras) of the same cars, from the same lap event (null values written, an
     older lap never overwrites). Cost, measured on sample 2024 R5 in the app container against the real Redis
     (db 15 only), micro-batches of up to 7 events per partition over 3 partitions, three alternating runs each
     with and without the timing hashes:
     - commands per batch: 62.2 → 75.1 (one HSET and one EXPIRE per lap event);
     - `write_batch` p50: 1.18 → 1.35 ms; p95: 1.56 → 1.68 ms;
   - `lap` / `pit_in` / `pit_out` events (the lap payload also carries the two tyre-life fields and the nine
-    Feature 5 tower fields), and the `undercut_alert` messages the alert policy selects (below).
+    timing-tower fields), and the `undercut_alert` messages the alert policy selects (below).
 - **Latency fields.** Every payload carries `produced_at_ms`, `batch_received_at_ms` and `redis_written_at_ms`.
   - A PUBLISH inside the pipeline cannot carry the time the pipeline finished, so `redis_written_at_ms` is the
     client time just before the batch is sent.
@@ -766,7 +768,7 @@ or feature tables apart from the earlier-race priors and the entry list.
   The producer, the job and the subscriber run on one host (the WSL host, or all in the app container with
   `FULL=1`), so all times come from one clock.
 
-## API (`api/`, Step 13)
+## API (`api/`)
 ```
 browser (http://localhost:3000) --CORS--> FastAPI (uvicorn, 127.0.0.1:8000)
   GET  /api/health                         redis PING | Kafka topic describe | deployed model
@@ -776,18 +778,18 @@ browser (http://localhost:3000) --CORS--> FastAPI (uvicorn, 127.0.0.1:8000)
   GET  /api/races/{s}/{r}/analysis/{view}  meta:analysis:{s}:{r}:{view} (SET EX) | clean/analysis_* (display only)
        view = laps | stints | pitstops | race-control | positions;  …/analysis/compare?a=CODE&b=CODE
   GET  /api/races/{s}/{r}/telemetry/laps?driver=CODE  meta:telemetry:…:laps:CODE | clean/telemetry_trace driver partition
-       …/telemetry/compare?a=&alap=&b=&blap=  two cached traces -> one distance axis + delta lane (2024 only; Feature 6)
+       …/telemetry/compare?a=&alap=&b=&blap=  two cached traces -> one distance axis + delta lane (2024 only; telemetry overlay)
   GET  /api/races/{s}/{r}/engineer/{id}?lap=N  lap log (laps <= N) + driver hashes (read only) + earlier-race priors
-  GET  /api/races/{s}/{r}/status?lap=N     race-status banner at leader lap N (Feature 5; lake laps/race control <= N | lap log)
+  GET  /api/races/{s}/{r}/status?lap=N     race-status banner at leader lap N (lake laps/race control <= N | lap log)
   GET  /api/archive                        archive/race_bundle manifests (in-process TTL; HTTP ETag)
   GET  /api/archive/{s}/{r}                archive/race_bundle bundle.json.gz (stored gzip, ETag = sha256)
   GET  /api/races/{s}/{r}/events           SUBSCRIBE race:{s}:{r}:events -> text/event-stream
   POST /api/races/{s}/{r}/replay           DEL race:{s}:{r}:*, then subprocesses: stream_job, producer (ENABLE_REPLAY=1)
-  POST /api/races/{s}/{r}/replay/stop      stop both processes (no session_end), state stopped (Feature 7)
+  POST /api/races/{s}/{r}/replay/stop      stop both processes (no session_end), state stopped
   POST /api/races/{s}/{r}/replay/pause     | resume | speed {speed}: data/demo/<run_id>/replay_control.json
   GET  /api/replays                        replays holding a slot + the last 20 with state / speed / lap / error
   POST /api/debug/latency                  API_UI_LATENCY_CSV, default data/demo/ui_latency/ (ENABLE_DEBUG=1)
-  POST /api/races/{s}/{r}/whatif           Redis state + recorded laps + priors -> sim/ (S15)
+  POST /api/races/{s}/{r}/whatif           Redis state + recorded laps + priors -> sim/
 ```
 Run modes (see also [reproduce.md](reproduce.md)):
 - `make up`: the compose `api` service (core profile, app image) in sample mode on 127.0.0.1:8000.
@@ -813,7 +815,7 @@ Docs: `/api/docs`, `/api/openapi.json`.
 
 | Endpoint | Status codes |
 |---|---|
-| `GET /api/health` | 200 all checks pass; 503 with `checks.{redis,kafka,model}.ok/error` naming the failure; `lake: {scheme, mode: sample\|full\|null, synthetic}` is informational; `checks.model` also carries the additive F10 fields `smoke_test`, `trained_on`, `model_id`, `stamp` (below) |
+| `GET /api/health` | 200 all checks pass; 503 with `checks.{redis,kafka,model}.ok/error` naming the failure; `lake: {scheme, mode: sample\|full\|null, synthetic}` is informational; `checks.model` also carries the additive SMOKE TEST fields `smoke_test`, `trained_on`, `model_id`, `stamp` (below) |
 | `GET /api/races` | 200 `[{season, round, name, laps, synthetic}]`; 503 clean zone unavailable |
 | `GET …/state` | 200; 404 the race has no keys; 422 bad season/round; 500 a hash breaks the contract; 503 Redis down |
 | `GET …/entrants` | 200 `{season, round, entrants: [...]}` sorted by grid; 404 no entrants partition (or 2025 sealed); 422; 500 a stored row is malformed; 503 clean zone unavailable |
@@ -852,10 +854,10 @@ Docs: `/api/docs`, `/api/openapi.json`.
     driver hash plus the order zset, **one** `pipeline(transaction=False)`, `api/state.py`, shared with
     `GET /state`) and sends `event: snapshot`, `id: snapshot-<lap>`, with data `{type: "snapshot", season,
     round, lap, drivers, order, tyres, timing, event_id, sse_sent_at_ms}` (plus `recent_alerts` on
-    `snapshot-0` only, F09 below):
+    `snapshot-0` only, see "Alert history" below):
     - once right after connect (`snapshot-0`; the drivers are found with one SCAN);
     - once per race lap, **before** the first `lap` event whose lap number is higher than the last
-      snapshot's (Fix D, 2026-11-15; it used to follow that frame).
+      snapshot's (since 2026-11-15; it used to follow that frame).
       - The sink writes a batch's hashes and order set before its PUBLISH in one pipeline, so this
         snapshot already lists the event's car. A client never gets an event for a car before a snapshot
         listing it, unless Redis lacks that car, so the dashboard's "unknown drivers" counter counts only
@@ -870,7 +872,7 @@ Docs: `/api/docs`, `/api/openapi.json`.
     `undercut_flag` in the browser. A snapshot that cannot be read is skipped and logged, and the event
     stream goes on. Snapshots are not latency samples. Tested: one per leader lap plus one after connect,
     not one per event; one pipeline and no SCAN per lap; stale flags refreshed.
-  - **Alert history on the connect snapshot (F09, additive, Step 3 of the UI redesign, 2026-11-19).**
+  - **Alert history on the connect snapshot (additive, 2026-11-19).**
     `snapshot-0` (and only `snapshot-0`) also carries `recent_alerts`: the current API replay run's newest
     alerts, at most 50 (`RECENT_ALERTS`), oldest first. Each item is exactly the live `undercut_alert` SSE frame
     (the stored message plus `event_id` and `sse_sent_at_ms`) with the same `event_id`, so the client
@@ -900,7 +902,7 @@ Docs: `/api/docs`, `/api/openapi.json`.
       replays, so no live run is affected. A stopped run's log is dropped by the idle/LRU sweep (30 min
       without messages or use, at most 4 races).
   - `event_id` is `payload.event_id` (the producer's uuid4) for lap / pit_in / pit_out. `undercut_alert`
-    and `session_end` have no id in the Step 12 payload (streaming/ is unchanged), so they get
+    and `session_end` have no id in the streaming payload (streaming/ is unchanged), so they get
     `uuid5(ns, raw message)`: deterministic, unique per message (`published_at` has ms).
   - Pub/Sub keeps no history: a reconnecting client misses what was published meanwhile and reloads
     `/state`. `Last-Event-ID` is ignored.
@@ -932,7 +934,7 @@ Docs: `/api/docs`, `/api/openapi.json`.
   to both. Child output is logged line by line, which also keeps the pipes drained. A replay writes only
   `data/checkpoints/api_<run_id>*` and `data/demo/<run_id>/`, never `results/`.
 
-  **Controls (Feature 7).** States: `starting` → `running` ⇄ `paused` → `finished` | `stopped` | `failed`
+  **Controls.** States: `starting` → `running` ⇄ `paused` → `finished` | `stopped` | `failed`
   (a pause or a speed change is also accepted while `starting`; the producer then starts paused or at that speed).
   - *Pacing only.* Pause, resume and speed write `data/demo/<run_id>/replay_control.json` (`{version, speed,
     paused}`, tmp file + `os.replace`). The producer (`--control-file`, `replay_controlled`) re-reads it between
@@ -964,7 +966,7 @@ Docs: `/api/docs`, `/api/openapi.json`.
     before, such a job was briefly in neither list while a new start still got 409.
 - **Demo outputs** (`demo_runs.py`). `make stream-demo` and API replays write to `data/demo/<run_id>/`
   (`DEMO_DIR`). `run_id` is `<season>_<round>_<UTC yyyymmddThhmmss.mmmZ>`. Only `make stream-demo RECORD=1`
-  (`--record`, the Step 16 recorded run) writes to `results/`. `tests/unit/test_demo_outputs.py` checks with
+  (`--record`, the recorded latency run) writes to `results/`. `tests/unit/test_demo_outputs.py` checks with
   hashes that a default run leaves `results/` unchanged.
   `make demo-clean [CONFIRM=yes]` (`python -m f1sa.demo_runs [--yes]`) deletes the `<run_id>` folders in
   `./data/demo` and the `api_<run_id>` / `demo_<S>_<R>_<unix>` checkpoints (and their `.ready` files) in
@@ -985,7 +987,7 @@ Docs: `/api/docs`, `/api/openapi.json`.
   `API_UI_LATENCY_CSV` (`event_id, event_type, season, round, produced_at_ms, batch_received_at_ms,
   redis_written_at_ms, sse_sent_at_ms, ui_rendered_at_ms, recorded_at_ms`), so the client supplies only its
   own render time.
-  - The default is `data/demo/ui_latency/ui_latency.csv` (Fix C; it used to be `results/ui_latency.csv`).
+  - The default is `data/demo/ui_latency/ui_latency.csv` (the recording guard; it used to be `results/ui_latency.csv`).
   - An existing CSV under `results/` is refused: by `make api-up DEBUG=1` before the container is
     recreated (`OVERWRITE=1` backs it up), and by the api at start-up.
   - The committed `results/ui_latency.csv` comes only from `make stream-latency-ui RECORD=1`.
@@ -997,9 +999,9 @@ Docs: `/api/docs`, `/api/openapi.json`.
 - **Logging** (`log.py`): JSON lines on stderr (`ts, level, logger, msg` + fields). One access line per request
   (`method, path, status, duration_ms`; no query string), written when the response ends, so an SSE line
   carries the stream's duration. Exceptions are logged by class name only.
-- **Step 15** added `routes/whatif.py` and one entry in `app.ROUTERS` (see "What-if").
+- **The what-if simulator** added `routes/whatif.py` and one entry in `app.ROUTERS` (see "What-if").
 
-## Spark benchmarks (`bench/`, Step 10)
+## Spark benchmarks (`bench/`)
 Method, grid, memory per cell and the limits of single-host results: `docs/experiments.md`.
 - `experiments/scalability.py` / `partitioning.py` run on the host (they sample `docker stats`,
   write CSV/PNG) and execute `python -m f1sa.bench.grid` / `f1sa.bench.partitioning` in the running
@@ -1013,7 +1015,7 @@ Method, grid, memory per cell and the limits of single-host results: `docs/exper
 - Cluster cells ship the current `src/f1sa` to the executors as a zip (`addPyFile`): the worker
   image holds the `f1sa` of its build, and the cell checks which copy the executors import.
 
-## Dashboard (`web/`, Step 14)
+## Dashboard (`web/`)
 ```
 browser ── GET /api/races, /api/health ───────────────► API (CORS: http://localhost:3000 only)
    │    ── EventSource /api/races/{s}/{r}/events ──────► SSE (lap, pit_in, pit_out, undercut_alert, session_end)
@@ -1038,8 +1040,8 @@ browser ── GET /api/races, /api/health ────────────�
       it on 26 of 27 laps (on lap 20 Redis had moved on one batch, 13 vs 12);
     - **0** page requests to `/state`.
   - The page still polls `GET /api/replays` (every 1 s while a replay runs, else every 5 s) for the replay
-    control's status, as specified in Step 14. Replay status is not on the race channel.
-  - Replay controls (Feature 7, `components/ReplayControl.tsx`, `lib/replays.ts`): Start (disabled while a
+    control's status, as the dashboard specifies. Replay status is not on the race channel.
+  - Replay controls (`components/ReplayControl.tsx`, `lib/replays.ts`): Start (disabled while a
     replay is active), Pause/Resume (one button) and Stop (enabled only while this race's replay is active), and
     the 1×/10×/60× radios, which choose the start speed and, during a run, show and change the API's speed. The
     `role="status"` line (polite) states the state and speed ("Running at 10×.", "Paused at lap 23 (10×).",
@@ -1049,7 +1051,7 @@ browser ── GET /api/races, /api/health ────────────�
   - A snapshot (pushed `event: snapshot` or a reconnect's `/state`) replaces the 9 hash fields (stale
     undercut flags included) and the order zset. It keeps the client-built lap history (the last 20 laps)
     and the alert groups. Snapshot ids repeat across connections, so snapshots are not deduplicated.
-  - F09: the connect snapshot's `recent_alerts` join their pair groups, oldest first, marked `history`.
+  - Alert history: the connect snapshot's `recent_alerts` join their pair groups, oldest first, marked `history`.
     - The kind is `before_open` on the page's first snapshot and `while_away` after a reconnect.
     - Each item is deduplicated by `event_id` against every event applied (`seen`), so a live copy, or the
       same history in a later reconnect's snapshot, counts once.
@@ -1095,7 +1097,7 @@ browser ── GET /api/races, /api/health ────────────�
     updates never shift the layout.
   - Down to 375 px there is no horizontal page scroll; the tower scrolls inside its region (checked by the
     Playwright test).
-- **Entrants (display only; Feature 1):**
+- **Entrants (display only):**
   - `lib/entrants.ts` holds the guard and helpers; `lib/useEntrants.ts` loads them once per race.
   - In the timing tower, `components/TeamBadge.tsx` shows a team badge: a rounded swatch in the team colour, with
     the short code (FER, MCL, RBR) as text.
@@ -1110,7 +1112,7 @@ browser ── GET /api/races, /api/health ────────────�
   - There are no logo files and no logo-like artwork (no `<img>`, no `<svg>`), and colour never carries meaning on its
     own.
   - The layout footer says "Unofficial project; not associated with the Formula 1 companies."
-- **Race analysis (display only; Feature 2):** `/race/{s}/{r}/analysis` (`components/analysis/`), linked from the
+- **Race analysis (display only):** `/race/{s}/{r}/analysis` (`components/analysis/`), linked from the
   race page's "Race views" nav, for any race of the clean zone (they are all finished races).
   - `lib/analysis.ts` holds the guards (one bad row rejects a response) and all the pure data shaping;
     `lib/useAnalysis.ts` loads the five views in parallel once per race, and the comparison on demand;
@@ -1128,7 +1130,7 @@ browser ── GET /api/races, /api/health ────────────�
   - The degradation view says "A lap-time proxy, not tyre wear" and lists the excluded laps by reason; the sample's
     tyre data is marked SYNTHETIC on the page; what the lake lacks (sectors, deleted laps, race control) is stated
     as text.
-- **Engineer view (display only; Feature 3):** an in-page "Race | Engineer" tab pair on the live page (WAI-ARIA
+- **Engineer view (display only):** an in-page "Race | Engineer" tab pair on the live page (WAI-ARIA
   tabs; the race view stays mounted, so the stream, its history and the alert live region keep running).
   - `GET /api/races/{s}/{r}/engineer/{driverId}?lap=N` (`api/engineer.py`, `api/routes/engineer.py`): the focus car
     against the car directly ahead and behind, from **laps <= N only** (N defaults to the focus's latest lap).
@@ -1175,7 +1177,7 @@ browser ── GET /api/races, /api/health ────────────�
     Styles use only the shared tokens.
 - **Synthetic data:** the banner strip shows **SYNTHETIC DEMO DATA** whenever `/api/health` reports
   `lake.mode = "sample"`, and the picker tags each synthetic race.
-- **SMOKE TEST stamp (F10, Step 3, 2026-11-19).** `/api/health` `checks.model` carries four additive fields.
+- **SMOKE TEST stamp (2026-11-19).** `/api/health` `checks.model` carries four additive fields.
   The top-level `lake` object is unchanged and stays the only "lake" field.
 
   | Field | Meaning |
@@ -1187,7 +1189,7 @@ browser ── GET /api/races, /api/health ────────────�
 
   The UI takes the stamp from `smoke_test`. It falls back to the name prefix only when the field is missing
   (an older API).
-- **Timing-tower extras (Feature 5, display only)** (`TowerPanel.tsx`, `TimingTower.tsx`, `RaceStatusBanner.tsx`,
+- **Timing-tower extras (display only)** (`TowerPanel.tsx`, `TimingTower.tsx`, `RaceStatusBanner.tsx`,
   `lib/tower.ts`, `lib/timing.ts`, `lib/raceStatus.ts`; live and post-race):
   - columns S1, S2, S3, Trap and Pits. Each sector and the trap of the car's last lap carries a text tag "PB"
     (the car's best so far, `--ok`) or "OB" (the race's best so far, `--line-4`, a thicker border) and a
@@ -1218,7 +1220,7 @@ browser ── GET /api/races, /api/health ────────────�
   - headers `nosniff`, `no-referrer`, `frame-ancestors 'none'`, and no `X-Powered-By`;
   - Next.js telemetry is off (`NEXT_TELEMETRY_DISABLED=1`) in the image, the Makefile and CI.
 
-## What-if simulator (`sim/`, `api/routes/whatif.py`, `api/lap_log.py`, Step 15)
+## What-if simulator (`sim/`, `api/routes/whatif.py`, `api/lap_log.py`)
 The specification, every constant and the pre-registered checks are in `docs/sim_spec.md`.
 ```
 offline:  clean laps + stints(_tracinginsights) + features/outlap_features  --sim/tyre_model (expanding window)-->
@@ -1240,7 +1242,7 @@ request:  Redis hashes (api/state)  +  lap log (race channel)  +  features/pit_l
   - stop noise is the robust SD (1.4826 x MAD) of earlier races' stop and out-lap residuals;
   - every fit uses strictly earlier races only, tested with x100 scaling.
 - **Simulator** (`sim/race_sim.py`): lap time is pace level + f(age, lap) + level noise + lap noise; the stop
-  loss is the pit-loss prior + the driver's stop delta + the out-lap residual prior (the Step 8 decomposition)
+  loss is the pit-loss prior + the driver's stop delta + the out-lap residual prior (the pit-loss decomposition of the undercut features)
   + noise. Rejoining 0-1.0 s behind a third car holds the car at 1.0 s behind it; this is monotone in arrival
   time. Common random numbers across strategies, and one seed gives byte-identical results. About 1 ms per
   request for n = 500.
@@ -1261,7 +1263,7 @@ request:  Redis hashes (api/state)  +  lap log (race channel)  +  features/pit_l
 
   Pub/Sub keeps no history. Without laps, the what-if still answers from the Redis hash alone
   (`history: none`, a warning).
-  Display-only additions for the engineer view (Feature 3): `lap_rows()` adds the real tyre life of the lap payload,
+  Display-only additions for the engineer view: `lap_rows()` adds the real tyre life of the lap payload,
   and the subscriber records the published `undercut_flag` / `undercut_prob` of every driver hash (ZRANGE + HMGET,
   read only) when the leader's first lap-N event arrives (`probs_at(N)`). `records()`, the what-if input, is
   unchanged.
@@ -1281,7 +1283,7 @@ request:  Redis hashes (api/state)  +  lap log (race channel)  +  features/pit_l
   Reserved height, bar transition only without reduced motion, and the table scrolls inside the panel at 375 px.
 
 
-## Telemetry lap overlay (`etl/telemetry_trace.py`, `api/telemetry.py`, Feature 6, display only, 2024 only)
+## Telemetry lap overlay (`etl/telemetry_trace.py`, `api/telemetry.py`, display only, 2024 only)
 ```
 raw/tracinginsights/telemetry/season=2024/round=R/driver=CODE/telemetry.parquet  (kept raw samples, read-only)
   + clean/analysis_laps (driver_id, lap time, pit / deleted / neutralised, compound; read-only)
@@ -1290,7 +1292,7 @@ clean/telemetry_trace/season=2024/round=R/driver_code=CODE/   (one row per lap: 
   --api.telemetry (one driver partition, HttpFS LISTSTATUS/OPEN; meta:telemetry:* cache)--> /api/races/2024/{r}/telemetry/*
   --> TelemetryView (Race analysis tab "Telemetry")
 ```
-- **Only 2024.** The lake keeps raw samples for 2024 only (Step 4C). The job accepts no other season
+- **Only 2024.** The lake keeps raw samples for 2024 only. The job accepts no other season
   (`--seasons 2024`), and the API answers any other season with 404 `telemetry traces are available for 2024 only`
   before touching Redis or the lake; the dashboard shows the same note and sends no request.
 - **Writes only `clean/telemetry_trace`** (and its `_quality.json` inside the table directory). `output_path`
@@ -1301,8 +1303,8 @@ clean/telemetry_trace/season=2024/round=R/driver_code=CODE/   (one row per lap: 
   `0, 5, … ⌊L/5⌋·5` plus `L`; time, speed, throttle and RPM linear in distance; gear, brake and DRS held. Summary:
   top speed (raw samples), distance shares on the grid (full throttle ≥ 98%, brake, DRS), braking zones (brake runs
   ≥ 10 m, merged over gaps ≤ 10 m) with their apex (lowest speed up to 200 m after the zone) and the slowest one.
-  Coverage `partial` when a sample gap exceeds 2.0 s or the trace covers < 90% of the lap time (the Step 4C
-  thresholds).
+  Coverage `partial` when a sample gap exceeds 2.0 s or the trace covers < 90% of the lap time (the TracingInsights
+  coverage thresholds).
 - **Delta time** (`api.telemetry.compare_traces`): the axis is A's grid `x_k`; B is read at the same **fraction of
   its own lap**, `t_B(x_k) = interp(x_k / L_A · L_B, g_B, t_B)`, because TracingInsights integrates each lap's
   distance from speed and lap lengths differ by up to about 0.3% (some 16 m, about 0.2 s at 300 km/h): comparing at
@@ -1327,7 +1329,7 @@ clean/telemetry_trace/season=2024/round=R/driver_code=CODE/   (one row per lap: 
 - **Isolation:** no feature, model input, rule, alert, stream, what-if, archive bundle or `results/` file reads the
   table or imports the code (a source test checks the packages).
 
-## Post-race archive (`archive/`, `api/archive.py`, Feature 4, display only)
+## Post-race archive (`archive/`, `api/archive.py`, display only)
 ```
 clean + features (one race) --producer.build_events--> events --parity.kafka_batches(1 row each), cut per leader lap-->
   StreamProcessor.process_rows (rule, live features, calibrated LR, alert policy: unchanged) --RedisSink-->
@@ -1343,14 +1345,14 @@ clean + features (one race) --producer.build_events--> events --parity.kafka_bat
   re-derived; the bundle stores what the processor published and scored.
 - **Micro-batches.** One per leader lap N: from the leader's first lap-N `lap` event up to, not including, the
   leader's first lap-(N+1) event (a lap-1 `pit_in` before the first crossing joins lap 1; the `session_end` events
-  join the last lap). The snapshot of lap N is therefore Redis at the **end of lap N** (user decision), a state a live
+  join the last lap). The snapshot of lap N is therefore Redis at the **end of lap N**, a state a live
   replay also passes through. The decisions and alerts do not depend on the micro-batching (parity suite).
 - **Determinism (transport only).** Event ids are derived (`uuid5` digests with the uuid4 version bits, because the
   event schema accepts only uuid4), and one simulated clock (race start + 180 s + race time, the `df_jobs`
   lap-timestamp convention) stamps `produced_at_ms` and feeds the processor's, sink's and store's clocks. The rule,
   the live features, the scorer and the alert policy read neither. gzip `mtime=0` and sorted keys: a rebuild is
   byte-identical (tested; also checked on the sample lake by sha256).
-- **Schema v2 (Feature 5).** Each snapshot also holds the additive timing hash (`timing`, read by the same
+- **Schema v2 (timing-tower extras).** Each snapshot also holds the additive timing hash (`timing`, read by the same
   `read_race_state`), and `status[]` holds the race-status banner at the end of every snapshot lap, from the live
   `api.race_status.race_status` over an `api.lap_log.LapLog` fed the bundle's own messages of micro-batches <= N
   (and, in lake mode, the same `analysis_laps` / `analysis_race_control` documents). The reader accepts v1 and v2;
@@ -1395,10 +1397,10 @@ clean + features (one race) --producer.build_events--> events --parity.kafka_bat
     is a button with a text code, a border style per kind and a full accessible name, so colour carries no meaning.
   - Engineer and What-if stay live-only, because they query the current server state.
 
-## Demo and CI (Step 17)
+## Demo and CI
 - **`make demo`** (after `make up` and `make sample-data`) needs no credentials, no HDFS and no host Java.
   - **`demo-pipeline`** runs in the app container (`docker compose exec`): sample ETL, sample features (counts to
-    `data/demo/<run>/`, never `results/`), the sample deployment model, the sample post-race archive (Feature 4,
+    `data/demo/<run>/`, never `results/`), the sample deployment model, the sample post-race archive (built
     with the sample model) and the sample tyre model.
   - **`demo-replay`** recreates only the api with `REPLAY=1 MODEL_DIR=models/undercut/sample_deploy_real_G3.5_k2`,
     then runs `f1sa.demo_replay` in the app container against `http://api:8000`:
@@ -1430,5 +1432,5 @@ clean + features (one race) --producer.build_events--> events --parity.kafka_bat
     globs;
   - `file::test`, `module.attr` and `make <target>`.
 
-  Gitignored outputs (`data/`, `models/`) are reported as GENERATED, and rows of pending steps (S18) as PENDING.
+  Gitignored outputs (`data/`, `models/`) are reported as GENERATED, not failed.
   Exit 1 on anything missing.
