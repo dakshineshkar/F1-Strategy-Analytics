@@ -4,7 +4,7 @@ Input to the full UI redesign of the Pit Wall race view. **No code was changed i
 is a requirement for the redesign, not a fix to apply on the current layout. Product truth comes from
 [the product brief](../design/product-brief.md).
 
-**Hard constraint for the redesign:** the Redis contract in [CLAUDE.md](../../CLAUDE.md) is off-limits. Every
+**Hard constraint for the redesign:** the Redis key contract in [docs/architecture.md](../architecture.md#redis-serving-servingkeyspy-servingredis_storepy) is off-limits. Every
 requirement here must be met in the UI, or through API data that already exists.
 
 ## How the review was run
@@ -20,7 +20,7 @@ requirement here must be met in the UI, or through API data that already exists.
   - **A, design review.** Playwright screenshots and measurements; Nielsen heuristics; cognitive load;
     emotional journey; personas.
   - **B, deterministic evidence.**
-    - The CLI scan `impeccable detect --json web/src/app web/src/components`.
+    - An automated anti-pattern scan (CLI) of `web/src/app` and `web/src/components`.
     - The `detect.js` overlay injected on 6 pages at 1440×900.
 - **Viewports:** desktop **1440×900** and mobile **390×844**, in dark and light themes.
 - **Verification:** before the report, three claims were re-checked against the source:
@@ -32,15 +32,13 @@ requirement here must be met in the UI, or through API data that already exists.
 
 Seven screenshots are committed in [before/](../design/before/) (`docs/design/before/`): `d-dark-fold.png`,
 `d-light-fold.png`, `m-dark-fold.png`, `d-dark-whatif.png`, `d-dark-engineer.png`, `d-dark-picker.png` and
-`d-dark-analysis.png`. All other screenshots and raw results stay in this session's scratch folder. They are
+`d-dark-analysis.png`. All other screenshots and raw results stayed in a local scratch folder. They are
 **not committed and may be cleared** by a reboot. Re-capture them with the scripts listed below if they are gone.
 
-- `A/` = `/tmp/claude-1000/-home-parinith-code-F1-Strategy-Analytics/64b63c12-194c-4940-9578-9319f5d8f0eb/scratchpad/critiqueA/shots/`
+- `A/` = the local scratch folder of assessment A, `critiqueA/shots/`
   (script `../shoot.js`; measurements, Tab walk and layout shift in `A/notes.json`)
-- `B/` = `/tmp/claude-1000/-home-parinith-code-F1-Strategy-Analytics/64b63c12-194c-4940-9578-9319f5d8f0eb/scratchpad/critiqueB/`
+- `B/` = the local scratch folder of assessment B, `critiqueB/`
   (script `overlay.js`; raw results `overlay-results.json`, `console-dump.txt`, CLI output `detect.json`)
-- The archived snapshot of the critique: `.impeccable/critique/2026-11-18T17-01-20Z__web-src-app-race-season-round-page-tsx.md`
-  (local only, not in the repository).
 
 Files marked "committed copy" are copied unchanged into [before/](../design/before/), so they don't depend on the scratch
 folder.
@@ -442,7 +440,7 @@ redesign. Line numbers refer to the code at commit `48ee7a2`.
   - `:388` `.rc-list li.is-key`;
   - `.alert-attempt` on `:177` `.alert`.
 - **Fixed (Step 4A, 2026-11-19):** there are no side bars on the engineer calls, the archive race-control rows or
-  the analysis race-control rows. `impeccable detect` reports 0 findings and nothing is suppressed (see
+  the analysis race-control rows. the anti-pattern scan reports 0 findings and nothing is suppressed (see
   inventory.md).
 
   `:101` `.race-link` and `:426` `.eng-calls li` are borderline (neutral by default).

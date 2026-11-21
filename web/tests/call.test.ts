@@ -284,7 +284,7 @@ describe("the call's markup", () => {
     const quiet = run([snap(snapshotMsg(order, 12))]);
     expect(html({ state: quiet })).toContain("No undercut call");
     expect(html({ state: initialState(2024, 5), replayIdle: true })).toContain(">Open replay controls</button>");
-    // the start prompt is a neutral control: solid signal is for the call and its button only
+    // the start control is neutral: solid signal is for the call and its button only
     expect(html({ state: initialState(2024, 5), replayIdle: true })).not.toContain("btn-primary");
   });
 });

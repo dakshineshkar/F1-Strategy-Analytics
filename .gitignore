@@ -1,8 +1,6 @@
 # secrets / local config
 .env
 .env.local
-CLAUDE.local.md
-.claude/settings.local.json
 # data (only data/sample is committed)
 data/*
 !data/sample/
@@ -20,15 +18,6 @@ derby.log
 models/
 node_modules/
 .next/
-# generated knowledge graph (graphify)
-graphify-out/
-
-# AI-assistant tooling: kept on disk, never tracked (CLAUDE.md and .claude/settings.json stay tracked)
-.claude/skills/
-.claude/agents/
-.claude/commands/
-.impeccable/
-.graphifyignore
 # coverage / packaging
 .coverage
 htmlcov/

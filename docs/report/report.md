@@ -78,7 +78,7 @@ followed by `EXPIRE REDIS_SAFETY_TTL_S` (6 h by default); on `session_end`, `exp
 sets `REDIS_TTL_AFTER_SESSION_S` on every key. An API replay start first deletes every `race:{s}:{r}:*` key of that
 race (SCAN + DEL), only while no replay of that race runs, and never `meta:*` or other races. The tyre hash, the
 timing hash and the caches are display only: the model, the rule, the live features and the what-if never read them.
-Source: `CLAUDE.md` "Redis contract", `docs/architecture.md` "Redis serving".
+Source: `docs/architecture.md` "Redis serving" ("Key contract").
 
 ## 4. Data
 

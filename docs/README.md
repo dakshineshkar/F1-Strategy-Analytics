@@ -57,4 +57,4 @@ Every document in the repository. Start with the [README](../README.md), then
 
 ## Development records
 
-[dev/](dev/): the engineering log, the design critique and the UI inventory that preceded the redesign; the build plan is [planning/playbook_v2.md](planning/playbook_v2.md).
+[dev/](dev/): the engineering log, the design critique and the UI inventory that preceded the redesign; the build plan v2 is kept at the git tag `model-spec-v2` (`git show model-spec-v2:docs/planning/playbook_v2.md`).

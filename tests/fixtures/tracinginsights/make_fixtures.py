@@ -4,8 +4,8 @@
 
 The files copy the *structure* of a TracingInsights Race folder (42 lap fields, 9 race-control
 fields, 18 telemetry channels, "None" strings for missing values). Every value is made up: no
-Formula 1 timing data is committed (CLAUDE.md, DATA_LICENSES.md). ``test_ti_fixtures_regenerate``
-checks that rerunning this script reproduces the committed bytes.
+Formula 1 timing data is committed (CONTRIBUTING.md, DATA_LICENSES.md).
+``test_ti_fixtures_regenerate`` checks that rerunning this script reproduces the committed bytes.
 
 Race (season 2024, round 1, event "Testland Grand Prix"), 3 drivers x 5 laps, 90 s laps from
 session time 1000 s:

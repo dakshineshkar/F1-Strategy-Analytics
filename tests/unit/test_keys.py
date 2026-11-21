@@ -1,4 +1,4 @@
-"""The exact Redis key contract (CLAUDE.md): names, validation and the SCAN pattern."""
+"""The exact Redis key contract (docs/architecture.md): names, validation and the SCAN pattern."""
 
 from __future__ import annotations
 
@@ -181,17 +181,17 @@ def test_timing_key_validates_the_race(season: object, round_: object) -> None:
         K.timing_key(season, round_, "a")  # type: ignore[arg-type]
 
 
-def test_claude_md_documents_the_timing_hash_exactly() -> None:
+def test_architecture_documents_the_timing_hash_exactly() -> None:
     import re
     from pathlib import Path
 
-    text = (Path(__file__).resolve().parents[2] / "CLAUDE.md").read_text()
+    text = (Path(__file__).resolve().parents[2] / "docs" / "architecture.md").read_text()
     pattern = r"HASH race:\{season\}:\{round\}:timing:\{driverId\} fields: (.*?) \("
     m = re.search(pattern, text, re.S)
     assert m is not None
     fields = tuple(f.strip() for f in " ".join(m.group(1).split()).split(","))
     assert fields == K.TIMING_FIELDS
-    assert "ADDITIVE, display only (Feature 5" in text
+    assert "ADDITIVE, display only (timing tower, added 2026-11-18" in text
 
 
 # ------------------------------------- additive telemetry cache (display only; Feature 6)
@@ -233,11 +233,12 @@ def test_telemetry_meta_keys_validate(
             K.telemetry_laps_meta_key(season, round_, code)  # type: ignore[arg-type]
 
 
-def test_claude_md_documents_the_telemetry_cache() -> None:
+def test_architecture_documents_the_telemetry_cache() -> None:
     from pathlib import Path
 
-    text = " ".join((Path(__file__).resolve().parents[2] / "CLAUDE.md").read_text().split())
-    assert "ADDITIVE API cache, display only (Feature 6" in text
+    doc = Path(__file__).resolve().parents[2] / "docs" / "architecture.md"
+    text = " ".join(doc.read_text().split())
+    assert "ADDITIVE API cache, display only (lap telemetry, added 2026-11-18" in text
     assert "STRING meta:telemetry:{season}:{round}:laps:{CODE}" in text
     assert "meta:telemetry:{season}:{round}:trace:{CODE}:{lap}" in text
     assert "API_TELEMETRY_CACHE_S" in text

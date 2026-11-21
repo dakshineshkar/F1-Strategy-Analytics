@@ -207,7 +207,7 @@ same guarantees:
 ### FastF1 specifics (`ingest/fastf1_loader.py`)
 - `Cache.configure(cache_dir=FASTF1_CACHE_DIR)`, which **must be inside `./data`** (enforced). Nothing from FastF1 is
   written outside `data/` locally.
-- The F1 TV token stays at FastF1's default `~/.local/share/fastf1/` (deny-listed for the assistant, never in the repo,
+- The F1 TV token stays at FastF1's default `~/.local/share/fastf1/` (never read by any tool, never in the repo,
   never mounted into containers).
 - Empty laps raise `FastF1AuthError`. Missing telemetry or columns raise `FastF1DataError`.
 - Races are loaded and written one at a time, one driver partition after another. The session is dropped and
@@ -521,8 +521,47 @@ undercut_attempts + stints + telemetry_lap_features --dataset.load_attempts--> o
 
 
 ## Redis serving (`serving/keys.py`, `serving/redis_store.py`)
-The key contract in CLAUDE.md is the only key layout. `keys.py` builds the names and checks every part (season
+The key contract below is the only key layout. `keys.py` builds the names and checks every part (season
 1950-2100, round 1-30, driverId `[a-z0-9_]+`, ints only), so a malformed key never reaches Redis.
+
+### Key contract (exact, tested in `tests/unit/test_keys.py`)
+
+The keys, types and fields are fixed. A change needs an issue first
+([CONTRIBUTING.md](../CONTRIBUTING.md#changes-that-need-an-issue-first)). Additions are marked ADDITIVE and are display only.
+
+```text
+- HASH race:{season}:{round}:driver:{driverId} fields: position, gap_ahead_s, gap_leader_s, tyre_compound,
+  tyre_age_laps, last_lap_time_s, undercut_flag, undercut_prob, updated_at
+- ZSET race:{season}:{round}:order member=driverId score=position
+- PUBSUB race:{season}:{round}:events (types: lap, pit_in, pit_out, undercut_alert, session_end)
+- All race keys get EXPIRE on session_end (REDIS_TTL_AFTER_SESSION_S) + safety TTL on every write.
+- Lifecycle rule (replay-start lifecycle, added 2026-11-18): an API replay start DELs every race:{season}:{round}:* key of
+  that race (SCAN + DEL), only when no replay of that race runs and before anything is launched; meta:* and other
+  races' keys are untouched; keys and fields unchanged. Tested in test_redis_store.py / test_api_replay_controls.py.
+- ADDITIVE, display only (tyre life, added 2026-11-15; the hash, zset and channel above are unchanged):
+  HASH race:{season}:{round}:tyre:{driverId} fields: tyre_life_laps, tyre_life_at_start_laps, lap, updated_at
+  (real TracingInsights tyre life; same TTL rules; written in the batch's one pipeline; never read by
+  the model, the rule, the live features or the what-if). Tested in test_keys.py / test_redis_store.py.
+- ADDITIVE API cache, display only (race entrants, added 2026-11-15): STRING meta:entrants:{season}:{round} = JSON of
+  GET /api/races/{s}/{r}/entrants tagged with a lake fingerprint, SET EX API_ENTRANTS_CACHE_S; outside race:* (never SCANned by /state or
+  expire_race), never touches the driver hash. Tested in test_keys.py / test_api_entrants.py.
+- ADDITIVE API cache, display only (race analysis, added 2026-11-16): STRING meta:analysis:{season}:{round}:{view}
+  (view = laps|stints|pitstops|race_control|positions) = JSON of GET /api/races/{s}/{r}/analysis/{view} tagged with
+  the lake fingerprint, SET EX API_ANALYSIS_CACHE_S; outside race:*, never touches the driver hash; compare has no key.
+  Tested in test_keys.py / test_api_analysis.py.
+- ADDITIVE, display only (timing tower, added 2026-11-18; the hash, zset and channel above are unchanged):
+  HASH race:{season}:{round}:timing:{driverId} fields: lap, sector1_s, sector2_s, sector3_s, speed_trap_kph,
+  pb_sector1_s, pb_sector2_s, pb_sector3_s, pb_speed_trap_kph, pit_stops, updated_at (the car's latest lap:
+  TracingInsights sectors/speed trap, its best so far over laps <= that lap, its stop count); same TTL rules;
+  written in the batch's one pipeline; never read by the model, the rule, the live features or the what-if.
+  Tested in test_keys.py / test_redis_store.py / test_redis_sink.py / test_stream_parity.py.
+- ADDITIVE API cache, display only (lap telemetry, added 2026-11-18): STRING meta:telemetry:{season}:{round}:laps:{CODE} = JSON
+  of GET /api/races/2024/{r}/telemetry/laps?driver=CODE and STRING meta:telemetry:{season}:{round}:trace:{CODE}:{lap}
+  = one lap's resampled trace, both tagged with the lake fingerprint, SET EX API_TELEMETRY_CACHE_S; outside race:*,
+  never touches the driver hash; compare has no key. Tested in test_keys.py / test_api_telemetry.py.
+```
+
+### How the store implements it
 
 - **Driver hash** `race:{s}:{r}:driver:{driverId}`. All 9 fields are written on every update, and every value
   is a string: ints as decimals, floats as `repr`, `undercut_flag` as `"0"`/`"1"`, and `updated_at` as ISO-8601 UTC

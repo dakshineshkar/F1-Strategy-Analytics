@@ -1,4 +1,4 @@
-"""Redis key and channel names: the exact contract in CLAUDE.md (#21-#24).
+"""Redis key and channel names: the exact contract in docs/architecture.md (#21-#24).
 
 * HASH    ``race:{season}:{round}:driver:{driverId}`` with the 9 fields in ``DRIVER_FIELDS``
 * ZSET    ``race:{season}:{round}:order`` (member = driverId, score = position)

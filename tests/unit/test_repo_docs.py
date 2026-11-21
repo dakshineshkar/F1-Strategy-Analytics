@@ -406,14 +406,35 @@ def test_every_relative_link_in_every_tracked_markdown_file_resolves() -> None:
     assert broken == []
 
 
-def test_ai_tool_files_are_not_tracked() -> None:
+TRACKED_TOP_LEVEL = frozenset(
+    {
+        ".dockerignore", ".editorconfig", ".env.example", ".gitattributes", ".github",
+        ".gitignore", ".pre-commit-config.yaml", "CHANGELOG.md", "CITATION.cff", "CONTRIBUTING.md",
+        "DATA_LICENSES.md", "LICENSE", "Makefile", "README.md", "SECURITY.md", "data", "docker",
+        "docker-compose.yml", "docs", "experiments", "pyproject.toml", "results", "scripts", "src",
+        "tests", "uv.lock", "web",
+    }
+)  # fmt: skip
+TRACKED_HIDDEN_NAMES = frozenset({".dockerignore", ".gitignore", ".gitkeep", ".npmrc", ".nvmrc"})
+
+
+def test_tracked_top_level_entries_are_the_project_layout() -> None:
+    """Only the project's own files are tracked: the top level is exactly the layout above, and
+    below it a hidden name is one of a few known config files (local editor and tool state never
+    is)."""
     out = subprocess.run(
-        ["git", "ls-files", "--", ".claude", ".impeccable", ".graphifyignore", "PRODUCT.md"],
-        cwd=REPO,
-        check=True,
-        capture_output=True,
+        ["git", "ls-files", "-z"], cwd=REPO, check=True, capture_output=True
     ).stdout.decode("utf-8")
-    assert out.split() == [".claude/settings.json"]
+    files = [f for f in out.split("\0") if f]
+    assert {f.split("/", 1)[0] for f in files} == TRACKED_TOP_LEVEL
+    hidden = [
+        f
+        for f in files
+        if "/" in f and not f.startswith(".github/")
+        for part in f.split("/")[1:]
+        if part.startswith(".") and part not in TRACKED_HIDDEN_NAMES
+    ]
+    assert hidden == []
 
 
 def test_contributing_security_and_changelog_are_linked_and_versions_agree() -> None:

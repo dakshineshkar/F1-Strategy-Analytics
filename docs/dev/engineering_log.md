@@ -1,6 +1,6 @@
 # Engineering log
 ## Done
-- Step 0: repo bootstrapped, CLAUDE.md, traceability matrix and Claude Code permissions added
+- Step 0: repo bootstrapped, project notes, traceability matrix and local tool permissions added
 - Step 1 (W1): monorepo scaffold and tooling
   - `pyproject.toml` (uv, Python 3.12, hatchling, src layout; pyspark==4.2.1, fastf1==3.9.2) + committed `uv.lock`
   - `src/f1sa/` skeleton (ingest, lake, etl, features, model, streaming, serving, sim, api) + `py.typed`
@@ -28,7 +28,7 @@
 - Step 3 (W1): ingestion clients (#4, #5)
   - Checked the docs first. Jolpica caps `limit` at 100 (the brief said 1000), and lap paging counts timings.
     Rate limits are 4/s and 500/h, with 429 and no Retry-After header. Terms are CC BY-NC-SA 4.0.
-    FastF1 3.9.2 auth uses F1_USERNAME/F1_PASSWORD or the TTY prompt or `python -m fastf1 auth f1tv`.
+    FastF1 3.9.2 auth uses F1_USERNAME/F1_PASSWORD or the TTY login or `python -m fastf1 auth f1tv`.
     `Cache.configure` needs an existing directory.
   - `ingest/ratelimit.py`: thread-safe dual token bucket with an injectable clock and sleep.
   - `ingest/jolpica_client.py`: cached (SQLite), rate-limited in the adapter (cache hits are free), retries with
@@ -39,7 +39,7 @@
   - `ingest/sinks.py` (atomic FileSink plus manifest), `lake/paths.py` (raw partition URIs), and `ingest/cli.py`
     (`f1sa-ingest race ...`, where `--sink hdfs` exits 2 until Step 4).
   - Settings: `JOLPICA_CACHE_DIR` and `JOLPICA_USER_AGENT` (repo name only, no personal details).
-  - `.claude/settings.json`: deny `Read(~/.local/share/fastf1/**)`, where FastF1 3.9.2 stores the F1 TV token.
+  - The local tool settings deny reading `~/.local/share/fastf1/`, where FastF1 3.9.2 stores the F1 TV token.
   - Tests: trimmed CC BY-NC-SA fixtures in `tests/fixtures/jolpica` (README with attribution). 140 unit tests, with
     no network or credentials needed.
   - Verified: a real ingest of 2023 R5 into the file sink took 20 s cold (18 requests) and 0.7 s warm (0 requests).
@@ -587,7 +587,7 @@
   - It adds to v1 and replaces nothing. On 2025: `real` (PRIMARY, 52 columns), with `real_tyre` (70) and `real_ti` (98) as
     ABLATION for #30. Each gets LR and GBT, raw and calibrated, at G=3.5 k=2 (primary) and G=5.0 k=3. The majority
     and rule baselines are fixed references. Deployment stays `real` calibrated LR (`scorer.json` `0a9b7dfb…`, unchanged).
-  - Selection rule (v2 playbook, 12 Nov 2026) applied to `results/model_dev_loso{,_real_tyre,_real_ti}.csv`: mean LOSO
+  - Selection rule (v2 playbook, 12 Nov 2026, tag `model-spec-v2`) applied to `results/model_dev_loso{,_real_tyre,_real_ti}.csv`: mean LOSO
     LR PR-AUC is 0.413 / 0.402 / 0.374, so `real` stays primary for any margin ≥ 0.
   - It also covers the v1 rules (unchanged), the paired race-cluster ablation intervals with no significance claim,
     the ORACLE label, determinism (GBT is row-order sensitive up to 0.043), missing data (Miami R6 55.6%, Belgium R13
@@ -601,7 +601,7 @@
     are unchanged; the overwrite guard for `real_tyre`/`real_ti` (each file blocks only its own run, and `real`'s files
     and the other set never block it); Makefile order, `FEATURE_SET`, refusals. No 2025 read, no training, no test run.
 - Step 11 (W5): Redis serving layer (#21–#24) and the Redis latency benchmark (#37)
-  - `serving/keys.py`: `driver_key`, `order_key`, `events_channel` and `race_pattern`, exactly the CLAUDE.md
+  - `serving/keys.py`: `driver_key`, `order_key`, `events_channel` and `race_pattern`, exactly the docs/architecture.md
     names. Validation: season 1950–2100, round 1–30, driverId `[a-z0-9_]+`, ints only, else `InvalidKeyError`.
     Also defines `DRIVER_FIELDS` (the 9 fields) and `EVENT_TYPES`.
   - `serving/redis_store.py`, sync `RaceStore` and async `AsyncRaceStore` (`redis.asyncio`), built on the same
@@ -1268,7 +1268,7 @@
     - It is queued in the batch's one pipeline. It gets the safety TTL and the `session_end` EXPIRE, because it
       matches `race:{s}:{r}:*`.
     - The 9-field driver hash, the zset and the channel are unchanged.
-    - Documented in CLAUDE.md and `docs/architecture.md`.
+    - Documented in the key contract of `docs/architecture.md`.
   - **Change.**
     - The producer has `ti_tyre_life_at`: the TI stint in progress, never `end_lap`; null when the start life
       is unknown or the race is synthetic.
@@ -1642,7 +1642,7 @@
     - API: `GET /api/races/{s}/{r}/analysis/{laps,stints,pitstops,race-control,positions}` and `…/compare?a=&b=`
       (`api/analysis.py`, `api/routes/analysis.py`). Read-only reader limited to the analysis tables and
       `entrants`; 404 no analysis / sealed 2025, 422, 500, 503 as the other routes. Cache `meta:analysis:{s}:{r}:{view}`
-      (`SET EX API_ANALYSIS_CACHE_S`, lake fingerprint, outside `race:*`; compare has no key). CLAUDE.md has the
+      (`SET EX API_ANALYSIS_CACHE_S`, lake fingerprint, outside `race:*`; compare has no key). The key contract has the
       additive line. The API still imports no pyspark.
     - Dashboard `/race/{s}/{r}/analysis` ("Race analysis" in the race page's nav): WAI-ARIA tabs for tyre
       strategy, lap times, tyre degradation (labelled "a lap-time proxy, not tyre wear", excluded laps listed),
@@ -1813,7 +1813,7 @@
       Feature 3's `lake_neutral` / `estimated_neutral` are causal.
     - Archive v1 had no sectors, no timing in its snapshots and no causal status.
   - **Transport** (your choice): display-only lap-event fields plus an **additive** Redis hash
-    `race:{s}:{r}:timing:{driverId}` (CLAUDE.md line approved 2026-11-18).
+    `race:{s}:{r}:timing:{driverId}` (key contract line approved 2026-11-18).
     - The 9-field hash, the order zset, the channel and the tyre hash are unchanged.
     - `RaceState.apply` copies only the model's fields into `LapInput`, so no rule, live feature, scorer,
       `state.json` or alert reads the new fields.
@@ -1927,7 +1927,7 @@
       2024 only"**, checked before Redis or the lake. Other errors: 404 race, driver or lap; 422; 500; 503, as the
       other routes. Cache `meta:telemetry:{s}:{r}:laps:{CODE}` and `…:trace:{CODE}:{lap}` (`SET EX
       API_TELEMETRY_CACHE_S`, lake fingerprint, outside `race:*`); compare has no key. The new catalog method
-      `read_driver_rows` opens only `clean/telemetry_trace/…/driver_code=XXX/` (LISTSTATUS/OPEN). CLAUDE.md has
+      `read_driver_rows` opens only `clean/telemetry_trace/…/driver_code=XXX/` (LISTSTATUS/OPEN). The key contract has
       the additive line. The API still imports no pyspark.
     - Delta time: both laps on A's grid, B read at the same fraction of its own lap (TI lap lengths differ by up
       to about 0.3%, so equal metres would move the finish line); `delta = elapsed A − elapsed B`, positive = A
@@ -2006,7 +2006,7 @@
       - The stream job's backstop is now ready + 7200 s + the cap + end, whatever the speed.
       - The stream job writes `decisions.jsonl` (`--decisions-out`, an output only).
     - **Lifecycle rule (approved):** a replay start DELs `race:{s}:{r}:*` (`delete_race`), only after the slot checks
-      and before any launch. A Redis error gives 503 with nothing registered. Recorded in CLAUDE.md and
+      and before any launch. A Redis error gives 503 with nothing registered. Recorded in the key contract of
       `docs/architecture.md`.
     - **Found live and fixed:** between a run's final state and `_finish`, while its processes were still being
       stopped, the job was in neither `running` nor `recent`, yet a new start already got 409 (pre-existing).
@@ -2182,8 +2182,8 @@
     - **`make web-up`** (new): rebuilds the web image and recreates only the web container, behind the
       replay guard. Tested in `tests/unit/test_makefile_web.py`. Run: the web container now serves the
       redesign and is healthy; the api is untouched (FULL=1 REPLAY=1).
-    - **`.impeccable/`:** the surface brief is to be committed; `config.local.json`, `hook.cache.json` and
-      logs are gitignored. The runtime folders ignore themselves.
+    - **Local design-tool files:** the surface brief is to be committed; the tool's local config, cache and
+      logs are gitignored.
     - **Detector:** the five `side-tab` hits are recorded in the inventory.
     - **Tests:** Vitest 454; `gapchart` and `seriesColour` tests and the four-line ΔE test were added; the 8
       contrast cases for `--best` were removed. The Makefile tests pass.
@@ -2397,7 +2397,7 @@
     GENERATED 2, PENDING 3 (S18), MISSING 0. Partial: #4 (FastF1 via TracingInsights), #43 and #44 (S18 open).
   - **Hygiene:** only `data/sample/` is tracked as data, no `models/`, no `.env`, no credentials; regex secrets
     scan 0 hits (one `FAKE_PASSWORD` test constant); OFL 1.1 present for all three fonts; one tracked file over
-    1 MB (`.claude/skills/impeccable/scripts/data/font-index.json`, 1.05 MB, skill data). `.gitignore` now also
+    1 MB (a local design tool's font index, 1.05 MB; untracked since). `.gitignore` now also
     ignores `checkpoints/`.
   - **README fixes** from the clean clone: a note on a second checkout (fixed project name `f1sa`, the isolation
     variables of `docs/reproduce.md` §4); "What `make demo` does" lists the entrants, analysis and archive steps,
@@ -2527,7 +2527,7 @@
     - Sample lake (`make api-up REPLAY=1`, `make web-up`, `E2E_NO_SERVER=1 npx playwright test`): 17 passed,
       1 skipped (latency, by design).
     - Full lake: `race-layout.spec` 4 of 4 and `screens-layout.spec` 8 of 8.
-  - **impeccable detect** (`web/src/app web/src/components`): 0 findings and no suppressions. HEAD's stylesheet had
+  - **Anti-pattern scan** (`web/src/app web/src/components`): 0 findings and no suppressions. HEAD's stylesheet had
     5 side-tab hits.
   - **Screenshots** (each under 130 KB):
     - `docs/design/before/`: `d-dark-archive.png`, `d-light-archive.png`, `m-dark-picker.png` (new; the engineer
@@ -2578,7 +2578,7 @@
   - **Tests:**
     - Vitest 550 passed.
     - Lint and typecheck clean; `contrast-report --check` all AA (92/92 per theme, unchanged).
-    - `impeccable detect`: 0 findings, no suppressions.
+    - Anti-pattern scan: 0 findings, no suppressions.
     - Sample lake (`make api-up REPLAY=1`, `make web-up`, `E2E_NO_SERVER=1 npx playwright test`): 26 passed and 1
       skipped (`latency.spec.ts`, which runs only with `E2E_LATENCY=1`).
     - Full lake (`make api-up FULL=1 REPLAY=1`): `race-layout` + `screens-layout` 21 passed.
@@ -2594,7 +2594,7 @@
   - **Audit (read-only first):** every screen at 1440, 1280, 1024, 768 and 390 px and at 200% zoom, in dark, light
     and Auto. It covered the Tab walk, Escape, landmarks and headings, axe, reduced motion, CLS, long tasks and JS per
     route, and the honesty labels on the full lake and the sample deployment. The report is
-    `.impeccable/audit/2026-11-19T19-41-22Z__web-src.md` (gitignored).
+    the local audit notes of 2026-11-19 (not committed).
   - **New devDependency:** `@axe-core/playwright` 4.14.0 (exact pin, released 2026-10-15).
   - **P0, tower Driver column:** it collapsed to 0 px at 768 and 1100–1366 px (`width: auto` in a fixed-layout
     table), live and archive. Below 1440 px it is now a fixed 7.25rem, and Pos/pin/Driver/Undercut stay sticky while
@@ -2659,7 +2659,7 @@
     | Python unit suite (`make test`) | 2340 passed in 951 s |
     | Web (`make web-test`) | lint and typecheck clean; Vitest 563 passed (28 files) |
     | Contrast (`contrast-report.mjs --check`) | 92 of 92 pairs per theme meet AA |
-    | `impeccable detect --json web/src/app web/src/components` | 0 findings, no suppressions |
+    | Anti-pattern scan of `web/src/app` and `web/src/components` | 0 findings, no suppressions |
     | Sample e2e (`make api-up REPLAY=1`, `make web-up`, `E2E_NO_SERVER=1 npx playwright test`) | 40 passed, 1 skipped (latency, by design) |
     | `make archive-equivalence SEASON=2024 ROUND=5 LAPS=5,22,45` | EQUIVALENT; 113 / 19 / 9 (141 alerts), 409 decisions |
     | `make experiments-sample` | OK 7, OK (metadata differs) 1, DIFF 0, NEW 2 |
@@ -2713,9 +2713,9 @@
     `docs/reproduce.md` for full-data ingestion instead of the README.
 - 2026-11-20: repository layout made production grade (no app behaviour change; `results/`, `data/` and the frozen
   specs byte-identical).
-  - **Untracked, kept on disk:** `.claude/skills/`, `.claude/agents/`, `.claude/commands/`, `.impeccable/` and
-    `.graphifyignore` (AI-assistant tooling), now in `.gitignore`. `CLAUDE.md` and `.claude/settings.json` stay
-    tracked.
+  - **Untracked, kept on disk:** the local tool folders (skills, agents, commands, design-tool state and the
+    knowledge-graph ignore file), then in `.gitignore`. The project notes and the tool settings file stayed
+    tracked until the clean-up below.
   - **Moved:** `PRODUCT.md` to `docs/design/product-brief.md`; `docs/report/make_figures.py` to
     `scripts/report_figures.py` (paths fixed; rerun gives the same five PNGs in `docs/report/figures/`).
     Deleted the empty placeholders `docs/decisions/` and `tests/e2e/` (the Playwright tests live in `web/e2e/`).
@@ -2727,7 +2727,7 @@
     the project's own version lines changed). `data/sample/MANIFEST.json` keeps `f1sa_version 0.1.0`, the version
     it was built with (the validator does not compare it).
   - **Tests** (`test_repo_docs.py`): every relative link and heading anchor in every Markdown file resolves (the
-    deliberate `web/tests/fixtures/report/report.md` excepted); the AI-tool files are not tracked; the new docs
+    deliberate `web/tests/fixtures/report/report.md` excepted); the local tool files are not tracked; the new docs
     are linked and the CHANGELOG, pyproject, package.json and `__version__` versions agree.
 - 2026-11-20: course submission report `docs/report/final_report.md` and `docs/report/final_report.pdf`
   (`make final-report-pdf`). `docs/report/report.md` and `report.pdf` are unchanged and stay the full report.
@@ -2750,6 +2750,26 @@
     distinct) appears in `report.md`, `results.md`, `architecture.md`, `experiments.md`, `model_results.md` or
     `traceability.md`; `test_repo_docs.py` now checks that, the course section order, the four figures and the
     committed PDF; `test_makefile_web.py` checks the target; `web/tests/reportPdf.test.ts` covers the style.
+- 2026-11-20: local tool files out of the tracked tree (no history rewrite; no app behaviour change; `results/`,
+  `data/`, the frozen specs and `docs/report/final_report.pdf` byte-identical).
+  - **Moved first, then untracked:** the project notes' Redis key contract is now verbatim (without internal
+    labels) in `docs/architecture.md` ("Redis serving", "Key contract"); the stack commands, safety rules
+    (including: never touch `/f1/raw` or `data/manifest.json` by hand), pinned versions, data rules and
+    environment notes are in `CONTRIBUTING.md`. The project notes file and the tool settings file are no longer
+    tracked; they stay on disk.
+  - **Ignore rules:** every local tool entry moved from `.gitignore` to `.git/info/exclude` (local only).
+    `.dockerignore` excludes every top-level hidden entry (`.*`, `!.env.example`); a probe build shows the root
+    context without hidden folders, and `make web-up`, `make up-full` and `make api-up FULL=1 REPLAY=1` rebuilt
+    and started healthy (no build reads a root dotfile).
+  - **Removed:** `docs/planning/playbook_v2.md` (mostly step-by-step build instructions). The frozen `docs/model_spec_v2.md` still
+    cites it; it is unchanged at the git tag `model-spec-v2` (`git show model-spec-v2:docs/planning/playbook_v2.md`).
+    `docs/README.md` and `docs/traceability.md` point there.
+  - **Reworded:** `docs/design/product-brief.md` is a plain product brief; the design records name the
+    "anti-pattern scan"; `report.md` cites `docs/architecture.md` for the Redis schema (`report.pdf` rebuilt,
+    22 pages).
+  - **Tests:** `test_keys.py` reads the contract from `docs/architecture.md`;
+    `test_repo_docs.py::test_tracked_top_level_entries_are_the_project_layout` replaces the old tool-file check
+    with an allowlist of tracked top-level entries and hidden names. Traceability: OK 522, GENERATED 2.
 ## Next
 - S18B: the demo rehearsal with `docs/demo_script.md` (full lake, then the sample-mode fallback); fill in section 16
   (team contributions) of the report and run `make report-pdf` again. The report and demo script already describe
@@ -2834,7 +2854,7 @@
     the rest in neutral, with a dash and an end label.
   - The archive gap chart is neutral (Highlight draws one car in text colour).
   - The pages not yet redesigned (analysis, telemetry, drivers) still read the legacy token aliases. The five
-    `side-tab` hits are resolved by Step 4A (2026-11-19): `impeccable detect` finds nothing and suppresses nothing.
+    `side-tab` hits are resolved by Step 4A (2026-11-19): the anti-pattern scan finds nothing and suppresses nothing.
     See docs/design/inventory.md, "Detector findings carried to later steps".
 - Feature 7:
   - A pause or a speed change applies before the producer's next event. Events already sent still reach the
@@ -3019,7 +3039,8 @@
 - The v2 selection rule says "calibrated LR", but the LOSO rows it was applied to are raw LR at the first grid
   point (no per-fold calibrator). PR-AUC is unchanged by a strictly increasing calibration map. Disclosed in
   `docs/model_spec_v2.md` §2.
-- The v2 playbook (12 Nov 2026) that states the selection rule is not in the repo. The spec cites it.
+- The v2 playbook (12 Nov 2026) that states the selection rule was removed from the tree on 2026-11-20. The spec
+  cites it; it is kept, unchanged, at the git tag `model-spec-v2` (`git show model-spec-v2:docs/planning/playbook_v2.md`).
 - GBT is sensitive to row order. Fixing the order of the TracingInsights sets moved `real_ti` GBT validation
   PR-AUC by 0.043 at G=3.5, which is larger than the gaps between some feature sets in the tables. `real` is
   reproducible run to run (its plan gives a stable order), but its GBT numbers also hold for one row order only.

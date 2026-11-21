@@ -1,5 +1,5 @@
-"""Redis serving store: the CLAUDE.md contract, sync (``RaceStore``) and ``redis.asyncio``
-(``AsyncRaceStore``) versions (#21-#24).
+"""Redis serving store: the docs/architecture.md key contract, sync (``RaceStore``) and
+``redis.asyncio`` (``AsyncRaceStore``) versions (#21-#24).
 
 Encoding of the driver hash (every value is a string; all 9 fields are always written):
 

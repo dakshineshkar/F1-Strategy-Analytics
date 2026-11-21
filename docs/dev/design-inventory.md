@@ -115,13 +115,13 @@ The other 34 findings can be fixed in the web client alone. F37 is already fixed
   footer.
 - **Legacy aliases:** removed from `theme.ts` and `globals.css`. No file reads them;
   `web/tests/legacy-tokens.test.ts` guards this.
-- **Detector:** `impeccable detect` reports 0 findings and no suppressions.
+- **Detector:** the anti-pattern scan reports 0 findings and no suppressions.
 - **Not done:** F23 (session-end summary for a late joiner). It needs an API change and was out of scope.
 - **Server or API changes:** none were needed for 4B.
 
 ## Detector findings carried to later steps
 
-**Resolved in Step 4A (2026-11-19): `impeccable detect --json web/src/app web/src/components` reports 0 findings,
+**Resolved in Step 4A (2026-11-19): the anti-pattern scan of `web/src/app` and `web/src/components` reports 0 findings,
 with no suppression in the code.** The same run on HEAD's stylesheet before the step gave the five `side-tab` hits
 below. Line numbers are from that stylesheet.
 

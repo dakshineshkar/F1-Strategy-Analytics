@@ -7,7 +7,7 @@ module checks authentication up front and validates what was loaded, raising
 
 Credentials are never logged or included in messages. They are taken from ``Settings``
 (``F1_USERNAME``/``F1_PASSWORD`` in the environment or ``.env``), or FastF1 falls back to its
-stored token / interactive prompt (``uv run python -m fastf1 auth f1tv --authenticate``).
+stored token / interactive login (``uv run python -m fastf1 auth f1tv --authenticate``).
 """
 
 from __future__ import annotations

@@ -293,9 +293,9 @@ placed on the raised ground (the status strip) in the light theme.
 Three pairs were added on 2026-11-19 for the call's band: `faint` on `signal-wash` (the previous-lap lap number of a
 banded row) and `gain`/`loss` marks on `signal-wash` (the gauge's trend arrow over the shaded rule window).
 
-### impeccable detect
+### Automated anti-pattern scan
 
-`impeccable detect --json web/src/app web/src/components` reports **0 findings and no suppressions** (2026-11-19,
+The automated anti-pattern scan of `web/src/app` and `web/src/components` reports **0 findings and no suppressions** (2026-11-19,
 re-run after the race analysis, telemetry, drivers and shared-part changes; the earlier run on the engineer view,
 archive and picker had the same result). No colour token was added for these screens, so the contrast table below is unchanged: 92 of 92 pairs pass
 in each theme.
