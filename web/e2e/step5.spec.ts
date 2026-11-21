@@ -2,6 +2,7 @@ import AxeBuilder from "@axe-core/playwright";
 import { type APIRequestContext, expect, type Page, test } from "@playwright/test";
 
 import { API, stopReplay } from "./replay";
+import { callCover, stripMetrics } from "./transport";
 
 /**
  * Step 5 (final audit, 2026-11-19), against the real API in either lake mode with replay enabled:
@@ -9,6 +10,9 @@ import { API, stopReplay } from "./replay";
  *     post-race archive: its head and every row's cell are wider than 0 and hold the car's code (it collapsed to
  *     0 px at 768 and 1100–1366 px: finding 1). No horizontal page scroll. At 1280×800 the tower, the call and the
  *     alert feed are in the first viewport;
+ *   - at the same widths during the replay, the status strip's inline replay transport: nothing in the strip is cut or
+ *     outside the viewport, one line at 1280 px and wider, the transport on its own line below that, and no replay
+ *     control over the call (2026-11-21);
  *   - axe (WCAG 2.0/2.1/2.2 A and AA, plus best practices) on every screen in both themes reports no serious or
  *     critical violation: the race picker, the live race and its engineer tab, the post-race archive, the 8 race
  *     analysis tabs and the drivers view.
@@ -109,6 +113,16 @@ for (const vp of WIDTHS) {
       expect(d.empty, "Driver cells without a code").toBe(0);
       expect(d.hidden, "Driver codes cut off").toBe(0);
       expect(d.pageOverflow).toBeLessThanOrEqual(0);
+      // the status strip with its inline replay transport (the replay popover is gone): nothing cut or outside the
+      // viewport, one line at 1280 px and wider, the transport on its own line below that, and the call not covered
+      const strip = await stripMetrics(page);
+      expect(strip.cut, "cut boxes in the strip").toEqual([]);
+      expect(strip.outside, "strip controls outside the viewport").toEqual([]);
+      expect(strip.labels, "the running replay's transport").toEqual(expect.arrayContaining(["Stop", "60×"]));
+      if (vp.width >= 1280) expect(strip.oneLine, "the strip is one line").toBe(true);
+      else expect(strip.transportBelow, "the transport has its own line").toBe(true);
+      const cover = await callCover(page);
+      expect([...cover.intersecting, ...cover.covered], "replay controls over the call").toEqual([]);
       if (vp.name === "1280") {
         // the first-viewport rule at 1280×800: the call, the alert feed and the tower to its last row. Checked on the
         // boxes, not with toBeInViewport: below 1440 px the row is wider than the tower's own scroll box (its right-hand

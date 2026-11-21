@@ -1079,12 +1079,18 @@ browser ── GET /api/races, /api/health ────────────�
       it on 26 of 27 laps (on lap 20 Redis had moved on one batch, 13 vs 12);
     - **0** page requests to `/state`.
   - The page still polls `GET /api/replays` (every 1 s while a replay runs, else every 5 s) for the replay
-    control's status, as the dashboard specifies. Replay status is not on the race channel.
-  - Replay controls (`components/ReplayControl.tsx`, `lib/replays.ts`): Start (disabled while a
-    replay is active), Pause/Resume (one button) and Stop (enabled only while this race's replay is active), and
-    the 1×/10×/60× radios, which choose the start speed and, during a run, show and change the API's speed. The
-    `role="status"` line (polite) states the state and speed ("Running at 10×.", "Paused at lap 23 (10×).",
-    "Stopped at lap 31."); the lap reached is shown next to it, not announced. A new run id of the race
+    transport's status, as the dashboard specifies. Replay status is not on the race channel.
+  - Replay transport (`components/ReplayTransport.tsx`, `lib/replays.ts`; display only, 2026-11-21): inline at
+    the right end of the status strip, on the Race and Engineer tabs alike, never over the page (it replaced a
+    popover that covered the call). Its phase (`transportPhase`) decides what it offers: idle, Start replay and
+    the 1×/10×/60× radios; blocked (another race replays, or replay is off), Start disabled with the reason as
+    text; active (starting, running, paused), Pause/Resume, Stop and the radios, which show and change the API's
+    speed; over (finished, stopped, failed, or the session ended), Replay again at the last run's speed and the
+    post-race archive. Stop takes two presses (`confirmStep`): the first shows "Confirm stop" for about 4 s;
+    Escape, the timeout or the replay ending on its own cancels it, and no stop is sent. One visually hidden
+    `role="status"` region (polite, `liveText`) announces each state change once ("Running at 10×.", "Paused at
+    lap 23 (10×)."); the strip's mode chip and lap counter show it, and the chip is not a live region. A refused
+    action or a failed replay's reason is a `role="alert"` line under the strip. A new run id of the race
     (`trackRun`) resets the live stream and reloads `/state`.
 - **Reducer** (`lib/reducer.ts`, pure, 42 Vitest cases):
   - A snapshot (pushed `event: snapshot` or a reconnect's `/state`) replaces the 9 hash fields (stale

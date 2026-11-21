@@ -1,6 +1,7 @@
 /** Replay helpers (pure): API errors and replay states as text, and which controls apply. */
 
 import { ApiError, type Replay, type ReplaySpeed, type ReplayStatus } from "./api";
+import type { Mode } from "./call";
 
 export type Speed = ReplaySpeed;
 export const SPEEDS: readonly Speed[] = [1, 10, 60];
@@ -47,13 +48,6 @@ export function replayStatusText(current: Replay | null, anyRunning: boolean, en
   return "Idle.";
 }
 
-/** The lap reached by an active replay, shown next to the status (not a live region: it changes
- * every lap, and only state changes are announced). */
-export function replayLapText(current: Replay | null): string {
-  if (!isActive(current) || current === null) return "";
-  return current.lap === null ? "No lap sent yet." : `Lap ${current.lap} sent.`;
-}
-
 export interface ReplayControls {
   /** Start a new replay of this race. */
   canStart: boolean;
@@ -91,6 +85,53 @@ export function replayControls(
     canChangeSpeed: usable && (active || !anyRunning),
     shownSpeed: active && current ? asSpeed(current.speed, chosen) : chosen,
   };
+}
+
+/** What the status strip's replay transport offers (the strip's inline controls; there is no popover):
+ * ``idle`` Start replay and the speed choice; ``blocked`` the same Start, disabled, with the reason as visible text;
+ * ``active`` (starting, running or paused) Pause or Resume, Stop and the speed; ``over`` (this race's replay
+ * finished, stopped or failed, or the session ended) Replay again and, when there is one, the post-race archive. */
+export type TransportPhase = "idle" | "blocked" | "active" | "over";
+
+export function transportPhase(current: Replay | null, anyRunning: boolean, enabled: boolean | null, ended: boolean): TransportPhase {
+  if (isActive(current)) return "active";
+  if (enabled === false || anyRunning) return "blocked";
+  if (ended || current?.state === "finished" || current?.state === "stopped" || current?.state === "failed") return "over";
+  return "idle";
+}
+
+/** The visible reason a start is not offered (``blocked``), else null. */
+export function blockedReason(anyRunning: boolean, enabled: boolean | null): string | null {
+  if (enabled === false) return "Replay disabled on the API";
+  if (anyRunning) return "Another race is replaying";
+  return null;
+}
+
+/** The speed "Replay again" starts at: the last run's, when it is one of the offered speeds, else the chosen one. */
+export function replayAgainSpeed(current: Replay | null, chosen: Speed): Speed {
+  return current === null ? chosen : asSpeed(current.speed, chosen);
+}
+
+/** Stop is irreversible, so it takes two presses: the first arms it ("Confirm stop"), the second, while armed and
+ * while the replay is still active, stops. Escape, the timeout (about 4 s) or a reset cancels; so does the replay
+ * ending on its own (finished or failed) while armed: the button returns to normal and no stop is sent. */
+export type ConfirmState = "idle" | "armed";
+export type ConfirmEvent = "press" | "escape" | "timeout" | "reset";
+export const CONFIRM_MS = 4000;
+
+export function confirmStep(state: ConfirmState, event: ConfirmEvent, active: boolean): { state: ConfirmState; fire: boolean } {
+  if (!active) return { state: "idle", fire: false };
+  if (event !== "press") return { state: "idle", fire: false };
+  return state === "armed" ? { state: "idle", fire: true } : { state: "armed", fire: false };
+}
+
+/** The page's one polite announcement of the race mode (the status strip's mode chip is not a live region, so each
+ * change is spoken once): the replay's state while this race has a replay record or a start is blocked, else the
+ * mode's sentence (LIVE, FINISHED after the session ended, NOT REPLAYING). Never a per-lap counter, so it changes
+ * only when the state does. */
+export function liveText(mode: Mode, current: Replay | null, anyRunning: boolean, enabled: boolean | null): string {
+  if (current !== null || enabled === false || anyRunning) return replayStatusText(current, anyRunning, enabled);
+  return mode.description;
 }
 
 /** Which run of this race the live view belongs to. The first status read only records the run

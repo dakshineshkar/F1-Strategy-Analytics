@@ -1,6 +1,6 @@
 "use client";
 
-import { type ReactNode, useEffect, useId, useRef } from "react";
+import type { ReactNode } from "react";
 
 import { type Mode, type ModelIdentity, modelDetail } from "@/lib/call";
 import { type RaceStatus, SOURCE_TEXT, STATUS_LABEL, STATUS_WORDS } from "@/lib/raceStatus";
@@ -25,10 +25,12 @@ const CONN_SHORT: Record<Connection, string> = {
 
 /** The race page's persistent status band (critique F06, F10, F23, F28): what is playing (REPLAY 10×, PAUSED,
  * STOPPED, FINISHED, or LIVE), the SMOKE TEST stamp when the sample model scores, the lap, the track status,
- * the scoring model's id and the stream connection, each in its own cell (never a dot-joined string), plus the
- * replay drawer. One band at any width; on a phone the cells wrap onto two lines (the race state first) and some labels take a
- * short form (``PhoneLabel``), so nothing scrolls sideways or is cut. The mode cell is a polite status
- * region, so a pause, stop or finish is announced once. */
+ * the scoring model's id and the stream connection, each in its own cell (never a dot-joined string), and last the
+ * replay transport (``children``, inline: nothing opens over the page). One band at any width, of the same height in
+ * every replay state: on a wide screen one line; below about 1180 px the transport takes the strip's second line, and
+ * on a phone the cells wrap (the race state first), some labels take a short form (``PhoneLabel``) and the transport
+ * is its own full-width line, so nothing scrolls sideways or is cut. The mode cell is not a live region: the
+ * transport's one hidden polite region announces each change once. */
 export function StatusStrip({
   mode,
   model,
@@ -38,7 +40,6 @@ export function StatusStrip({
   raceStatus,
   connection,
   sessionEnded,
-  onArchive,
   children,
 }: {
   mode: Mode;
@@ -50,9 +51,7 @@ export function StatusStrip({
   raceStatus: RaceStatus | null;
   connection: Connection;
   sessionEnded: boolean;
-  /** switch to the post-race archive (shown once the replay or session has ended) */
-  onArchive: (() => void) | null;
-  /** the replay drawer */
+  /** the replay transport (ReplayTransport) */
   children: ReactNode;
 }) {
   const kind = raceStatus?.status ?? "unknown";
@@ -65,9 +64,9 @@ export function StatusStrip({
   const connShort = ended ? "Ended" : CONN_SHORT[connection];
   return (
     <section className="status-strip" aria-label="Race status">
-      {/* one group: laid out as cells of the strip on a wide screen, one scrollable line on a phone */}
+      {/* one group: laid out as cells of the strip; on a phone they wrap onto two lines */}
       <div className="ss-cells">
-        <p className={`ss-mode tone-${mode.tone}`} role="status" aria-live="polite" title={mode.description}>
+        <p className={`ss-mode tone-${mode.tone}`} title={mode.description}>
           <span className="ss-mode-label">{mode.label}</span>
           <span className="visually-hidden">{`: ${mode.description}`}</span>
         </p>
@@ -112,73 +111,8 @@ export function StatusStrip({
           <span className={`ss-dot dot-${connection}`} aria-hidden="true" />
           <PhoneLabel full={conn} short={connShort} />
         </p>
-        {onArchive !== null ? (
-          <button type="button" className="btn btn-quiet btn-small ss-archive" onClick={onArchive}>
-            Open the post-race archive
-          </button>
-        ) : null}
       </div>
       <div className="ss-end">{children}</div>
     </section>
-  );
-}
-
-/** The replay controls as a drawer under the status strip (they are demo controls, not race state: critique
- * F06). The drawer overlays the page, so opening it moves nothing; Escape or a click outside closes it and
- * focus returns to its button. ``open`` is controlled, so the call's empty state can open it. */
-export function ReplayDrawer({
-  open,
-  onOpenChange,
-  summary = "",
-  children,
-}: {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  /** a short extra state for the button; the status strip's mode cell already names the replay state */
-  summary?: string;
-  children: ReactNode;
-}) {
-  const id = useId();
-  const root = useRef<HTMLDivElement>(null);
-  const button = useRef<HTMLButtonElement>(null);
-  const wasOpen = useRef(open);
-  useEffect(() => {
-    if (open && !wasOpen.current) root.current?.querySelector<HTMLElement>(".replay-drawer-panel button:not([disabled]), .replay-drawer-panel input")?.focus();
-    wasOpen.current = open;
-  }, [open]);
-  useEffect(() => {
-    if (!open) return;
-    const onDown = (e: PointerEvent) => {
-      if (root.current && e.target instanceof Node && !root.current.contains(e.target)) onOpenChange(false);
-    };
-    document.addEventListener("pointerdown", onDown);
-    return () => document.removeEventListener("pointerdown", onDown);
-  }, [open, onOpenChange]);
-  return (
-    <div
-      className="replay-drawer"
-      ref={root}
-      onKeyDown={(e) => {
-        if (open && (e.key === "Escape" || e.key === "Esc")) {
-          onOpenChange(false);
-          button.current?.focus();
-        }
-      }}
-    >
-      <button
-        ref={button}
-        type="button"
-        className="btn btn-small"
-        aria-expanded={open}
-        aria-controls={`${id}-panel`}
-        onClick={() => onOpenChange(!open)}
-      >
-        <PhoneLabel full="Replay controls" short="Replay" />
-        {summary ? <span className="replay-drawer-summary">{summary}</span> : null}
-      </button>
-      <div id={`${id}-panel`} className="replay-drawer-panel" hidden={!open}>
-        {children}
-      </div>
-    </div>
   );
 }

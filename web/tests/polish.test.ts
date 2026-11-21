@@ -70,7 +70,6 @@ describe("the status strip shows the leader's lap progress once", () => {
         raceStatus: null,
         connection: "connected",
         sessionEnded: false,
-        onArchive: null,
         children: null,
       } as Parameters<typeof StatusStrip>[0]),
     );

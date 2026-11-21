@@ -42,8 +42,8 @@ lap L is what a strategist could have known then. The archive view is proven equ
   The sample demo replays 2024 R5 at 60x (about 2 minutes); full mode serves 90 races from HDFS.
 - Typical scene: a live demo or recorded walkthrough for graders, or an evaluator clicking through on their own
   machine after a clean clone.
-- Surfaces: race picker (`/`), live race page (timing tower, gap chart, tyres, alert feed, replay controls with
-  stop/pause/resume/speed, what-if panel, engineer tab, race-status banner), drivers page, race analysis
+- Surfaces: race picker (`/`), live race page (timing tower, gap chart, tyres, alert feed, inline replay controls in
+  the status strip with start/pause/resume/two-press stop/speed, what-if panel, engineer tab, race-status banner), drivers page, race analysis
   (`/analysis`: lap times, strategy/stints, degradation, positions, pit stops, race control, compare, 2024
   two-lap telemetry overlay), post-race archive viewer with lap scrubber.
 

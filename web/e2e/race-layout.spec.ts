@@ -1,6 +1,7 @@
 import { expect, type APIRequestContext, type Page, test } from "@playwright/test";
 
 import { API, stopReplay } from "./replay";
+import { stripMetrics } from "./transport";
 
 /**
  * The live race view's layout contract (redesign Step 2, docs/design/DESIGN.md), against the real API in
@@ -20,7 +21,9 @@ import { API, stopReplay } from "./replay";
  * The first-viewport, clipping and layout-shift checks run in both themes.
  * And at 390×844 (2026-11-19 screenshot review): no horizontal page scroll; the race head and the status strip wrap,
  * so every header and strip control is wholly inside the viewport and none is cut (no "GREE"); the call comes before
- * the tower and starts within 200 px.
+ * the tower and starts within 250 px (the strip's replay transport is its own full-width line of 44 px targets,
+ * 2026-11-21; it was 200 px with the old popover button).
+ * At 1440 px the status strip is one line, the replay transport included.
  * At both widths the call's pit loss is the race's, as the engineer API states it (the same value on a phone and a
  * desktop, also right after a late join), and at 1440 px the what-if has no empty gap under its status line.
  * The layout-shift check runs with motion on, because tower reorders are FLIP moves (transform only);
@@ -148,6 +151,10 @@ test.describe("live race view at 1440×900", () => {
         expect(box!.right, `${theme}: ${name} right`).toBeLessThanOrEqual(m.vw);
       }
       await expect(page.locator("table.tower tbody tr")).toHaveCount(20);
+      // the status strip is one line, its inline replay transport included, and nothing in it is cut
+      const strip = await stripMetrics(page);
+      expect(strip.oneLine, `${theme}: the strip is one line`).toBe(true);
+      expect(strip.cut, `${theme}: cut boxes in the strip`).toEqual([]);
       expect(m.clipped, `${theme}: cut-off cells or alert lines`).toEqual([]);
       expect(m.clippedV, `${theme}: cut-off blocks in the call or the feed`).toEqual([]);
       // one loud element: only the call's pair is on the band, one attacker and one defender at most
@@ -241,10 +248,11 @@ test.describe("live race view at 390×844", () => {
     expect(m.pageOverflow).toBeLessThanOrEqual(0);
     expect(m.strip!.bottom).toBeLessThanOrEqual(m.call!.top);
     expect(m.call!.top).toBeLessThan(m.vh);
-    // 200 px for the real view; the sample deployment's honesty stamps (SMOKE TEST in the strip, the wrapped
-    // SYNTHETIC DEMO DATA notice) add a line each, so it gets 240 px (user decision 2026-11-19)
+    // 250 px for the real view (236 px measured on the full lake: the strip's replay transport is its own full-width
+    // line of 44 px targets, user decision 2026-11-21); the sample deployment's honesty stamps (SMOKE TEST in the
+    // strip, the wrapped SYNTHETIC DEMO DATA notice) add a line each, so it gets 290 px (272 px measured)
     const stamped = (await page.locator(".status-strip .stamp-smoke, .data-banner.is-synthetic").count()) > 0;
-    expect(m.call!.top, `the call starts within ${stamped ? 240 : 200} px (the head and the strip wrap)`).toBeLessThanOrEqual(stamped ? 240 : 200);
+    expect(m.call!.top, `the call starts within ${stamped ? 290 : 250} px (the head and the strip wrap)`).toBeLessThanOrEqual(stamped ? 290 : 250);
     // every header and strip control is wholly on screen: nothing is cut at the right edge or scrolled away
     const controls = page.locator(
       ".race-head-live a, .race-head-live [role=tab], .race-head-live h1, .status-strip .ss-mode, .status-strip .ss-cell, .status-strip .stamp, .status-strip button:visible",
@@ -267,7 +275,7 @@ test.describe("live race view at 390×844", () => {
     // (1 px, read by screen readers) are not boxes on screen
     const cut = await page.evaluate(() =>
       [...document.querySelectorAll(".data-banner, .data-banner *, .race-head-live, .race-head-live *, .status-strip, .status-strip *")]
-        .filter((e) => !e.closest("[hidden], .replay-drawer-panel") && e.getBoundingClientRect().width > 1)
+        .filter((e) => !e.closest("[hidden]") && e.getBoundingClientRect().width > 1)
         .filter((e) => getComputedStyle(e).display !== "inline" && e.scrollWidth > e.clientWidth)
         .map((e) => `${e.tagName.toLowerCase()}.${[...e.classList].join(".")}: ${(e.textContent ?? "").trim().slice(0, 30)} (${e.scrollWidth} > ${e.clientWidth})`),
     );

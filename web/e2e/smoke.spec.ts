@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 import { API, stopReplay, waitForIdle } from "./replay";
+import { startFromStrip } from "./transport";
 
 /**
  * Smoke test against the real API in sample mode with replay enabled (`make api-up REPLAY=1`):
@@ -47,22 +48,18 @@ test("sample race: a 60× replay fills the tower and updates laps", async ({ pag
   await expect(page).toHaveURL(/\/race\/2024\/5$/);
   await expect(page.getByRole("heading", { level: 1 })).toContainText("Chinese Grand Prix");
 
-  // the replay controls live in a drawer under the status strip (redesign: demo controls, not race state)
-  await page.getByRole("button", { name: "Replay controls", exact: true }).click();
-  await page.getByLabel("60×").check();
-  const start = page.getByRole("button", { name: "Start replay" });
-  await expect(start).toBeEnabled({ timeout: 15_000 });
+  // the replay controls are inline at the end of the status strip (no popover): choose 60×, then Start replay (or,
+  // after an earlier run of this race, Replay again and then 60×)
   started = true; // before the click: a stop with nothing running is a harmless 409
-  await start.click();
+  await startFromStrip(page, 60);
   await expect(page.locator("#replay-status")).toContainText(/Starting|Running/, { timeout: 20_000 });
-  await expect(start).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Start replay" })).toHaveCount(0); // now Pause, Stop and the speed
 
   // The tower fills from the stream (the stream job needs ~20-40 s to be ready).
   const rows = page.locator("table.tower tbody tr");
   await expect.poll(async () => rows.count(), { timeout: 120_000, intervals: [1000] }).toBeGreaterThanOrEqual(20);
   await expect(page.locator(".conn")).toContainText("Stream connected");
   await expect(page.getByRole("region", { name: "Race status" }).locator(".ss-mode")).toContainText(/REPLAY 60×/);
-  await page.keyboard.press("Escape"); // close the replay drawer
 
   // How to read this: the legend opens by keyboard and explains the markers in text.
   const legend = page.locator("details.legend");

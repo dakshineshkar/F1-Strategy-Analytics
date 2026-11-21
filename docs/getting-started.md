@@ -37,7 +37,8 @@ make api-up FULL=1 REPLAY=1   # recreates only the api: HDFS lake, replays enabl
 
 ## Stop
 
-1. **Stop any replay first.** In the dashboard: **Replay controls** → **Stop**. Without the page:
+1. **Stop any replay first.** In the dashboard's status strip: **Stop**, then **Confirm stop** (Stop takes two
+   presses). Without the page:
    `curl -s -X POST localhost:8000/api/races/2024/5/replay/stop` (with the race's season and round), then
    `curl -s localhost:8000/api/replays` to check that nothing is `starting`, `running` or `paused`.
 2. **Then stop the stack:** `make down`. It removes the containers and keeps the volumes (Kafka log, HDFS data).

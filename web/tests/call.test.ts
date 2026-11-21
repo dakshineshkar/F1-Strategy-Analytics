@@ -257,7 +257,6 @@ describe("the call's markup", () => {
         context: null,
         onSimulate: () => undefined,
         replayIdle: false,
-        onOpenReplay: () => undefined,
         ...props,
       }),
     );
@@ -280,12 +279,16 @@ describe("the call's markup", () => {
     expect(html({ model: modelIdentity(health("sample_deploy_real_G3.5_k2") ?? null) })).toContain('<span class="stamp stamp-smoke">SMOKE TEST</span>');
   });
 
-  it("without a flagged pair says why; without a replay offers to start one", () => {
+  it("without a flagged pair says why; without a replay points to the strip's Start replay", () => {
     const quiet = run([snap(snapshotMsg(order, 12))]);
     expect(html({ state: quiet })).toContain("No undercut call");
-    expect(html({ state: initialState(2024, 5), replayIdle: true })).toContain(">Open replay controls</button>");
-    // the start control is neutral: solid signal is for the call and its button only
-    expect(html({ state: initialState(2024, 5), replayIdle: true })).not.toContain("btn-primary");
+    const idle = html({ state: initialState(2024, 5), replayIdle: true });
+    expect(idle).toContain("No replay of this race is running.");
+    expect(idle).toContain("Start one from the status strip above.");
+    // the call has no start control of its own (the strip's transport is right above it): no second "Start replay"
+    expect(idle.slice(idle.indexOf('class="call-body'))).not.toContain("<button");
+    expect(idle).not.toContain("Open replay controls");
+    expect(idle).not.toContain("btn-primary");
   });
 });
 
@@ -361,7 +364,6 @@ describe("the call's markup in each state", () => {
         context: null,
         onSimulate: () => undefined,
         replayIdle: false,
-        onOpenReplay: () => undefined,
         ...props,
       }),
     );
@@ -378,19 +380,21 @@ describe("the call's markup in each state", () => {
     expect(late).toContain("gap at decision: not received (before you opened the page)");
   });
 
-  it("after the finish: 'Race ended', no pit instruction, no Simulate, the archive", () => {
+  it("after the finish: 'Race ended' and why, no pit instruction, no Simulate and no button (the strip offers the archive)", () => {
     const s = run([
       snap(snapshotMsg(order, 55, { lec: true })),
       ...[lap("ver", 56, 5320, 1), lap("nor", 56, 5322, 2)].map((raw) => ({ type: "event", raw }) as RaceAction),
     ]);
-    const m = html({ state: s, ended: true, layout: "compact", onArchive: () => undefined });
-    expect(m).toContain("Race ended at lap 56");
-    expect(m).toContain(">Open the post-race archive</button>");
+    const m = html({ state: s, ended: true, layout: "compact" });
+    expect(m).toContain('<span class="call-none">Race ended at lap 56</span><span class="call-line-text">The live call stops at the chequered flag.</span>');
+    expect(m).not.toContain("Open the post-race archive");
+    expect(m).not.toContain("not built yet");
+    // the only button left is the heading's "?" key: the call's body has none
+    expect(m.slice(m.indexOf('class="call-body'))).not.toContain("<button");
     expect(m).not.toContain("Simulate");
     expect(m).not.toContain("pitting next lap");
     expect(m).not.toContain("btn-primary");
     expect(m).toContain('class="panel call is-compact is-ended"');
-    expect(html({ state: s, ended: true, layout: "compact", onArchive: null })).toContain("The post-race archive of this race is not built yet.");
   });
 
   it("no call while streaming: the closest pair, why, a muted gauge and a neutral Simulate, no signal fill", () => {

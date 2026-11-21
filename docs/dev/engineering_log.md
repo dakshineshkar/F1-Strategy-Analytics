@@ -2770,6 +2770,79 @@
   - **Tests:** `test_keys.py` reads the contract from `docs/architecture.md`;
     `test_repo_docs.py::test_tracked_top_level_entries_are_the_project_layout` replaces the old tool-file check
     with an allowlist of tracked top-level entries and hidden names. Traceability: OK 522, GENERATED 2.
+- UI replay transport (2026-11-21, on `main`; display only, not committed): the live race page's replay popover,
+  which covered the call while a replay ran or was paused, is replaced by an inline transport at the right end of the
+  status strip. The replay API, `useReplays`, the reducer, the stream, Python and Redis are unchanged.
+  - **Component:** `web/src/components/ReplayTransport.tsx` replaces `ReplayControl.tsx` and `ReplayDrawer`. Phases
+    (`transportPhase` in `lib/replays.ts`): idle (Start replay, neutral 2 px text ink, plus the 1×/10×/60× radios),
+    blocked (Start disabled, the reason as text), active (Pause/Resume, Stop, speed), over (Replay again at the last
+    run's speed, "Open the post-race archive", moved here from the strip). Authored icons with visible labels
+    (`Marks.tsx`). Shared by the Race and Engineer tabs (the strip sits above both).
+  - **Stop:** two presses (`confirmStep`): "Confirm stop" (2 px `--danger`) for 4 s; Escape, the timeout or the replay
+    finishing or failing on its own disarms it and sends nothing. No modal, alert or `confirm()`.
+  - **Announcements:** one visually hidden polite region (`liveText`) announces each mode or replay change once; the
+    mode chip is no longer a live region (user decision 2026-11-21). "Lap N sent." is gone (`replayLapText` removed).
+    A refused action or a failed replay's reason is a `role="alert"` line under the strip.
+  - **The call:** its "Open replay controls" button is removed (the strip's Start replay is right above it at every
+    width); the idle and stored lines say "Start one from the status strip above." After the finish it says "Race ended at lap N. The live
+    call stops at the chequered flag." with no button: its "Open the post-race archive" (and the "not built yet"
+    note) is removed, because the strip's transport offers the archive next to Replay again (once on the page).
+    `call.test.ts` checks the ended call has no button; `replay-transport.spec.ts` checks the finished state offers
+    the archive at most once, in the strip.
+  - **Layout** (measured with `/api/replays` stubbed, full lake): the strip keeps one height in all 7 states at each
+    width (1440 and 1280: 40 px, one line; 1024: 70; 768: 90; 390: 98). Below 1440 px the gaps narrow, the "Model" key
+    word is visually hidden and the connection reads "Connected"; the model's detail is tooltip and screen-reader
+    text at every width. Below 1180 px the transport takes the strip's second line; on a phone it is its own
+    full-width line with 44 px targets. Phone budget for the call raised to 250 px (236 measured, full lake) and
+    290 px with the sample's stamps (272 measured) (user decision 2026-11-21).
+  - **Tests:** Vitest 593 passed (`replays.test.ts` rewritten: phases, `confirmStep` incl. the armed-then-finished
+    path, `liveText`, transport markup; `call`, `step5`, `final-fixes`, `polish` updated). e2e: new
+    `replay-transport.spec.ts` (stubbed: 5 widths × 7 states, Engineer tab at 1440/390, two-press Stop, armed then
+    finished/failed, keyboard, axe both themes, a self-test of the cover check) and helper `e2e/transport.ts`;
+    `replay-controls.spec.ts` rewritten (real sample replay; call never covered, one strip height, axe in every
+    state); `smoke.spec.ts` (no drawer), `race-layout.spec.ts` (budgets 250/290, one-line strip at 1440, drawer
+    exclusion removed), `step5.spec.ts` (strip checks at 5 widths). `smoke` and `replay-controls` start from the
+    idle or the over phase (`startFromStrip`): after an earlier run of the race the strip offers Replay again (the
+    last run's speed), and the speed is set once the run is active; the demo script says so.
+  - **Docs:** `demo_script.md`, `getting-started.md`, `report.md` §10 (`report.pdf` rebuilt, 22 pages;
+    `final_report.pdf` untouched), `DESIGN.md` (strip row, new Replay transport row, the call's idle line),
+    `architecture.md`, `traceability.md` (row 25 path), `product-brief.md`. Traceability: OK 522, GENERATED 2.
+  - **Screenshots** (`docs/design/after/`, full lake, 10× replays of 2024 R5, pages open from the start):
+    `d-dark-early` (lap 3), `d-dark-mid` and `d-light-mid` (lap 20, SAR → ZHO 78%, as Figure 4 says), `m-dark-mid`
+    (lap 20, 390×844), `d-dark-finished` (lap 56, Replay again and the archive in the strip); each under 240 KB.
+  - **Proofs:**
+
+    | Proof | Result |
+    |---|---|
+    | Web (`make web-test`) | lint and typecheck clean; Vitest 593 passed (29 files) |
+    | Contrast (`contrast-report.mjs --check`) | all pairs meet AA |
+    | Sample e2e (`make api-up REPLAY=1`, `make web-up`, `E2E_NO_SERVER=1 npx playwright test`) | 55 passed, 1 skipped (latency, by design) |
+    | Full lake (`make api-up FULL=1 REPLAY=1`; `race-layout` + `step5`) | 18 passed; CLS outside the tower rows 0.0000 (dark) and 0.0014 (light) |
+    | Docs (`test_repo_docs.py`), traceability | 17 passed; OK 522, GENERATED 2 |
+    | `make report-pdf` | 22 pages; `final_report.pdf` byte-identical (sha256 checked) |
+    | `git status --short results/ data/` | empty |
+
+    The first sample run had 2 failures (`smoke`, `replay-controls`): an earlier spec's stopped run put the strip in
+    the over phase, where those tests expected Start replay; fixed in the tests as above, then the whole suite was
+    rerun.
+- v1.0.1 (2026-11-21, on `main`; not committed): the replay transport's follow-ups, then the release entry.
+  - **The call, finished:** only "Race ended at lap N. The live call stops at the chequered flag."; its archive
+    button and the "not built yet" note are gone, because the strip's transport offers the archive (once on the page).
+  - **Screenshots retaken** (`docs/design/after/`, 10× replays of 2024 R5, each under 230 KB): `d-dark-finished`
+    (lap 56, Replay again and the archive in the strip, the call one line); `d-dark-engineer` (focus RIC, strip lap
+    21, data to lap 20: HAM ahead, TSU behind, as the README caption says); `d-dark-latejoin` and `m-dark-latejoin`
+    (pages joined at lap 45 until the call read "order changed since": ALB → OCO 48%, flagged at lap 33, as report
+    Figure 5 says); `d-dark-sample-smoke` (sample lake and model, lap 15: SYNTHETIC DEMO DATA and SMOKE TEST, the
+    strip on one line). Captions checked; none needed a change. `report.pdf` rebuilt (22 pages);
+    `final_report.pdf` identical to HEAD.
+  - **Proofs:** `make up-full`, `make api-up FULL=1 REPLAY=1`, `make web-up` (replay guard, no FORCE); sample mode
+    (`make api-up REPLAY=1`): `replay-transport`, `replay-controls` and `smoke` specs, 19 passed. Replays started for
+    the shots were stopped through the API or finished; the api ends on `make api-up FULL=1 REPLAY=1`.
+  - **Release:** `CHANGELOG.md` 1.0.1; the project version is 1.0.1 in `pyproject.toml`, `uv.lock`,
+    `src/f1sa/__init__.py`, `web/package.json` and `web/package-lock.json` (its root entries only), as
+    `test_repo_docs.py` requires. The Jolpica user agent (`config.py`, `.env.example`) keeps "1.0.0": it names the
+    ingest client, not the release.
+  - **Local only:** `web/AGENTS.md` unstaged and listed in `.git/info/exclude`.
 ## Next
 - S18B: the demo rehearsal with `docs/demo_script.md` (full lake, then the sample-mode fallback); fill in section 16
   (team contributions) of the report and run `make report-pdf` again. The report and demo script already describe

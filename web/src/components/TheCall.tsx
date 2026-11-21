@@ -118,7 +118,8 @@ function PairGauge({
  *
  * Without a call it keeps its reserved height while a replay streams and shows the closest pair instead (muted,
  * with why it is not a call); while nothing streams it shrinks to one line (``layout="compact"``). After the
- * finish it says the race ended, gives no pit instruction and offers the post-race archive. With ``stored`` (an
+ * finish it says the race ended and gives no pit instruction (the strip's transport offers Replay again and the
+ * post-race archive, so the call has no button of its own then). With ``stored`` (an
  * earlier run's state and nothing streaming, ``storedLap``) it is one line that says so: no pair, no probability. */
 export function TheCall({
   state,
@@ -128,11 +129,9 @@ export function TheCall({
   pitLoss = null,
   onSimulate,
   replayIdle,
-  onOpenReplay,
   stored = null,
   layout = "full",
   ended = false,
-  onArchive = null,
 }: {
   state: RaceState;
   entrants: EntrantIndex;
@@ -142,16 +141,13 @@ export function TheCall({
   /** the race's pit loss (``useCallContext``): the same for every pair, so it never depends on which car was loaded */
   pitLoss?: RacePitLoss | null;
   onSimulate: (pair: CallPair) => void;
-  /** no replay is running and the tower is empty: the call explains how to start one */
+  /** no replay is running and the tower is empty: the call points to the strip's Start replay */
   replayIdle: boolean;
-  onOpenReplay: () => void;
   /** the stored leader lap when the page shows an earlier run's state and nothing streams (``storedLap``) */
   stored?: number | null;
   layout?: CallLayout;
   /** the race has finished (``raceEnded``) */
   ended?: boolean;
-  /** open the post-race archive; null when this race has no archive */
-  onArchive?: (() => void) | null;
 }) {
   const stale = staleIds(state);
   const pairs = flaggedPairs(state, stale);
@@ -177,13 +173,13 @@ export function TheCall({
       </div>
 
       {ended ? (
-        <Ended lap={lap} onArchive={onArchive} />
+        <Ended lap={lap} />
       ) : stored !== null ? (
-        <Stored lap={stored} onOpenReplay={onOpenReplay} />
+        <Stored lap={stored} />
       ) : call !== null ? (
         <FullCall call={call} state={state} entrants={entrants} model={model} context={context} pitLoss={pitLoss} g={g} onSimulate={onSimulate} />
       ) : layout === "compact" || state.order.length === 0 ? (
-        <Compact state={state} entrants={entrants} replayIdle={replayIdle} onOpenReplay={onOpenReplay} g={g} stale={stale} />
+        <Compact state={state} entrants={entrants} replayIdle={replayIdle} g={g} stale={stale} />
       ) : (
         <NoCall state={state} entrants={entrants} context={context} pitLoss={pitLoss} g={g} stale={stale} onSimulate={onSimulate} />
       )}
@@ -367,19 +363,21 @@ function NoCall({
   );
 }
 
+/** Where a replay starts: the status strip's inline transport, always visible right above the call (the call has no
+ * start button of its own, so the page never offers two "Start replay" controls). */
+const START_HINT = "Start one from the status strip above.";
+
 /** One line while nothing streams (no replay, no lap yet): the feed moves up into the space. */
 function Compact({
   state,
   entrants,
   replayIdle,
-  onOpenReplay,
   g,
   stale,
 }: {
   state: RaceState;
   entrants: EntrantIndex;
   replayIdle: boolean;
-  onOpenReplay: () => void;
   g: number;
   stale: ReadonlySet<string>;
 }) {
@@ -388,11 +386,7 @@ function Compact({
       <div className="call-body call-empty">
         <p className="call-line">
           <span className="call-none">{replayIdle ? "No replay of this race is running." : "Waiting for the first lap."}</span>
-          {replayIdle ? (
-            <button type="button" className="btn btn-small" onClick={onOpenReplay}>
-              Open replay controls
-            </button>
-          ) : null}
+          {replayIdle ? <span className="call-line-text">{START_HINT}</span> : null}
         </p>
       </div>
     );
@@ -418,7 +412,7 @@ function Compact({
 
 /** An earlier run's state with nothing streaming (``storedLap``): one line, no pair and no probability, because
  * the stored flags were scored by that run's model, which this page cannot name. */
-function Stored({ lap, onOpenReplay }: { lap: number; onOpenReplay: () => void }) {
+function Stored({ lap }: { lap: number }) {
   return (
     <div className="call-body call-empty">
       <p className="call-line">
@@ -426,29 +420,21 @@ function Stored({ lap, onOpenReplay }: { lap: number; onOpenReplay: () => void }
         <span className="call-line-text">
           The tower shows the state an earlier run left (lap {lap}); its flags are not a live call.
         </span>
+        <span className="call-line-text">{START_HINT}</span>
       </p>
-      <button type="button" className="btn btn-small" onClick={onOpenReplay}>
-        Open replay controls
-      </button>
     </div>
   );
 }
 
-/** After the finish: no pit instruction, no Simulate; the post-race archive holds the whole race. */
-function Ended({ lap, onArchive }: { lap: number | null; onArchive: (() => void) | null }) {
+/** After the finish: no pit instruction, no Simulate and no button (the strip's transport, right above the call,
+ * offers Replay again and the post-race archive). */
+function Ended({ lap }: { lap: number | null }) {
   return (
     <div className="call-body call-empty">
       <p className="call-line">
         <span className="call-none">Race ended{lap !== null ? ` at lap ${lap}` : ""}</span>
         <span className="call-line-text">The live call stops at the chequered flag.</span>
       </p>
-      {onArchive !== null ? (
-        <button type="button" className="btn btn-small call-archive" onClick={onArchive}>
-          Open the post-race archive
-        </button>
-      ) : (
-        <p className="call-explain">The post-race archive of this race is not built yet.</p>
-      )}
     </div>
   );
 }

@@ -4,6 +4,13 @@ All notable changes to this project are listed here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [1.0.1] - 2026-11-21
+
+### Changed
+
+- Replay controls are now inline in the status strip, so nothing covers The Call; two-press Stop with Escape to
+  cancel; fixed strip height at every width; the finished state offers the post-race archive once, in the strip.
+
 ## [1.0.0] - 2026-11-20
 
 The first complete release.

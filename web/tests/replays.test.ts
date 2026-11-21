@@ -1,20 +1,27 @@
-/** Replay controls (Feature 7): the status guard, the texts, which controls apply, the run
- * tracker that resets the live view on a new run, and the ReplayControl markup. */
+/** Replay controls (Feature 7): the status guard, the texts, which controls apply, the run tracker that resets the
+ * live view on a new run, the inline transport's phases, its two-press Stop and its one announcement, and the
+ * ReplayTransport markup. */
 
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
-import { ReplayControl } from "@/components/ReplayControl";
+import { ReplayTransport } from "@/components/ReplayTransport";
 import { ApiError, type Replay, toReplay, toReplayStatus } from "@/lib/api";
+import type { Mode } from "@/lib/call";
 import {
+  blockedReason,
+  CONFIRM_MS,
+  confirmStep,
   INITIAL_RUN,
   isActive,
+  liveText,
+  replayAgainSpeed,
   replayControls,
-  replayLapText,
   replayMessage,
   replayStatusText,
   trackRun,
+  transportPhase,
 } from "@/lib/replays";
 
 const base: Replay = {
@@ -75,13 +82,6 @@ describe("replay texts", () => {
     expect(replayStatusText(as({ state: "stopped" }), true, true)).toBe("Another race is replaying.");
   });
 
-  it("shows the lap reached only while a replay is active", () => {
-    expect(replayLapText(base)).toBe("Lap 23 sent.");
-    expect(replayLapText(as({ state: "starting", lap: null }))).toBe("No lap sent yet.");
-    expect(replayLapText(as({ state: "stopped" }))).toBe("");
-    expect(replayLapText(null)).toBe("");
-  });
-
   it("explains a refused fresh start", () => {
     const msg = "the old keys of 2024 R5 could not be deleted; nothing was started";
     expect(replayMessage(new ApiError(msg, 503))).toBe(msg);
@@ -132,16 +132,81 @@ describe("run tracker", () => {
   });
 });
 
-describe("ReplayControl markup", () => {
+describe("the transport's phase", () => {
+  it("active while starting, running or paused; over after a finish, a stop, a failure or the session's end", () => {
+    expect(transportPhase(null, false, true, false)).toBe("idle");
+    expect(transportPhase(null, false, null, false)).toBe("idle");
+    for (const state of ["starting", "running", "paused"] as const) expect(transportPhase(as({ state }), true, true, false)).toBe("active");
+    for (const state of ["finished", "stopped", "failed"] as const) expect(transportPhase(as({ state }), false, true, true)).toBe("over");
+    expect(transportPhase(as({ state: "stopped" }), false, true, false)).toBe("over");
+    expect(transportPhase(null, false, true, true)).toBe("over");
+  });
+
+  it("blocked while another race replays or replay is off, with the reason as text", () => {
+    expect(transportPhase(null, true, true, false)).toBe("blocked");
+    expect(transportPhase(as({ state: "finished" }), true, true, true)).toBe("blocked");
+    expect(transportPhase(null, false, false, false)).toBe("blocked");
+    expect(blockedReason(true, true)).toBe("Another race is replaying");
+    expect(blockedReason(false, false)).toBe("Replay disabled on the API");
+    expect(blockedReason(false, true)).toBeNull();
+  });
+
+  it("Replay again uses the last run's speed when it is an offered one", () => {
+    expect(replayAgainSpeed(as({ state: "stopped", speed: 10 }), 60)).toBe(10);
+    expect(replayAgainSpeed(as({ state: "stopped", speed: 7 }), 60)).toBe(60);
+    expect(replayAgainSpeed(null, 1)).toBe(1);
+  });
+});
+
+describe("two-press Stop (confirmStep)", () => {
+  it("the first press arms, the second stops", () => {
+    const first = confirmStep("idle", "press", true);
+    expect(first).toEqual({ state: "armed", fire: false });
+    expect(confirmStep(first.state, "press", true)).toEqual({ state: "idle", fire: true });
+    expect(CONFIRM_MS).toBe(4000);
+  });
+
+  it("Escape, the timeout and a reset cancel without stopping", () => {
+    for (const e of ["escape", "timeout", "reset"] as const) expect(confirmStep("armed", e, true)).toEqual({ state: "idle", fire: false });
+    expect(confirmStep("idle", "escape", true)).toEqual({ state: "idle", fire: false });
+  });
+
+  it("a replay that ended on its own (finished or failed) while armed disarms it and sends no stop", () => {
+    // the transport passes active = false once the status says finished or failed
+    expect(confirmStep("armed", "press", false)).toEqual({ state: "idle", fire: false });
+    expect(confirmStep("armed", "timeout", false)).toEqual({ state: "idle", fire: false });
+    expect(confirmStep("idle", "press", false)).toEqual({ state: "idle", fire: false });
+  });
+});
+
+describe("the one announcement (liveText)", () => {
+  const live: Mode = { label: "LIVE", tone: "live", description: "Connected to the race stream." };
+  const fin: Mode = { label: "FINISHED", tone: "ended", description: "The session ended." };
+  it("the replay's state while this race has a replay or a start is blocked; never a lap counter", () => {
+    expect(liveText(live, base, true, true)).toBe("Running at 10×.");
+    expect(liveText(live, as({ state: "paused", paused: true }), true, true)).toBe("Paused at lap 23 (10×).");
+    expect(liveText(live, null, true, true)).toBe("Another race is replaying.");
+    expect(liveText(live, null, false, false)).toBe("Replay is disabled on the API.");
+    expect(liveText(live, base, true, true)).not.toContain("sent");
+  });
+  it("otherwise the mode's sentence (LIVE, FINISHED after session end, NOT REPLAYING)", () => {
+    expect(liveText(live, null, false, true)).toBe("Connected to the race stream.");
+    expect(liveText(fin, null, false, null)).toBe("The session ended.");
+  });
+});
+
+describe("ReplayTransport markup", () => {
   const noop = () => undefined;
-  const html = (current: Replay | null, anyRunning: boolean, pending = false) =>
+  const html = (current: Replay | null, anyRunning: boolean, opts: { pending?: boolean; ended?: boolean; archive?: boolean; enabled?: boolean } = {}) =>
     renderToStaticMarkup(
-      createElement(ReplayControl, {
+      createElement(ReplayTransport, {
         current,
         anyRunning,
-        enabled: true,
-        pending,
-        error: null,
+        enabled: opts.enabled ?? true,
+        pending: opts.pending ?? false,
+        ended: opts.ended ?? false,
+        liveText: "announced text",
+        onArchive: opts.archive ? noop : null,
         onStart: noop,
         onStop: noop,
         onPause: noop,
@@ -150,39 +215,68 @@ describe("ReplayControl markup", () => {
       }),
     );
   const button = (markup: string, label: string) => {
-    const m = new RegExp(`<button[^>]*>${label}</button>`).exec(markup);
+    const m = new RegExp(`<button[^>]*>(?:<svg[^>]*>.*?</svg>)?${label}</button>`).exec(markup);
     expect(m, `button ${label}`).not.toBeNull();
     return (m as RegExpExecArray)[0];
   };
 
-  it("while running: Start disabled, Pause and Stop enabled, the API speed checked", () => {
+  it("idle: Start replay (neutral, never the signal) and the speed radios; nothing else", () => {
+    const m = html(null, false);
+    expect(button(m, "Start replay")).not.toContain("disabled");
+    expect(button(m, "Start replay")).toContain("btn-strong");
+    expect(m).not.toContain("btn-primary");
+    expect(m).toMatch(/<fieldset class="tp-speeds"><legend class="visually-hidden">Replay speed<\/legend>/);
+    expect(m).toMatch(/<input[^>]*checked=""[^>]*value="60"/);
+    expect(m).not.toContain(">Pause<");
+    expect(m).not.toContain(">Stop<");
+    expect(m).not.toContain("Replay again");
+  });
+
+  it("active (running): Pause, Stop and the API's speed; no Start", () => {
     const m = html(base, true);
-    expect(button(m, "Start replay")).toContain("disabled");
     expect(button(m, "Pause")).not.toContain("disabled");
     expect(button(m, "Stop")).not.toContain("disabled");
-    expect(m).toMatch(/<input[^>]*checked=""[^>]*value="10"/);
-    expect(m).toContain('role="status" aria-live="polite"');
-    expect(m).toContain("Running at 10×.");
-    expect(m).toContain("Lap 23 sent.");
-  });
-
-  it("while paused the button resumes", () => {
-    const m = html(as({ state: "paused", paused: true }), true);
-    expect(button(m, "Resume")).not.toContain("disabled");
-    expect(m).toContain("Paused at lap 23 (10×).");
-  });
-
-  it("idle: Start enabled, Pause and Stop disabled; buttons are real buttons", () => {
-    const m = html(as({ state: "stopped" }), false);
-    expect(button(m, "Start replay")).not.toContain("disabled");
-    expect(button(m, "Pause")).toContain("disabled");
-    expect(button(m, "Stop")).toContain("disabled");
     expect(button(m, "Stop")).toContain('type="button"');
-    expect(m).toContain("Stopped at lap 23.");
-    expect(m).not.toMatch(/<fieldset[^>]*disabled/);
+    expect(m).toMatch(/<input[^>]*checked=""[^>]*value="10"/);
+    expect(m).not.toContain("Start replay");
+  });
+
+  it("active (paused): Resume", () => {
+    expect(button(html(as({ state: "paused", paused: true }), true), "Resume")).not.toContain("disabled");
+  });
+
+  it("over: Replay again at the last run's speed, plus the archive when there is one", () => {
+    const m = html(as({ state: "stopped" }), false, { ended: true, archive: true });
+    expect(button(m, "Replay again")).not.toContain("disabled");
+    expect(m).toContain("at 10×, the last run&#x27;s speed");
+    expect(button(m, "Open the post-race archive")).toBeTruthy();
+    expect(html(as({ state: "finished" }), false, { ended: true })).not.toContain("Open the post-race archive");
+    expect(m).not.toContain(">Stop<");
+    expect(m).not.toContain("tp-speeds");
+  });
+
+  it("blocked: Start disabled with the reason as visible text", () => {
+    const m = html(null, true);
+    expect(button(m, "Start replay")).toContain("disabled");
+    expect(m).toContain('<span class="tp-reason">Another race is replaying</span>');
+    expect(html(null, false, { enabled: false })).toContain('<span class="tp-reason">Replay disabled on the API</span>');
+  });
+
+  it("a start in flight says Starting…", () => {
+    expect(html(null, false, { pending: true })).toMatch(/<button[^>]*disabled=""[^>]*>.*Starting…<\/button>/);
+  });
+
+  it("one visually hidden polite region; icons are decorative; every button has visible text", () => {
+    const m = html(base, true);
+    expect(m).toContain('<p id="replay-status" class="visually-hidden" role="status" aria-live="polite">announced text</p>');
+    expect((m.match(/aria-live/g) ?? []).length).toBe(1);
+    for (const svg of m.match(/<svg[^>]*>/g) ?? []) expect(svg).toContain('aria-hidden="true"');
+    for (const b of m.match(/<button[^>]*>.*?<\/button>/g) ?? []) expect(b.replace(/<[^>]+>/g, "").trim().length).toBeGreaterThan(2);
+    expect(m).toContain('role="group" aria-label="Replay"');
   });
 
   it("another race replaying disables the speed radios too", () => {
-    expect(html(null, true)).toMatch(/<fieldset[^>]*disabled/);
+    expect(html(as({ state: "stopped" }), true)).not.toContain("tp-speeds");
+    expect(html(base, true, { pending: true })).toMatch(/<fieldset class="tp-speeds" disabled=""/);
   });
 });

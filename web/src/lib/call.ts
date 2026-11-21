@@ -397,7 +397,7 @@ export function modeOf(current: Replay | null, sessionEnded: boolean, connection
       case "stopped":
         return { label: "STOPPED", tone: "ended", description: `Replay stopped${current.lap === null ? "" : ` at lap ${current.lap}`}.` };
       case "failed":
-        return { label: "FAILED", tone: "ended", description: "The replay failed; see the replay control." };
+        return { label: "FAILED", tone: "ended", description: "The replay failed; the reason is shown under the status strip." };
       case "finished":
         return { label: "FINISHED", tone: "ended", description: "The replay finished: the session ended." };
     }

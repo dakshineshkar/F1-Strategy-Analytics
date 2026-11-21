@@ -55,3 +55,37 @@ export function PinMark({ on, size = 12 }: { on: boolean; size?: number }) {
     </svg>
   );
 }
+
+/** Replay transport marks (the status strip): play, pause, stop and replay-again. Each sits next to its word. */
+export function PlayMark({ size = 12 }: { size?: number }) {
+  return (
+    <svg {...base} className="mark mark-play" width={size} height={size} viewBox="0 0 12 12">
+      <path d="M3 1.75v8.5L10 6z" fill="currentColor" stroke="currentColor" strokeWidth="1" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+export function PauseMark({ size = 12 }: { size?: number }) {
+  return (
+    <svg {...base} className="mark mark-pause" width={size} height={size} viewBox="0 0 12 12">
+      <path d="M3 2v8M9 2v8" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+export function StopMark({ size = 12 }: { size?: number }) {
+  return (
+    <svg {...base} className="mark mark-stop" width={size} height={size} viewBox="0 0 12 12">
+      <rect x="2" y="2" width="8" height="8" rx="1" fill="currentColor" />
+    </svg>
+  );
+}
+
+export function ReplayMark({ size = 12 }: { size?: number }) {
+  return (
+    <svg {...base} className="mark mark-replay" width={size} height={size} viewBox="0 0 12 12">
+      <path d="M2.2 6.6A3.9 3.9 0 1 0 3.6 3" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+      <path d="M2.2 1.2v2.6h2.6" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}

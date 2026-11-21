@@ -55,7 +55,7 @@ describe("finding 2: the call keeps the alert's defender when the order changed"
   it("the call says so, mutes the gauge at the decision gap and does not present the rule checks as passing", () => {
     const s = lap17();
     const m = renderToStaticMarkup(
-      createElement(TheCall, { state: s, entrants: {}, model: null, context: null, onSimulate: () => undefined, replayIdle: false, onOpenReplay: () => undefined }),
+      createElement(TheCall, { state: s, entrants: {}, model: null, context: null, onSimulate: () => undefined, replayIdle: false }),
     );
     expect(m).toContain('<span class="call-code">SAI</span>');
     expect(m).not.toContain('<span class="call-code">LEC</span>');
@@ -78,7 +78,7 @@ describe("finding 2: the call keeps the alert's defender when the order changed"
     expect(call.gapS).toBe(8.0);
     expect(orderChangedText(call, code)).toBeNull();
     const m = renderToStaticMarkup(
-      createElement(TheCall, { state: s, entrants: {}, model: null, context: null, onSimulate: () => undefined, replayIdle: false, onOpenReplay: () => undefined }),
+      createElement(TheCall, { state: s, entrants: {}, model: null, context: null, onSimulate: () => undefined, replayIdle: false }),
     );
     expect(m).toContain("within 3.5 s, not teammates, nobody between, green lap");
     expect(m).toContain('<span class="gauge-label">gap now</span>');
@@ -155,14 +155,14 @@ describe("finding 3: a stored race state is never LIVE and never a call", () => 
         context: null,
         onSimulate: () => undefined,
         replayIdle: true,
-        onOpenReplay: () => undefined,
         stored: 11,
         layout: "compact",
       }),
     );
     expect(m).toContain("No replay of this race is running.");
     expect(m).toContain("The tower shows the state an earlier run left (lap 11); its flags are not a live call.");
-    expect(m).toContain(">Open replay controls</button>");
+    expect(m).toContain("Start one from the status strip above.");
+    expect(m).not.toContain("Open replay controls");
     expect(m).not.toContain("model estimate");
     expect(m).not.toContain("100%");
     expect(m).not.toContain("deploy_real_G3.5_k2");

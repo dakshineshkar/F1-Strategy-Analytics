@@ -395,7 +395,11 @@ The dashboard is a Next.js app (TypeScript strict) at `http://localhost:3000`. I
 around one question, "is there a call now?". The live race view has four parts:
 - **Status strip:** the replay mode (REPLAY 10×, PAUSED, STOPPED, FINISHED, or NOT REPLAYING when the page holds an
   earlier run's state and nothing streams), the lap, how many running cars crossed the line on the leader's lap,
-  the track status, the scoring model's id, the connection state and the Replay controls.
+  the track status, the scoring model's id and the connection state, then the replay controls inline at its right
+  end, on the Race and Engineer tabs alike: Start replay and the 1×/10×/60× speed before a run; Pause or Resume,
+  Stop and the speed during one; Replay again and "Open the post-race archive" after it. Stop takes two presses
+  ("Confirm stop"). Nothing opens over the call, and the strip keeps one height in every replay state (below about
+  1180 px the controls take its second line; on a phone they are their own full-width line with 44 px targets).
 - **The call:** the best eligible pair, with the calibrated probability labelled "model estimate" and the model id,
   a gap gauge with the 3.5 s rule window and the trend to next lap, the pit loss, both cars' tyres, the rule
   checks and "Simulate this pair". When the alert's defender is no longer directly ahead, the call keeps that

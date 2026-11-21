@@ -203,6 +203,7 @@ main:focus { outline: none; }
   position: relative; z-index: 6; display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-1) var(--sp-4);
   min-height: 2.5rem; padding: var(--sp-1) var(--sp-1) var(--sp-1) var(--sp-1); margin-bottom: var(--sp-3);
   background: var(--raised); border: 1px solid var(--rule); border-radius: var(--radius-md);
+  --transport-w: 18.75rem;
 }
 .status-strip p { margin: 0; }
 .ss-cells { display: contents; }
@@ -236,6 +237,9 @@ main:focus { outline: none; }
 .ss-of { color: var(--muted); font-size: var(--fs-sm); }
 .ss-model .ss-v { font: 500 var(--fs-sm)/1 var(--font-num); }
 .ss-detail { color: var(--muted); font-size: var(--fs-xs); }
+/* the model's detail (features, G, k) is the cell's tooltip and screen-reader text, so the strip and the replay
+   transport fit one line; the call shows it in full */
+.ss-model .ss-detail { position: absolute !important; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
 .ss-conn { color: var(--muted); }
 .ss-dot { display: inline-block; width: 0.5rem; height: 0.5rem; border-radius: 50%; border: 1.5px solid var(--muted); align-self: center; }
 .ss-dot.dot-connected { background: var(--gain); border-color: var(--gain); }
@@ -250,14 +254,38 @@ main:focus { outline: none; }
 .ss-track.race-status-red .race-status-code { border-color: var(--danger); border-style: double; border-width: 3px; color: var(--danger); }
 .race-status-est { font: 500 var(--fs-2xs)/1 var(--font-ui); color: var(--muted); }
 
-.replay-drawer { position: relative; }
-.replay-drawer-summary { margin-left: var(--sp-2); padding-left: var(--sp-2); border-left: 1px solid var(--rule); color: var(--muted); font-weight: 500; }
-.replay-drawer-panel {
-  position: absolute; right: 0; top: calc(100% + var(--sp-2)); z-index: 20; width: min(26rem, calc(100vw - 2rem));
-  padding: var(--sp-4); background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg);
-  box-shadow: var(--elev-pop);
+/* The replay transport (inline at the strip's right end; it replaced the replay popover, which covered the call).
+ * One reserved box in every phase (idle, blocked, active, over), so the strip never changes height or wraps
+ * differently; controls are 28 px high (24 px targets at least). Start replay and Replay again are the strong neutral
+ * control (2 px text ink), never the signal amber; an armed Stop ("Confirm stop") has a 2 px danger border. */
+.transport {
+  display: flex; flex-wrap: nowrap; align-items: center; justify-content: flex-end; gap: var(--sp-1);
+  width: var(--transport-w); height: 1.75rem;
 }
-.replay-drawer-panel .panel { border: 0; padding: 0; background: transparent; }
+.transport .btn-small { flex: none; gap: var(--sp-1); white-space: nowrap; }
+.transport .mark { flex: none; }
+.btn-strong { border: 2px solid var(--text); }
+.btn-small.btn-confirm { border: 2px solid var(--danger); color: var(--danger); }
+@media (hover: hover) and (pointer: fine) { .btn-small.btn-confirm:not(:disabled):hover { border-color: var(--danger); color: var(--danger); } }
+.tp-start, .tp-again { min-width: 6.75rem; }
+.tp-pause { min-width: 5rem; }
+.tp-stop { min-width: 6.75rem; }
+.tp-reason { flex: none; font: 500 var(--fs-xs)/1.2 var(--font-ui); color: var(--muted); white-space: nowrap; }
+.tp-speeds { flex: none; display: inline-flex; margin: 0; padding: 1px; gap: 1px; border: 1px solid var(--rule); border-radius: var(--radius-md); background: var(--surface-2); }
+.tp-speed { position: relative; display: inline-flex; }
+.tp-speed input { position: absolute; inset: 0; opacity: 0; margin: 0; cursor: pointer; }
+.tp-speed span {
+  display: inline-grid; place-items: center; min-width: 2rem; min-height: 1.5rem; padding: 0 var(--sp-1);
+  font: 600 var(--fs-xs)/1 var(--font-num); color: var(--muted); border-radius: var(--radius-sm);
+}
+.tp-speed input:checked + span { background: var(--raised); color: var(--text); box-shadow: inset 0 0 0 1px var(--text); }
+.tp-speed input:focus-visible + span { outline: 2px solid var(--focus); outline-offset: 1px; }
+.tp-speeds:disabled .tp-speed input { cursor: not-allowed; }
+.tp-speeds:disabled .tp-speed span { color: var(--faint); }
+@media (hover: hover) and (pointer: fine) { .tp-speeds:not(:disabled) .tp-speed:hover span { color: var(--text); } }
+/* a refused action or a failed replay's reason: under the strip (the strip keeps its height), no space when empty */
+.transport-error { margin: calc(-1 * var(--sp-2)) 0 var(--sp-3); font: 500 var(--fs-xs)/1.3 var(--font-ui); color: var(--danger); }
+.transport-error:empty { display: none; }
 
 /* ------------------------------------------------------------------ the race view grid */
 .dash {
@@ -616,24 +644,7 @@ main:focus { outline: none; }
 .whatif-inputs, .whatif-warning { margin: var(--sp-1) 0; font-size: var(--fs-xs); }
 .whatif-warning { color: var(--text); }
 
-/* ------------------------------------------------------------------ replay control (inside the drawer) */
-.replay-panel h2 { font-size: var(--fs-md); margin-bottom: var(--sp-2); }
-.replay-form { display: flex; align-items: end; justify-content: space-between; gap: var(--sp-3); flex-wrap: wrap; }
-.speeds { border: 0; margin: 0; padding: 0; display: flex; gap: var(--sp-1); }
-.speeds legend { font-size: var(--fs-xs); color: var(--muted); margin-bottom: var(--sp-1); padding: 0; }
-.speed { position: relative; }
-.speed input { position: absolute; opacity: 0; inset: 0; margin: 0; cursor: pointer; }
-.speed span {
-  display: inline-grid; place-items: center; min-width: 3rem; min-height: 2.25rem; padding: 0 var(--sp-2);
-  font: 600 var(--fs-sm)/1 var(--font-num); border: 1px solid var(--rule); border-radius: var(--radius-md); background: var(--surface-2);
-}
-.speed input:checked + span { background: var(--raised); border-color: var(--text); box-shadow: inset 0 0 0 1px var(--text); }
-.speed input:focus-visible + span { outline: 2px solid var(--focus); outline-offset: 2px; }
-.speeds:disabled .speed span { color: var(--faint); }
-.replay-actions { display: flex; gap: var(--sp-2); flex-wrap: wrap; }
-.replay-status { margin: var(--sp-3) 0 0; min-height: 1.3rem; font: 600 var(--fs-sm)/1.3 var(--font-ui); }
-.replay-status.state-failed { color: var(--danger); }
-.replay-lap { margin: 2px 0 0; min-height: 1.2rem; font: 500 var(--fs-xs)/1.3 var(--font-num); color: var(--muted); }
+/* ------------------------------------------------------------------ the what-if's error line */
 .replay-error { margin: var(--sp-1) 0 0; min-height: 1.2rem; font-size: var(--fs-xs); color: var(--danger); }
 
 /* ------------------------------------------------------------------ gap chart */
@@ -711,6 +722,18 @@ main:focus { outline: none; }
   .tower:not(.drivers-table, .analysis-table, .telemetry-readout) .c-drv { left: 3.75rem; }
   .tower:not(.drivers-table, .analysis-table, .telemetry-readout) .c-uc { left: 11rem; box-shadow: 1px 0 0 var(--border); }
 }
+/* Below 1440 px the strip tightens so it stays one line with the transport at 1280 px (also with the sample's SMOKE
+   TEST stamp): narrower gaps, the "Model" key word visually hidden (still read) and the connection's short form. */
+@media (max-width: 1439px) {
+  .status-strip { column-gap: var(--sp-3); }
+  .ss-model .ss-k, .ss-conn .phone-full { position: absolute !important; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+  .ss-conn .phone-short { display: inline; }
+}
+/* Below about 1180 px the cells and the replay transport no longer fit one line: the transport takes the strip's
+   second line, right-aligned, in every phase (so the strip's height is the same in every replay state). */
+@media (max-width: 1179px) {
+  .ss-end { order: 99; flex: 1 1 100%; display: flex; justify-content: flex-end; margin-left: 0; }
+}
 @media (max-width: 1080px) {
   .dash { grid-template-columns: minmax(0, 1fr); grid-template-areas: "call" "tower" "more"; }
   .dash-call { grid-template-rows: auto 18rem; height: auto; }
@@ -722,8 +745,8 @@ main:focus { outline: none; }
   .brand-sub { display: none; }
   .topbar { padding: 0 var(--sp-4); }
   /* The head and the status strip wrap (never scroll sideways, never cut a value): the head is the race's name and
-     the page links, then the two tab groups; the strip is the race state (mode, lap, track, progress), then the
-     model, the connection and the Replay button. The call still starts within 200 px. */
+     the page links, then the two tab groups; the strip is the race state (mode, lap, track), then the progress, the
+     model and the connection, then the replay transport on its own full-width line with 44 px targets. */
   .race-head-live { gap: var(--sp-1) var(--sp-3); min-height: 0; margin-bottom: var(--sp-2); }
   .race-head-live h1 { font-size: var(--fs-md); }
   .race-head-live .race-views { order: 1; margin-left: auto; gap: var(--sp-3); }
@@ -741,22 +764,25 @@ main:focus { outline: none; }
   .race-head-sub .race-views { margin-left: auto; gap: var(--sp-3); }
   .status-strip { gap: var(--sp-1) var(--sp-3); min-height: 0; margin-bottom: var(--sp-2); padding: 2px var(--sp-1); }
   .ss-cells { display: contents; }
-  .ss-cells > *, .ss-end { flex: none; min-width: max-content; }
-  /* line 1: mode, lap, track and the Replay button; line 2: progress, model, connection (and the archive) */
+  .ss-cells > * { flex: none; min-width: max-content; }
+  /* line 1: mode, lap, track; line 2: progress, model, connection; line 3: the replay transport */
   .ss-mode { order: 0; width: auto; min-height: 1.5rem; padding: 0 var(--sp-2); }
   .stamp-smoke { order: 0; }
   .ss-lap, .ss-track { order: 1; width: auto; }
-  .ss-end { order: 2; margin-left: auto; }
   .ss-progress { order: 3; width: auto; }
   .ss-model { order: 4; }
   .ss-conn { order: 5; }
-  .ss-archive { order: 6; }
-  .ss-end .btn-small { min-height: 1.5rem; }
+  .ss-end { order: 99; flex: 1 1 100%; min-width: 0; }
+  .transport { width: 100%; height: 2.75rem; gap: var(--sp-1); }
+  .transport .btn-small { flex: 1 1 0; min-height: 2.75rem; padding: 0 var(--sp-1); }
+  .tp-start, .tp-again, .tp-pause, .tp-stop { min-width: 0; }
+  .tp-speeds { padding: 0; border: 0; background: none; gap: var(--sp-1); }
+  .tp-speed span { min-width: 2.75rem; min-height: 2.75rem; border: 1px solid var(--rule); border-radius: var(--radius-md); background: var(--surface-2); }
+  .tp-reason { flex: 1 1 auto; white-space: normal; }
   .ss-detail { display: none; }
   /* a phone shows the short form of a label (PhoneLabel); the full one stays the accessible name */
   .phone-short { display: inline; }
   .phone-full, .ss-model .ss-k { position: absolute !important; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
-  .replay-drawer-panel { left: auto; right: 0; width: min(22rem, calc(100vw - 2rem)); }
   /* at phone width the call's blocks wrap instead of keeping desktop's fixed boxes (no clipped text) */
   .call { height: auto; min-height: 23rem; }
   .call-estimate { grid-template-columns: auto 1fr; height: auto; }

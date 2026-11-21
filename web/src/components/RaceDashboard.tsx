@@ -11,7 +11,7 @@ import { useLatencyReporter } from "@/lib/debugLatency";
 import { indexEntrants } from "@/lib/entrants";
 import { unlistedCars } from "@/lib/pipeline";
 import { alertGroups } from "@/lib/reducer";
-import { isActive, INITIAL_RUN, type RunTracker, trackRun } from "@/lib/replays";
+import { isActive, INITIAL_RUN, liveText, type RunTracker, trackRun } from "@/lib/replays";
 import { displayRows, lapProgress, lapsBehind, leaderLap as leaderLapOf, staleIds, staleSince } from "@/lib/stale";
 import { useArchiveAvailable } from "@/lib/useArchive";
 import { useCallContext } from "@/lib/useCallContext";
@@ -28,8 +28,8 @@ import { InfoTip } from "./InfoTip";
 import { Legend } from "./Legend";
 import { PhoneLabel } from "./PhoneLabel";
 import { PostRaceView } from "./PostRaceView";
-import { ReplayControl } from "./ReplayControl";
-import { ReplayDrawer, StatusStrip } from "./StatusStrip";
+import { ReplayTransport } from "./ReplayTransport";
+import { StatusStrip } from "./StatusStrip";
 import { TheCall } from "./TheCall";
 import { TowerPanel } from "./TowerPanel";
 import { WhatIfPanel, type WhatIfRequestFromCall } from "./WhatIfPanel";
@@ -133,7 +133,7 @@ function useSinceLap(maxLap: number, generation: number): number | null {
 }
 
 /** The live race view (redesign Step 2): the call leads, the tower and the alerts are its evidence, the
- * what-if is its consequence, and the replay controls and pipeline counters support. Display only: the
+ * what-if is its consequence, and the strip's inline replay transport and the pipeline counters support. Display only: the
  * reducer, the stream and the API are unchanged. */
 function LiveRaceView({
   season,
@@ -158,7 +158,6 @@ function LiveRaceView({
   const model = modelIdentity(health);
   const [race, setRace] = useState<Race | null>(null);
   const [view, setView] = useState<PageView>("race");
-  const [drawer, setDrawer] = useState(false);
   const [request, setRequest] = useState<WhatIfRequestFromCall | null>(null);
   const whatif = useRef<HTMLElement>(null);
   useLatencyReporter(state.seen);
@@ -272,23 +271,26 @@ function LiveRaceView({
           raceStatus={raceStatus}
           connection={state.connection}
           sessionEnded={state.sessionEnded}
-          onArchive={ended ? onArchive : null}
         >
-          <ReplayDrawer open={drawer} onOpenChange={setDrawer}>
-            <ReplayControl
-              current={replays.current}
-              anyRunning={anyRunning}
-              enabled={replays.status?.enabled ?? null}
-              pending={replays.pending}
-              error={replays.error}
-              onStart={(speed) => void replays.start(speed)}
-              onStop={() => void replays.stop()}
-              onPause={() => void replays.pause()}
-              onResume={() => void replays.resume()}
-              onSpeed={(speed) => void replays.setSpeed(speed)}
-            />
-          </ReplayDrawer>
+          <ReplayTransport
+            current={replays.current}
+            anyRunning={anyRunning}
+            enabled={replays.status?.enabled ?? null}
+            pending={replays.pending}
+            ended={ended}
+            liveText={liveText(mode, replays.current, anyRunning, replays.status?.enabled ?? null)}
+            onArchive={ended ? onArchive : null}
+            onStart={(speed) => void replays.start(speed)}
+            onStop={() => void replays.stop()}
+            onPause={() => void replays.pause()}
+            onResume={() => void replays.resume()}
+            onSpeed={(speed) => void replays.setSpeed(speed)}
+          />
         </StatusStrip>
+        {/* a refused or failed replay action, and a failed replay's reason: under the strip, so the strip keeps its height */}
+        <p className="transport-error" role="alert">
+          {replays.error ?? (replays.current?.state === "failed" ? `Replay failed: ${replays.current.error ?? "unknown error"}` : "")}
+        </p>
         {snapshotError ? (
           <p className="error" role="alert">
             The race state could not be reloaded after a reconnect ({snapshotError}). The view keeps the last state it
@@ -312,11 +314,9 @@ function LiveRaceView({
                 pitLoss={pitLoss}
                 onSimulate={(p: CallPair) => simulate(p.attackerId)}
                 replayIdle={!isActive(replays.current)}
-                onOpenReplay={() => setDrawer(true)}
                 stored={stored}
                 layout={layout}
                 ended={finished}
-                onArchive={onArchive}
               />
               <AlertFeed
                 groups={groups}

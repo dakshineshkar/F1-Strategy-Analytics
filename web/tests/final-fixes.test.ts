@@ -11,7 +11,8 @@ import { describe, expect, it } from "vitest";
 
 import { AlertFeed } from "@/components/AlertFeed";
 import { PhoneLabel } from "@/components/PhoneLabel";
-import { ReplayDrawer, StatusStrip } from "@/components/StatusStrip";
+import { ReplayTransport } from "@/components/ReplayTransport";
+import { StatusStrip } from "@/components/StatusStrip";
 import { TheCall } from "@/components/TheCall";
 import type { RaceSnapshot } from "@/lib/api";
 import { alertCountText, alertIsNew, type Mode } from "@/lib/call";
@@ -61,7 +62,6 @@ describe("item 2: the call states the race's pit loss after a late join", () => 
         pitLoss,
         onSimulate: () => undefined,
         replayIdle: false,
-        onOpenReplay: () => undefined,
       }),
     );
   const loss = pitLossOf(engineer("lec", "nor", 23.1, "global_prior"));
@@ -143,7 +143,11 @@ describe("item 1: the phone's race head and status strip wrap", () => {
     expect(PHONE).not.toMatch(/\.race-head-live[^{]*\{[^}]*(overflow-x|nowrap|mask-image)/);
     expect(PHONE).not.toMatch(/\.ss-cells[^{]*\{[^}]*(overflow-x|nowrap|mask-image)/);
     expect(PHONE).not.toMatch(/\.status-strip \{[^}]*nowrap/);
-    expect(PHONE).toContain(".ss-cells > *, .ss-end { flex: none; min-width: max-content; }");
+    expect(PHONE).toContain(".ss-cells > * { flex: none; min-width: max-content; }");
+    // the replay transport is the strip's own full-width last line on a phone, with 44 px targets
+    expect(PHONE).toContain(".ss-end { order: 99; flex: 1 1 100%; min-width: 0; }");
+    expect(PHONE).toMatch(/\.transport \.btn-small \{[^}]*min-height: 2\.75rem;/);
+    expect(PHONE).toMatch(/\.tp-speed span \{[^}]*min-width: 2\.75rem; min-height: 2\.75rem;/);
   });
 
   it("the data notice wraps instead of being cut, and the call's heading never breaks", () => {
@@ -162,13 +166,34 @@ describe("item 1: the phone's race head and status strip wrap", () => {
     expect(PHONE).toMatch(/\.phone-full, \.ss-model \.ss-k \{ position: absolute !important; width: 1px;/);
   });
 
-  it("the strip's connection and the Replay button carry their short forms", () => {
+  it("the strip's connection carries its short form; the transport's labels are visible text, last in the strip", () => {
     const mode: Mode = { label: "REPLAY 10×", description: "Replay running at 10×", tone: "replay" };
+    const noop = () => undefined;
+    const transport = createElement(ReplayTransport, {
+      current: null,
+      anyRunning: false,
+      enabled: true,
+      pending: false,
+      ended: false,
+      liveText: "x",
+      onArchive: null,
+      onStart: noop,
+      onStop: noop,
+      onPause: noop,
+      onResume: noop,
+      onSpeed: noop,
+    });
     // children go in as createElement arguments (react/no-children-prop); the casts only add them to the type
-    const drawer = createElement(ReplayDrawer, { open: false, onOpenChange: () => undefined } as unknown as Parameters<typeof ReplayDrawer>[0], null);
-    const props = { mode, model: null, lap: 11, laps: 56, raceStatus: null, connection: "connected", sessionEnded: false, onArchive: null };
-    const m = renderToStaticMarkup(createElement(StatusStrip, props as Parameters<typeof StatusStrip>[0], drawer));
+    const props = { mode, model: null, lap: 11, laps: 56, raceStatus: null, connection: "connected", sessionEnded: false };
+    const m = renderToStaticMarkup(createElement(StatusStrip, props as unknown as Parameters<typeof StatusStrip>[0], transport));
     expect(m).toContain('<span class="phone-full">Stream connected</span><span class="phone-short" aria-hidden="true">Connected</span>');
-    expect(m).toContain('<span class="phone-full">Replay controls</span><span class="phone-short" aria-hidden="true">Replay</span>');
+    expect(m).toMatch(/<div class="ss-end"><div class="transport phase-idle"[^>]*>.*Start replay<\/button>/);
+    expect(m).not.toContain("Replay controls");
+    // the mode cell is not a live region: the transport's one hidden region announces each change
+    expect(m).toMatch(/<p class="ss-mode tone-replay" title="Replay running at 10×">/);
+    expect((m.match(/aria-live/g) ?? []).length).toBe(1);
+    // reading and tab order: the mode chip and the lap before the transport, which is last
+    expect(m.indexOf("ss-mode")).toBeLessThan(m.indexOf("ss-lap"));
+    expect(m.indexOf("ss-lap")).toBeLessThan(m.indexOf("transport"));
   });
 });
