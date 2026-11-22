@@ -99,7 +99,9 @@ Source: `docs/data_source_audit.md`, `docs/traceability.md` #4.
 ### 4.2 Scope
 
 The lake holds 2021–2025 (114 races in the lake). The API catalog serves the 90 races of 2021–2024, because 2025 is
-the sealed test season (`docs/traceability.md` #6).
+the sealed test season (`docs/traceability.md` #6). Post-race archive bundles exist for all 114 races, 114 bundles
+in all. `make api-up FULL=1 REPLAY=1 TEST_SEASON=1` serves all 114 races. 2025 is opt-in, so the default
+catalogue stays the 90 races of 2021–2024. Telemetry overlays remain 2024 only.
 
 **Volume.** The HDFS raw zone holds 2,024,360,565 B and 3,542 files (about 2.02 GB) (`docs/data_dictionary.md`,
 telemetry trace table). The clean zone has 124,834 laps over the five seasons (`docs/experiments.md`, real seasons
@@ -429,10 +431,13 @@ around one question, "is there a call now?". The live race view has four parts:
   chart has a text summary and a table.
 - **Drivers:** the entrant list.
 - **Race picker** ([d-dark-picker.png](../design/after/d-dark-picker.png)): a "Start here" card (the race replaying
-  now, else the demo race 2024 R5), a search box and the 90 races by season.
+  now, else the demo race 2024 R5), a search box and the 90 races of 2021–2024 by season (all 114 with
+  `TEST_SEASON=1`).
 
 The archive is built by the stream's own processor and checked equal to a live replay at the compared laps
-(`make archive-equivalence`).
+(`make archive-equivalence`). There are 114 bundles, one for every race of 2021–2025. The 2025 bundles are
+served only with `TEST_SEASON=1`. On the full lake, 2025 R5 is EQUIVALENT at laps 10, 30 and 50, with
+126 alerts (95 new_candidate, 25 probability_crossed, 6 attempt) and 401 decisions.
 
 ![Figure 5. Late join at lap 45 (full lake, 2024 R5, 10x replay): the page is complete at once. The call (ALB → OCO, 48%) reads "flagged at lap 33 against OCO; order changed since", because OCO is no longer directly ahead of ALB, so its gauge is muted at the decision gap. The alert feed lists the run's earlier alerts under "Received before you opened the page" (the connect snapshot's alert history), and three cars show "no timing since L…".](../design/after/d-dark-latejoin.png)
 
@@ -939,3 +944,5 @@ both, ignoring line breaks). Paths are relative to the repository root.
 | A85 | axe on every screen, both themes | 0 serious/critical | docs/dev/engineering_log.md | Done, final dashboard audit, tests |
 | A86 | Traceability check | OK 506, GENERATED 2 | docs/dev/engineering_log.md | Done, final proofs |
 | A87 | `make experiments-sample` result | OK 7, OK (metadata differs) 1, DIFF 0 | docs/dev/engineering_log.md | Done, final proofs |
+| A88 | Post-race archive bundles, 2021–2025 | 114 bundles | docs/architecture.md | Post-race archive, Full lake |
+| A89 | Archive equivalence, full lake, 2025 R5 at laps 10, 30 and 50 | 126 alerts (95 new_candidate, 25 probability_crossed, 6 attempt) and 401 decisions | docs/architecture.md | Post-race archive, Proof of equivalence |

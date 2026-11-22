@@ -978,7 +978,8 @@ speed traps, the per-lap track-status codes, deleted laps and the real per-lap t
 Built by `python -m f1sa.archive.build --source sample|lake` (`make archive-sample`, `make archive-full`; `make demo`
 runs it with the sample model after the model step). One partition per race:
 `{DATA_LAKE_URI}/archive/race_bundle/season=S/round=R/` holding `bundle.json.gz` and `_manifest.json`. Nothing else is
-written: not `raw`, not a clean or feature table, not `results/`. 2025 only with `--allow-test-season`. It is read only
+written: not `raw`, not a clean or feature table, not `results/`. 2025 only with `--allow-test-season`
+(`make archive-full TEST_SEASON=1`). It is read only
 by `GET /api/archive` and `GET /api/archive/{s}/{r}`. No feature, model input, rule, alert, stream or what-if reads it.
 
 **How it is made.** The race's producer events go through the stream's own `StreamProcessor` → `RedisSink` → real
@@ -1015,6 +1016,14 @@ Details and the proof of equivalence are in `docs/architecture.md` ("Post-race a
 - **Sizes (sample lake, deployed model, schema v2).** 2023 R5: 57 laps, 1,395 messages (216 alerts), 567 decisions,
   1,883,740 B JSON → 148,931 B gzip. 2024 R5: 56 laps, 1,252 messages (141 alerts), 409 decisions, 1,700,600 B →
   132,069 B (v1 was 1,417,039 → 139,465 B and 1,257,110 → 123,092 B; the same counts).
+- **Full lake (deployed model `deploy_real_G3.5_k2`, schema v2): 114 bundles**, one for every race of 2021–2025.
+  - 2021–2024: 90 bundles (`make archive-full`), 161,067,831 B JSON → 15,755,709 B gzip.
+  - 2025: 24 bundles (`make archive-full TEST_SEASON=1 ARCHIVE_SEASON=2025`; 24 built, 0 failed). They total
+    44,061,084 B JSON → 4,339,724 B gzip (4.34 MB), between 136,127 and 229,401 B per race.
+  - The API serves 2025 only with `ALLOW_TEST_SEASON=1` (`make api-up FULL=1 REPLAY=1 TEST_SEASON=1`). By default it
+    lists the 90 of 2021–2024.
+  - The 2025 R5 equivalence check at laps 10, 30 and 50 is EQUIVALENT: 126 alerts (95 new_candidate,
+    25 probability_crossed, 6 attempt) and 401 decisions (`docs/architecture.md`, "Post-race archive").
 
 ## Timing-tower values (display only)
 Lap events (`streaming.events.TOWER_FIELDS`), the additive Redis hash `race:{s}:{r}:timing:{driverId}`

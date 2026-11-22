@@ -1411,8 +1411,13 @@ clean + features (one race) --producer.build_events--> events --parity.kafka_bat
   outside the last lap and duplicate ids. Sizes on the sample: 123–139 KB gzip per race (1.26–1.42 MB JSON).
 - **Lake.** Only `{lake}/archive/race_bundle/season=S/round=R/{bundle.json.gz,_manifest.json}` is written
   (`FileSink` under `./data/lake`, or `HdfsSink` through HttpFS); never `raw`, a clean or feature table, or
-  `results/`. 2025 only with `--allow-test-season`. Missing prerequisites (features, entrants, analysis) give exit 1
-  with the make target.
+  `results/`. 2025 only with `--allow-test-season` (`TEST_SEASON=1` on the make targets). Missing prerequisites
+  (features, entrants, analysis) give exit 1 with the make target.
+- **Full lake.** 114 bundles, one for every race of 2021–2025, all schema v2 and scored by `deploy_real_G3.5_k2`. The
+  90 races of 2021–2024 come from `make archive-full`. The 24 races of 2025 come from
+  `make archive-full TEST_SEASON=1 ARCHIVE_SEASON=2025` (24 built, 0 failed, 4.34 MB gzip). `TEST_SEASON=1` without
+  `ARCHIVE_SEASON` rebuilds all 114. The API lists and opens the 2025 bundles only with `ALLOW_TEST_SEASON=1`
+  (`make api-up FULL=1 REPLAY=1 TEST_SEASON=1`); by default it lists the 90 of 2021–2024.
 - **Proof of equivalence** (`archive/equivalence.py`, `make archive-equivalence`):
   1. the stored bundle equals a rebuild;
   2. its alerts and decisions equal an independent parity-harness run (batch 50, partition 0 lagging), and
@@ -1424,6 +1429,13 @@ clean + features (one race) --producer.build_events--> events --parity.kafka_bat
      `session_end` the final state and every published message (without ids and timing fields) must equal too.
      It refuses while an api replay runs. Unit tests also compare every lap of both sample races with a
      batch-size-1 replay into fakeredis through the real `RaceStore`.
+
+  On the full lake, 2025 R5 was checked at laps 10, 30 and 50
+  (`make archive-equivalence FULL=1 TEST_SEASON=1 SEASON=2025 ROUND=5 LAPS=10,30,50`). The result is EQUIVALENT,
+  with 126 alerts (95 new_candidate, 25 probability_crossed, 6 attempt) and 401 decisions. All three checks passed:
+  the rebuild is identical, the parity run matches (401 eligible pairs, 3 labelled attempts), and Redis equals the
+  bundle at laps 10 and 30 and after `session_end`. An attempt alert's trigger is `pit_in`: the attacker of a
+  candidate pair pitted. These are not the race's 19 pit-in events.
 - **API.** Read-only through `catalog.archive_reader` (zone `archive`, table `race_bundle`, `read_file` of the two
   file names only, LISTSTATUS/OPEN only). The listing is cached in process (`API_ARCHIVE_CACHE_S`, 300 s); each new
   sha256 is checked against the manifest and validated once, then served as stored. HTTP caching only: no Redis key.

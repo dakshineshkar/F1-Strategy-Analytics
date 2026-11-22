@@ -35,6 +35,16 @@ tyres and telemetry, so the dashboard shows a **SYNTHETIC DEMO DATA** banner. `m
 make api-up FULL=1 REPLAY=1   # recreates only the api: HDFS lake, replays enabled, deployed model
 ```
 
+This shows the 90 races of 2021–2024. To show all seasons, 2025 included (114 races, each with its post-race
+archive), add `TEST_SEASON=1`:
+
+```bash
+make api-up FULL=1 REPLAY=1 TEST_SEASON=1   # also serves 2025, the held-out test season
+```
+
+2025 is opt-in because it is the test season the model was evaluated on. Telemetry overlays are available for
+2024 races only, with or without this option.
+
 ## Stop
 
 1. **Stop any replay first.** In the dashboard's status strip: **Stop**, then **Confirm stop** (Stop takes two

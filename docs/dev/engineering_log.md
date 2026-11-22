@@ -2843,7 +2843,73 @@
     `test_repo_docs.py` requires. The Jolpica user agent (`config.py`, `.env.example`) keeps "1.0.0": it names the
     ingest client, not the release.
   - **Local only:** `web/AGENTS.md` unstaged and listed in `.git/info/exclude`.
+- Full-season coverage (2026-11-22): the archive now covers every race of 2021–2025; telemetry traces assessed only.
+  - **Coverage audit** (read-only; an `hdfs dfs -ls` of every clean, feature and archive partition against the 114
+    races of `clean/races`, plus the what-if tyre model's race list):
+    - Complete for all 114 races: the clean core tables (races, results, laps, stints, drivers, constructors,
+      qualifying), the TracingInsights clean tables (stints_tracinginsights, race_control, race_control_track_status,
+      telemetry_lap_real, compound_coverage), entrants, the analysis tables (race, laps, stints, race_control), the
+      feature tables the replay and the what-if read (pit_loss, outlap_features, gaps, laps_enriched, stints,
+      race_summary, team_outlap_history) and the what-if tyre model.
+    - 2021 R12 (Spa) has no rows in clean/pitstops, clean/analysis_pitstops, features/undercut_attempts or
+      features/lap_time_distribution. That is by design, not a gap: the race had no green-flag racing and no pit stops.
+    - Gaps: archive bundles 90/114 (no 2025) and telemetry traces 24/114 (2024 only).
+  - **2025 archive bundles:**
+    - 24 built, 0 failed, in 1 min 15 s, with the deployed model `deploy_real_G3.5_k2` (the same scorer sha256 as
+      the 90 bundles of 2021–2024); 44,061,084 B JSON → 4,339,724 B gzip (4.34 MB), 136,127–229,401 B per race.
+    - Only `/f1/archive` grew (96 → 121 directories, 180 → 228 files). `/f1/raw`, `/f1/clean` and `/f1/features`
+      have the same counts, and `results/` (154 files) and `data/manifest*.json` the same sha256, as before.
+    - At that time no make target could pass the test-season flag. The build therefore ran the builder's documented
+      command, `python -m f1sa.archive.build --source lake --season 2025 --allow-test-season`, in the app container
+      with the Makefile's `ARCHIVE_EXEC` environment (git sha `20afe99`, clean tree).
+    - `make archive-full` and `make archive-equivalence` now take `TEST_SEASON=1`, which adds
+      `--allow-test-season`. The default command lines are unchanged (`tests/unit/test_makefile_archive.py`).
+      The same build is now `make archive-full TEST_SEASON=1 ARCHIVE_SEASON=2025`.
+  - **API checks** (`make api-up FULL=1 REPLAY=1 TEST_SEASON=1`):
+    - `GET /api/archive` lists 114 races (22, 22, 22, 24, 24), all scored by `deploy_real_G3.5_k2`.
+    - `GET /api/archive/2025/5` returns 200 (gzip, 148,076 B) with `ETag` equal to the manifest sha256
+      (`cd1255e5…`), and 304 on `If-None-Match`.
+    - `GET /api/races` lists 114 races; without `TEST_SEASON=1` it lists the 90 of 2021–2024.
+  - **Equivalence, 2025 R5 at laps 10, 30 and 50:** EQUIVALENT.
+    - Rebuild identical.
+    - Stream parity equal: 126 alerts (95 new_candidate, 25 probability_crossed, 6 attempt), 401 decisions,
+      401 eligible pairs, 3 labelled attempts.
+    - The live replay's Redis equals the bundle at laps 10 and 30 and after `session_end`, and every message is equal
+      (897 lap, 19 pit_in, 19 pit_out, 126 undercut_alert, 1 session_end).
+    - The equivalence report counts alerts by their `trigger` field, so the 6 attempt alerts appear there as
+      `pit_in`. That is their trigger (the attacker of a candidate pair pitted), not the 19 pit-in events.
+    - It ran as `python -m f1sa.archive.equivalence … --allow-test-season` before the make passthrough existed. It
+      wrote only the race's Redis keys (TTL), `data/demo/<run_id>/` and a `data/checkpoints/demo_*` checkpoint.
+  - **Telemetry traces for other seasons: not done.**
+    - Why: the ingest kept raw telemetry samples for 2024 only (`DEFAULT_RAW_TELEMETRY_SEASONS = (2024,)`). The
+      other seasons were aggregated and their samples discarded, so there is nothing to resample.
+    - Re-download needed: the TracingInsights per-lap telemetry files at the pinned commits, about 98,400 files and
+      14.7 GB (`docs/data_source_audit.md`):
+      - 2021: 23,757 files, 3.69 GB;
+      - 2022: 23,576 files, 3.51 GB (estimate);
+      - 2023: 24,422 files, 3.49 GB;
+      - 2025: 26,692 files, 3.98 GB (estimate).
+    - Space: about 7 GB more raw Parquet (2024 keeps 1.8 GB) and about 0.8 GB of traces (2024: 199.5 MB). Free:
+      918 GB on HDFS, 919 GB on the datanode volume and 945 GB on the host.
+    - Time: about 3 h to download and aggregate (114 s per race at the 2024 R5 gate, 90 races), plus about 20 min of
+      trace builds (4 min 41 s per season).
+    - Code to change:
+      - `ingest/tracinginsights_loader.py`: the kept-seasons default;
+      - `ingest/manifest.py` `should_run`: it skips items already done, so the telemetry items need a redo path,
+        and that run rewrites `data/manifest_tracinginsights.json` and the raw aggregates;
+      - `lake/schemas_telemetry_trace.py` `SEASON` and `etl/telemetry_trace.py` `parse_season` plus its season
+        filters;
+      - `api/telemetry.py` (the 404 "available for 2024 only"; 2025 must sit behind `ALLOW_TEST_SEASON`);
+      - `web/src/lib/telemetry.ts` (`TELEMETRY_SEASON`, `ONLY_2024_NOTE`, shown in `TelemetryView.tsx`);
+      - the Makefile help and the tests of each.
+  - **Docs:**
+    - `report.md` §4.2, §10 and Appendix A (A88, A89); `report.pdf` rebuilt; `final_report.md` and
+      `final_report.pdf` unchanged.
+    - `architecture.md` and `data_dictionary.md` ("Post-race archive").
+    - `getting-started.md` (the `TEST_SEASON=1` option).
 ## Next
+- Telemetry traces for 2021–2023 and 2025: a team decision on the re-download (about 14.7 GB, about 3 h;
+  see the full-season coverage entry). Nothing is started until then.
 - S18B: the demo rehearsal with `docs/demo_script.md` (full lake, then the sample-mode fallback); fill in section 16
   (team contributions) of the report and run `make report-pdf` again. The report and demo script already describe
   the final dashboard (Step 18 final, 2026-11-20).
@@ -2851,6 +2917,8 @@
   additive API change. It was not done in 4B and needs approval first.
   - F24 API stays declined (revisit only if time allows).
 ## Known issues
+- Telemetry overlays exist for 2024 only: the lake keeps raw telemetry samples for 2024 only. Every other
+  per-race feature covers all 114 races of 2021–2025.
 - Report §16 team contributions still to be filled in (blocker for submission).
 - UI Step 5 (2026-11-19):
   - **Reducer, late join:** for up to one lap after a late join or reconnect, a car's gap to the leader (and in the

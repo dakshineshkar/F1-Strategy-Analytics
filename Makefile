@@ -254,10 +254,13 @@ stream-parity-full: ## Batch vs stream feature parity over 2021-2024 (app contai
 # service. ARCHIVE_SEASON / ARCHIVE_ROUND select races, MODEL_DIR the scorer (default: the api's).
 # archive-equivalence proves a stored bundle equals a live replay (real Kafka -> stream job ->
 # Redis in the app container; refused while an api replay runs; writes the race's Redis keys,
-# data/checkpoints/demo_* and data/demo/<run_id>/). FULL=1 uses the HDFS lake.
+# data/checkpoints/demo_* and data/demo/<run_id>/). FULL=1 uses the HDFS lake. TEST_SEASON=1 adds
+# --allow-test-season to archive-full and archive-equivalence (2025, the sealed test season, is
+# refused without it); by default the flag is absent.
 ARCHIVE_SELECT = $(if $(ARCHIVE_SEASON), --season $(ARCHIVE_SEASON),)$(if $(ARCHIVE_ROUND), --round $(ARCHIVE_ROUND),)$(if $(MODEL_DIR), --model-dir $(MODEL_DIR),)
 ARCHIVE_EXEC = $(COMPOSE) exec -T -e PYTHONPATH=/workspace/src -e DATA_LAKE_URI=$(HDFS_LAKE) -e HDFS_HTTPFS_URL=http://httpfs:14000 -e F1SA_GIT_SHA=$(GIT_SHA) -e F1SA_GIT_DIRTY=$(GIT_DIRTY) app
 ARCHIVE_SAMPLE_EXEC = $(COMPOSE) exec -T -e PYTHONPATH=/workspace/src -e DATA_LAKE_URI=$(API_FILE_LAKE) -e F1SA_GIT_SHA=$(GIT_SHA) -e F1SA_GIT_DIRTY=$(GIT_DIRTY) app
+ARCHIVE_TEST_SEASON = $(if $(filter 1,$(TEST_SEASON)), --allow-test-season,)
 LAPS ?=
 
 .PHONY: archive-sample archive-full archive-equivalence test-archive
@@ -265,12 +268,12 @@ archive-sample: ## Display-only post-race bundles of the sample lake: data/lake/
 	@test -d data/lake/features/pit_loss -a -d data/lake/clean/entrants -a -d data/lake/clean/analysis_race || { echo "Missing data/lake tables: run 'make etl-sample features-sample entrants-sample analysis-sample' first." >&2; exit 1; }
 	DATA_LAKE_URI=file://$(CURDIR)/data/lake $(UV) run python -m f1sa.archive.build --source sample$(ARCHIVE_SELECT)
 
-archive-full: ## Display-only post-race bundles: /f1/archive/race_bundle (app container, HttpFS; never writes /f1/raw) [ARCHIVE_SEASON= ARCHIVE_ROUND= MODEL_DIR=]
-	$(ARCHIVE_EXEC) python -m f1sa.archive.build --source lake$(ARCHIVE_SELECT)
+archive-full: ## Display-only post-race bundles: /f1/archive/race_bundle (app container, HttpFS; never writes /f1/raw) [ARCHIVE_SEASON= ARCHIVE_ROUND= MODEL_DIR= TEST_SEASON=1]
+	$(ARCHIVE_EXEC) python -m f1sa.archive.build --source lake$(ARCHIVE_SELECT)$(ARCHIVE_TEST_SEASON)
 
-archive-equivalence: ## Stored bundle == live replay (Kafka -> stream job -> Redis, app container) SEASON ROUND LAPS=a,b,c [FULL=1] [MODEL_DIR=]
+archive-equivalence: ## Stored bundle == live replay (Kafka -> stream job -> Redis, app container) SEASON ROUND LAPS=a,b,c [FULL=1] [MODEL_DIR=] [TEST_SEASON=1]
 	@test -n "$(LAPS)" || { echo "LAPS is required, e.g. make archive-equivalence SEASON=2024 ROUND=5 LAPS=5,22,45" >&2; exit 2; }
-	$(if $(filter 1,$(FULL)),$(ARCHIVE_EXEC),$(ARCHIVE_SAMPLE_EXEC)) python -m f1sa.archive.equivalence --season $(SEASON) --round $(ROUND) --laps $(LAPS) --api http://api:8000$(if $(MODEL_DIR), --model-dir $(MODEL_DIR),)
+	$(if $(filter 1,$(FULL)),$(ARCHIVE_EXEC),$(ARCHIVE_SAMPLE_EXEC)) python -m f1sa.archive.equivalence --season $(SEASON) --round $(ROUND) --laps $(LAPS) --api http://api:8000$(if $(MODEL_DIR), --model-dir $(MODEL_DIR),)$(ARCHIVE_TEST_SEASON)
 
 test-archive: ## Feature 4/5 unit tests (builder, schema v2, status, equivalence, API, Makefile)
 	$(UV) run pytest tests/unit/test_archive_memory_redis.py tests/unit/test_archive_schema.py tests/unit/test_archive_build.py tests/unit/test_archive_status.py tests/unit/test_archive_equivalence.py tests/unit/test_api_archive.py tests/unit/test_makefile_archive.py -q

@@ -62,6 +62,29 @@ def test_archive_equivalence_needs_laps_and_picks_the_lake() -> None:
     assert "LAPS is required" in _make("archive-equivalence")
 
 
+def test_test_season_passthrough_only_with_test_season_1() -> None:
+    full = _line(
+        _make("archive-full", "TEST_SEASON=1", "ARCHIVE_SEASON=2025"), "f1sa.archive.build"
+    )
+    assert full.endswith("--source lake --season 2025 --allow-test-season")
+    eq_args = ("FULL=1", "SEASON=2025", "ROUND=5", "LAPS=10,30,50")
+    eq = _line(_make("archive-equivalence", "TEST_SEASON=1", *eq_args), "f1sa.archive.equivalence")
+    assert eq.endswith("--laps 10,30,50 --api http://api:8000 --allow-test-season")
+    with_model = _line(
+        _make("archive-equivalence", "TEST_SEASON=1", "MODEL_DIR=models/undercut/x", *eq_args),
+        "f1sa.archive.equivalence",
+    )
+    assert with_model.endswith("--model-dir models/undercut/x --allow-test-season")
+    for args in (
+        ("archive-full",),
+        ("archive-full", "TEST_SEASON=0"),
+        ("archive-equivalence", *eq_args),
+        ("archive-equivalence", "TEST_SEASON=0", *eq_args),
+        ("archive-sample", "TEST_SEASON=1"),
+    ):
+        assert "--allow-test-season" not in _make(*args), args
+
+
 def test_no_archive_target_writes_raw_or_results_or_touches_services() -> None:
     for target in ("archive-sample", "archive-full", "archive-equivalence LAPS=1,2,3"):
         out = _make(*target.split())
