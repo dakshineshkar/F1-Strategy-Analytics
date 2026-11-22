@@ -2907,6 +2907,14 @@
       `final_report.pdf` unchanged.
     - `architecture.md` and `data_dictionary.md` ("Post-race archive").
     - `getting-started.md` (the `TEST_SEASON=1` option).
+- 2026-11-22: `final_report.md` wording pass; `final_report.pdf` re-rendered with `make final-report-pdf`
+  (still 8 pages, course format unchanged).
+  - Every abbreviation is expanded at its first body use, among them Formula 1 (F1), HDFS, RDD, MLlib, TTL,
+    Pub/Sub, LR, GBT, PR-AUC, ROC-AUC, Brier score, ECE, F1-score, Platt scaling, κ, race-cluster bootstrap, WSL,
+    VM and R5. HttpFS, KRaft and IQR are expanded at their single table or figure use. Common terms are not
+    expanded: SQL, API, JSON, CPU.
+  - The metric is written "F1-score" everywhere, so "F1" always means Formula 1.
+  - No number changed (the digits added are those of the expansions); `tests/unit/test_repo_docs.py` passes.
 ## Next
 - Telemetry traces for 2021–2023 and 2025: a team decision on the re-download (about 14.7 GB, about 3 h;
   see the full-season coverage entry). Nothing is started until then.

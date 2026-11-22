@@ -6,7 +6,7 @@
 
 ### 1.1 Definition
 
-An undercut is a pit stop timed to gain track position: the car behind stops first and uses fresh tyres to close
+In Formula 1 (F1), an undercut is a pit stop timed to gain track position: the car behind stops first and uses fresh tyres to close
 the gap while the car ahead is still on worn ones. We ask, for every pair of cars on every lap: if the attacker pits
 now, will it come out ahead once the defender has answered with its own stop?
 
@@ -33,24 +33,25 @@ That makes it a natural big-data problem, from a partitioned lake to a measured 
 
 ### 1.3 Design Goals
 
-- **Partitioned multi-season lake:** raw data in HDFS and clean Parquet partitioned by season and race.
+- **Partitioned multi-season lake:** raw data in the Hadoop Distributed File System (HDFS) and clean Parquet partitioned by season and race.
 - **Decision-time features:** a feature for lap L uses only information available at the end of lap L − 1, built
-  with the Spark RDD, DataFrame and SQL APIs.
+  with the Spark resilient distributed dataset (RDD), DataFrame and SQL APIs.
 - **Honest evaluation:** a chronological split (train 2021–2023, validate 2024, test 2025), calibrated
   probabilities and simple baselines to beat.
 - **One rule for batch and stream:** the live detector flags the same pairs that the batch label considers.
-- **Low-latency serving:** live state in a NoSQL store with namespaced keys and a TTL after the session, pushed to a
+- **Low-latency serving:** live state in a NoSQL (non-relational) store with namespaced keys and a time to live (TTL) after the
+  session, pushed to a
   dashboard.
 - **Reproducibility:** a fresh clone rebuilds the sample pipeline end to end without credentials.
 
 ### 1.4 Features Required
 
 - **Ingestion:** Jolpica (race, driver, constructor, qualifying, pit stop, lap) and FastF1 (timing and telemetry:
-  speed, throttle, brake, gear, RPM).
-- **Features and model:** gap change, tyre age, out-lap pace and pit loss; undercut detection; an MLlib model of
+  speed, throttle, brake, gear and engine revolutions per minute, RPM).
+- **Features and model:** gap change, tyre age, out-lap pace and pit loss; undercut detection; an MLlib (Spark's machine-learning library) model of
   undercut success with calibrated probabilities and its main factors explained.
 - **Streaming and serving:** Kafka race events, Structured Streaming replay and detection, and Redis (a hash per
-  driver, a sorted set for the order, a Pub/Sub channel per race).
+  driver, a sorted set for the order, a publish/subscribe (Pub/Sub) channel per race).
 - **Dashboard and what-if:** state, gaps, tyres, events and predictions, and a comparison of pit now, pit next lap
   and stay out from the same state.
 
@@ -118,12 +119,12 @@ push.
 
 | Platform | Role, and why we used it |
 |---|---|
-| HDFS 3.4.3 | Holds all lake zones. Ingest writes through HttpFS with an atomic rename and a sha256 per file; Spark reads it natively. |
+| HDFS 3.4.3 | Holds all lake zones. Ingest writes through HttpFS (HDFS's HTTP gateway) with an atomic rename and a sha256 per file; Spark reads it natively. |
 | Spark RDD | Stint splitting (groupByKey and an ordered scan per driver), a mergeable lap-time distribution (aggregateByKey) and per-race undercut evaluation (cogroup and flatMap): per-key Python logic. Each has a DataFrame twin that agrees row for row. |
 | Spark DataFrame | Joins and windows for cumulative time, timing-line gaps, tyre age and laps remaining, planned by Catalyst. |
 | Spark SQL | The leakage-safe priors (pit loss, team out-lap) as one auditable window frame over strictly earlier races. |
 | Spark MLlib | Logistic regression and gradient-boosted trees in pipelines with class weights. |
-| Kafka 4.3 (KRaft) | A race-event topic with 3 partitions keyed by driver; an idempotent producer replays a race at 1x, 10x or 60x. |
+| Kafka 4.3 (KRaft) | Runs in KRaft mode (Kafka's built-in Raft consensus mode, no ZooKeeper). A race-event topic with 3 partitions keyed by driver; an idempotent producer replays a race at 1x, 10x or 60x. |
 | Structured Streaming | Reads Kafka with a 500 ms trigger; foreachBatch keeps per-race state, computes live features, applies the shared rule and the calibrated scorer, and writes Redis. |
 | FastAPI + SSE | State, replays and controls, what-if, archive and analysis. SSE relays the race channel plus a full-state snapshot before each lap, so a stale flag clears without polling. |
 | Next.js dashboard | TypeScript (strict): live race view, engineer view, what-if panel, post-race archive and race analysis. |
@@ -136,24 +137,27 @@ The primary feature set has 21 inputs (52 assembled columns): the gap and its ch
 lengths, recent pace difference, degradation slopes, a pit-loss prior, an out-lap model and rejoin traffic. The
 pit-loss prior is the median, over strictly earlier races, of in-lap + out-lap − 2 × the driver's green median
 lap. The out-lap is split into the circuit's stop cost, the team's stop execution and a warm-up residual, the last
-two estimated from earlier races and shrunk toward the parent level (κ = 5). A leakage test scales the target race
+two estimated from earlier races and shrunk toward the parent average with shrinkage strength κ = 5. A leakage test scales the target race
 from lap L on, and every later race, by ×100 and checks that no decision feature moves.
 
-We train LR and GBT on 2021–2023 with class weights from the training rows. LR searches regParam {0.0, 0.01, 0.1} ×
+We train logistic regression (LR) and gradient-boosted trees (GBT) on 2021–2023 with class weights from the training rows. LR searches regParam {0.0, 0.01, 0.1} ×
 elasticNetParam {0.0, 0.5}, and GBT searches maxDepth {2, 3, 5} × maxIter {20, 50} × stepSize {0.05, 0.1}; the
-highest 2024 PR-AUC wins (regParam 0.1, elasticNetParam 0.5; maxDepth 2, maxIter 50, stepSize 0.05). With fewer
-than 300 labelled validation rows we use Platt scaling, fitted on 2024 only. The calibrated LR became the primary
-model with the lowest calibrated validation Brier, 0.168 against 0.205 (both optimistic, as Platt is fitted and
+highest 2024 PR-AUC (area under the precision-recall curve) wins (regParam 0.1, elasticNetParam 0.5; maxDepth 2, maxIter 50, stepSize 0.05). With fewer
+than 300 labelled validation rows we use Platt scaling (a logistic fit that maps raw scores to calibrated probabilities), fitted on 2024 only. The calibrated LR became the primary
+model with the lowest calibrated validation Brier score (mean squared error of the predicted probability;
+lower is better), 0.168 against 0.205 (both optimistic, as Platt is fitted and
 scored on the same 49 rows). Two fixed baselines are never tuned: the
 majority class, and a rule comparing the expected fresh-tyre gain with the gap.
 
 The 2025 season was sealed. Before any 2025 number existed we froze the features, grids, calibration and selection
-rules, the 0.5 threshold, the metrics and both settings. A second specification added two ablation sets, `real_tyre`
+rules, the 0.5 threshold, the metrics and both settings. We report PR-AUC, ROC-AUC (area under the receiver operating
+characteristic curve), the Brier score, ECE (expected calibration error, lower is better) and the F1-score (the
+harmonic mean of precision and recall) for the positive class. A second specification added two ablation sets, `real_tyre`
 (TracingInsights compound and tyre age) and `real_ti` (plus per-lap telemetry), which could replace `real` only with
 a leave-one-season-out PR-AUC at least 0.02 higher; neither did (0.413 for `real`, 0.402 and 0.374). The margin was
 set after the development tables were seen, but both sets score below `real`, so it does not change the outcome. The single
 test run covered 3 feature sets × 2 settings. Intervals are 95% percentile intervals from 1000 race-cluster
-bootstrap resamples (whole races, seed 42).
+bootstrap resamples (resampling whole races, so a race's laps stay together; seed 42).
 
 Batch and stream call one pure-Python candidate rule. Replaying every 2021–2024 race through the stream processor
 in micro-batches of 1, 7 and 50 events over 3 partitions matched 90 races, 34,608 eligible pairs and 157 labelled
@@ -167,7 +171,8 @@ probability that A ends up ahead, the expected gap and its 80% interval.
 
 ### 3.1 Experiment Design
 
-Everything ran on one 12-CPU WSL 2 VM with about 14 GB of memory; the Spark container had 6 GiB, and a memory guard
+Everything ran on one WSL 2 (Windows Subsystem for Linux) virtual machine (VM) with 12 CPUs and about 14 GB of
+memory; the Spark container had 6 GiB, and a memory guard
 killed any cell past 5.40 GiB. The split is train 2021–2023 (108 labelled attempts), validate 2024 (49) and test 2025
 (49 in 19 races, base rate 0.347).
 - **Scalability:** the feature build on 1, 3 and 5 real seasons and on synthetic copies (x4, x16); telemetry
@@ -177,7 +182,7 @@ killed any cell past 5.40 GiB. The split is train 2021–2023 (108 labelled atte
   and HDFS, with no cache, cache() or persist(DISK_ONLY), 5 timed runs.
 - **Model and ablation:** the single 2025 run, then the frozen models scored again with one shared set of race
   resamples, giving paired intervals.
-- **Streaming:** 2024 R5 (real laps and stops, synthetic tyres; 1,252 messages) at 1x for 900 s, 10x and 60x, on one
+- **Streaming:** 2024 round 5, R5 (real laps and stops, synthetic tyres; 1,252 messages), at 1x for 900 s, 10x and 60x, on one
   clock, plus a 60x run with the dashboard in headless Chromium.
 - **Redis:** the serving contract for 20 drivers at 1, 10 and 60 batches/s, 60 s each.
 - **What-if:** pre-registered monotonicity, determinism and ordering checks, and a backtest.
@@ -217,7 +222,7 @@ value (57.9 s), and we cannot explain it. Telemetry grows about linearly with th
 Partitioning helps narrow queries and hurts full scans and joins, which open many small files. cache() gives 1.41x on one race, but materialising it takes 1.13 s, so it pays back only after roughly 25–40
 such queries; it does not help telemetry (0.93-1.05x), and persist(DISK_ONLY) is mostly slower than no caching.
 
-<figure><img src="figures/scalability_build.png" alt="Feature-build runtime per master" style="max-height:110mm"><figcaption>Figure 3. Feature-build runtime by real seasons and by replication factor, per master (median with IQR bars; a hollow marker is a re-run after the race-filter fix).</figcaption></figure>
+<figure><img src="figures/scalability_build.png" alt="Feature-build runtime per master" style="max-height:110mm"><figcaption>Figure 3. Feature-build runtime by real seasons and by replication factor, per master (median with interquartile-range (IQR) bars; a hollow marker is a re-run after the race-filter fix).</figcaption></figure>
 
 | Streaming, 2024 R5, steady state | 1x (first 900 s) | 10x | 60x |
 |---|---|---|---|
@@ -229,13 +234,13 @@ The 500 ms trigger and the Kafka hop take about 0.73–0.80 s of the median; eve
 milliseconds, and the first race batch costs about 1.3–1.4 s more because it loads the priors. At 60x, SSE send to
 browser paint is 28 / 37 / 40 ms and produced to paint 855 / 1519.5 / 3443.5 ms. Throughput equals the produced rate
 with no backlog; the maximum was not load-tested. At 60 batches/s a 20-driver Redis write took 1.21 / 1.59 / 1.78 ms
-and HGETALL 0.18 / 0.32 / 0.41 ms (p50 / p95 / p99), with 0 late ticks. An earlier run on a smaller, busier VM had
+and HGETALL 0.18 / 0.32 / 0.41 ms (p50 / p95 / p99: the 50th, 95th and 99th percentiles), with 0 late ticks. An earlier run on a smaller, busier VM had
 2876 late ticks, which we put down to that host. The streaming job tree peaked at 1.62 GiB at 60x (mean CPU 70 %),
 Kafka at 641 MiB and Redis at 23 MiB.
 
 ### 3.4 Feature Metrics
 
-| 2025, G = 3.5 s, k = 2 | PR-AUC | Brier | ROC-AUC | F1 (positive) | ECE (10 bins) |
+| 2025, G = 3.5 s, k = 2 | PR-AUC | Brier | ROC-AUC | F1-score (positive class) | ECE (10 bins) |
 |---|---|---|---|---|---|
 | **Calibrated LR (primary)** | **0.670**<br>**[0.421, 0.898]** | **0.177**<br>**[0.106, 0.232]** | 0.792<br>[0.667, 0.929] | 0.571<br>[0.323, 0.778] | 0.107<br>[0.076, 0.234] |
 | Rule baseline | 0.513<br>[0.246, 0.799] | 0.273<br>[0.168, 0.353] | 0.702<br>[0.516, 0.860] | 0.357<br>[0.000, 0.542] | 0.258<br>[0.162, 0.360] |
@@ -280,7 +285,7 @@ are exact copies with shifted keys.
 | Goal | Achieved |
 |---|---|
 | Multi-season lake, 2021–2025, about 50–100+ races | 114 races in an HDFS lake partitioned by season and round |
-| F1 against the majority-class baseline | 0.571 [0.323, 0.778] against 0.000; PR-AUC 0.670 against 0.347 |
+| F1-score against the majority-class baseline | 0.571 [0.323, 0.778] against 0.000; PR-AUC 0.670 against 0.347 |
 | Calibration | ECE 0.107 [0.076, 0.234]; Brier 0.177 [0.106, 0.232] |
 | Spark runtime and scaling trend | telemetry 18.01 s → 7.49 s (2.40x) on local[4]; build at 3 seasons x4 fastest on the cluster, 1.59x over local[1] |
 | Speed-up from partitioning and caching | one race 1.74x (file://), 1.20x (HDFS); full scans 0.30x; cache() 1.41x on one race |
@@ -289,7 +294,7 @@ are exact copies with shifted keys.
 | Redis read/write latency at streaming rate | write 1.21 / 1.59 / 1.78 ms at 60/s; 0 late ticks |
 | Resource usage | host job tree 1.62 GiB at 60x; Spark cells measured against a 5.40 GiB memory guard |
 | Useful and consistent what-if comparisons | monotonicity and determinism pass; ordering 17 of 18; 2025 simulator ECE 0.207 |
-| Interactive dashboard | live race, engineer, what-if, archive and analysis views; UI paint p50 28 ms |
+| Interactive dashboard | live race, engineer, what-if, archive and analysis views; browser paint p50 28 ms |
 
 ### 4.1 Achievement of Design Goals
 
