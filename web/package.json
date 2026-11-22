@@ -1,6 +1,6 @@
 {
   "name": "f1sa-web",
-  "version": "1.0.1",
+  "version": "1.0.3",
   "private": true,
   "description": "F1 Strategy Analytics live race dashboard (Step 14)",
   "type": "module",

@@ -4,6 +4,23 @@ All notable changes to this project are listed here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [1.0.3] - 2026-11-22
+
+### Fixed
+
+- The changelog now names the deployed model correctly (the Platt-calibrated logistic regression).
+- Version metadata aligned to 1.0.3 in `pyproject.toml`, `uv.lock`, `web/package.json` and `web/package-lock.json`.
+
+## [1.0.2] - 2026-11-22
+
+### Added
+
+- Course submission report `docs/report/final_report.pdf` (8 pages).
+
+### Changed
+
+- Full team names from the proposal in the report and docs.
+
 ## [1.0.1] - 2026-11-21
 
 ### Changed
@@ -21,8 +38,9 @@ The first complete release.
   Parquet tables partitioned by season and round. The same code runs on HDFS or on the local disk.
 - **Spark processing.** The features that describe each car before every lap (gaps, closing rate, tyre age,
   pit loss and more) are built with Spark RDDs, DataFrames and SQL, using only information known at that time.
-- **Machine-learning model.** A Spark MLlib gradient-boosted tree model with probability calibration predicts
-  whether an undercut will work. It is trained on 2021 to 2023, calibrated on 2024 and tested once on 2025.
+- **Machine-learning model.** Spark MLlib logistic regression and gradient-boosted trees are trained and
+  compared to predict whether an undercut will work; the deployed model is the Platt-calibrated logistic
+  regression. It is trained on 2021 to 2023, calibrated on 2024 and tested once on 2025.
 - **Streaming.** A replay sends a race lap by lap through Kafka. Spark Structured Streaming updates every car and
   raises undercut alerts as the race runs.
 - **Redis serving.** The live state of each car, the running order and the race events are kept in Redis, with

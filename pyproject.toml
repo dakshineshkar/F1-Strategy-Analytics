@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "f1sa"
-version = "1.0.1"
+version = "1.0.3"
 description = "F1 Strategy Analytics at Scale: event-driven undercut detection and what-if strategy simulation."
 readme = "README.md"
 license = "MIT"
