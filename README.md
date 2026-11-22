@@ -132,8 +132,8 @@ Every document is indexed in [docs/README.md](docs/README.md).
 
 ## Team
 
-IISc MTech DA231o course project by team **Data Wranglers**: Parinith D., Dakshinesh K., Rohan Deore and
-Kaushal V. (Indian Institute of Science, Bengaluru).
+IISc MTech DA231o course project by team **Data Wranglers**: Parinith D, Dakshineshkar N R,
+Rohan Nitin Deore and Vadnere Kaushal Nitin (Indian Institute of Science, Bengaluru).
 
 ## Licence and citation
 

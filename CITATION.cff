@@ -10,13 +10,13 @@ abstract: >-
   Course project of team Data Wranglers, DA231o, MTech, Indian Institute of Science (IISc).
 authors:
   - given-names: Parinith
-    family-names: D.
-  - given-names: Dakshinesh
-    family-names: K.
-  - given-names: Rohan
+    family-names: D
+  - given-names: Dakshineshkar
+    family-names: N R
+  - given-names: Rohan Nitin
     family-names: Deore
-  - given-names: Kaushal
-    family-names: V.
+  - given-names: Kaushal Nitin
+    family-names: Vadnere
 repository-code: "https://github.com/parinithd-27/F1-Strategy-Analytics"
 license: MIT
 keywords:

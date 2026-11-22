@@ -1,7 +1,7 @@
 # F1 Strategy Analytics at Scale
 
 **Final report.** DA231o course project, M.Tech, Indian Institute of Science (IISc), Bengaluru.
-Team **Data Wranglers**: Parinith D., Dakshinesh K., Rohan Deore, Kaushal V.
+Team **Data Wranglers**: Parinith D, Dakshineshkar N R, Rohan Nitin Deore, Vadnere Kaushal Nitin.
 Repository state: `main` after the final dashboard audit and the final proofs (2026-11-20). Code: MIT. Data: see §4.5.
 
 Every number is copied from a committed file in `results/` or `docs/`, and its source is named after each table or
@@ -823,10 +823,10 @@ Future work:
 
 | Member | Contributions |
 |---|---|
-| Parinith D. | TO BE COMPLETED BEFORE SUBMISSION |
-| Dakshinesh K. | TO BE COMPLETED BEFORE SUBMISSION |
-| Rohan Deore | TO BE COMPLETED BEFORE SUBMISSION |
-| Kaushal V. | TO BE COMPLETED BEFORE SUBMISSION |
+| Parinith D | TO BE COMPLETED BEFORE SUBMISSION |
+| Dakshineshkar N R | TO BE COMPLETED BEFORE SUBMISSION |
+| Rohan Nitin Deore | TO BE COMPLETED BEFORE SUBMISSION |
+| Vadnere Kaushal Nitin | TO BE COMPLETED BEFORE SUBMISSION |
 
 ## 17. References
 

@@ -1,6 +1,13 @@
 # F1 Strategy Analytics at Scale: Event-Driven Undercut Detection and What-If Race Strategy Simulation
 
-<p class="byline">Parinith D. (parinithd@iisc.ac.in) · Dakshinesh K. (dakshineshk1@iisc.ac.in)<br>Rohan Deore (rohandeore@iisc.ac.in) · Kaushal V. (kaushalvadn1@iisc.ac.in)<br>DA231o, Indian Institute of Science, Bengaluru</p>
+<div class="byline" style="display: grid; grid-template-columns: repeat(2, 62mm); justify-content: center; row-gap: 2pt; margin-bottom: 3pt;">
+<div><strong>Parinith D</strong><br>parinithd@iisc.ac.in</div>
+<div><strong>Dakshineshkar N R</strong><br>dakshineshk1@iisc.ac.in</div>
+<div><strong>Rohan Nitin Deore</strong><br>rohandeore@iisc.ac.in</div>
+<div><strong>Vadnere Kaushal Nitin</strong><br>kaushalvadn1@iisc.ac.in</div>
+</div>
+<p class="byline">DA231o, Indian Institute of Science, Bengaluru</p>
+<style>h1 { color: #1F3864; }</style>
 
 ## 1. Problem
 
@@ -57,7 +64,6 @@ That makes it a natural big-data problem, from a partitioned lake to a measured 
 
 ### 1.5 Scalability and Performance Goals
 
-We measured the system against these goals:
 - **Scope:** the 2021–2025 seasons, about 50–100+ races.
 - **Spark runtime and scaling trend** for 1, 3 and 5 seasons.
 - **Speed-up from partitioning and caching** against an unpartitioned, uncached baseline.

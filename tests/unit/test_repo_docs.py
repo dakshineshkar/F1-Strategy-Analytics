@@ -13,7 +13,15 @@ import yaml
 import f1sa
 
 REPO = Path(__file__).resolve().parents[2]
-TEAM = ("Parinith D.", "Dakshinesh K.", "Rohan Deore", "Kaushal V.")
+# Full names as written in the course proposal, in its order.
+TEAM = ("Parinith D", "Dakshineshkar N R", "Rohan Nitin Deore", "Vadnere Kaushal Nitin")
+# CITATION.cff splits them into given and family names (Vadnere is the family name, written first).
+CITATION_AUTHORS = (
+    ("Parinith", "D"),
+    ("Dakshineshkar", "N R"),
+    ("Rohan Nitin", "Deore"),
+    ("Kaushal Nitin", "Vadnere"),
+)
 
 
 def _text(rel: str) -> str:
@@ -39,8 +47,8 @@ def test_citation_cff_names_the_team_and_licence() -> None:
     doc = yaml.safe_load(_text("CITATION.cff"))
     assert doc["cff-version"] == "1.2.0" and doc["type"] == "software"
     assert doc["license"] == "MIT"
-    names = [f"{a['given-names']} {a['family-names']}" for a in doc["authors"]]
-    assert names == list(TEAM)
+    names = [(a["given-names"], a["family-names"]) for a in doc["authors"]]
+    assert names == list(CITATION_AUTHORS)
     assert all("email" not in a for a in doc["authors"])
     assert doc["repository-code"].startswith("https://github.com/")
 
@@ -310,13 +318,19 @@ def test_final_report_heading_byline_and_sections_in_the_course_order() -> None:
     text = _text(FINAL)
     assert text.startswith(f"# {FINAL_TITLE}\n")
     byline = text.split("## 1. Problem", 1)[0]
-    for name, email in (
-        ("Parinith D.", "parinithd@iisc.ac.in"),
-        ("Dakshinesh K.", "dakshineshk1@iisc.ac.in"),
-        ("Rohan Deore", "rohandeore@iisc.ac.in"),
-        ("Kaushal V.", "kaushalvadn1@iisc.ac.in"),
-    ):
-        assert f"{name} ({email})" in byline, name
+    # The proposal's layout: a centred 2x2 grid, each name on one line with its email below it,
+    # in reading order (first row Parinith D, Dakshineshkar N R; second row the other two).
+    emails = (
+        "parinithd@iisc.ac.in",
+        "dakshineshk1@iisc.ac.in",
+        "rohandeore@iisc.ac.in",
+        "kaushalvadn1@iisc.ac.in",
+    )
+    # Names in bold, emails in regular weight.
+    cells = re.findall(r"^<div><strong>([^<]+)</strong><br>([^<]+)</div>$", byline, re.MULTILINE)
+    assert cells == list(zip(TEAM, emails, strict=True))
+    assert "display: grid; grid-template-columns: repeat(2," in byline
+    assert "<style>h1 { color: #1F3864; }</style>" in byline  # the proposal's dark-blue title
     assert "DA231o, Indian Institute of Science, Bengaluru" in byline
     headings = re.findall(r"^#{2,4} .+$", text, re.MULTILINE)
     assert headings == list(FINAL_SECTIONS)

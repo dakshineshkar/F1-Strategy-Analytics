@@ -2915,6 +2915,19 @@
     expanded: SQL, API, JSON, CPU.
   - The metric is written "F1-score" everywhere, so "F1" always means Formula 1.
   - No number changed (the digits added are those of the expansions); `tests/unit/test_repo_docs.py` passes.
+- 2026-11-22: team names updated to the full names of the course proposal: Parinith D, Dakshineshkar N R,
+  Rohan Nitin Deore, Vadnere Kaushal Nitin.
+  - Files: `final_report.md` (the heading is now the proposal's centred 2x2 grid, name over email), `README.md`,
+    `CITATION.cff` (family names D, N R, Deore, Vadnere), `report.md` (the team line and §16).
+  - Both PDFs were re-rendered: `final_report.pdf` is 8 pages and `report.pdf` 22, as before. The 1.5 lead-in line
+    was dropped to keep the 8 pages.
+  - Tests: `TEAM` and the new `CITATION_AUTHORS` in `tests/unit/test_repo_docs.py`, and the byline test now checks
+    the grid.
+  - Heading style as in the proposal: names in bold, emails regular, title dark blue #1F3864 (a `<style>` line in
+    `final_report.md`; the renderer is unchanged; there is no proposal file in the repo to sample, so the given
+    default is used). Still 8 pages.
+  - Left as written: the dated 2026-11-13 approval line below ("by Parinith D. on behalf of the team") and the
+    quotation of it in `report.md` §7.
 ## Next
 - Telemetry traces for 2021–2023 and 2025: a team decision on the re-download (about 14.7 GB, about 3 h;
   see the full-season coverage entry). Nothing is started until then.
