@@ -9,7 +9,8 @@ All notable changes to this project are listed here. The format follows
 ### Fixed
 
 - The changelog now names the deployed model correctly (the Platt-calibrated logistic regression).
-- Version metadata aligned to 1.0.3 in `pyproject.toml`, `uv.lock`, `web/package.json` and `web/package-lock.json`.
+- Version metadata aligned to 1.0.3 in `pyproject.toml`, `uv.lock`, `src/f1sa/__init__.py`, `web/package.json` and
+  `web/package-lock.json`.
 
 ## [1.0.2] - 2026-11-22
 
